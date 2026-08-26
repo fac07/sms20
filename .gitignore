@@ -1,0 +1,21 @@
+# .NET (backend, agente-bascula)
+bin/
+obj/
+*.user
+*.suo
+.vs/
+
+# Node (frontend)
+node_modules/
+dist/
+dist-ssr/
+*.local
+
+# Editores / SO
+.DS_Store
+.idea/
+*.swp
+
+# Secretos / config local
+*.env
+appsettings.*.local.json
