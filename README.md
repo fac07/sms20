@@ -56,6 +56,10 @@ cd backend && dotnet run
 
 `dotnet ef migrations add` / `dotnet ef database update` necesitan el **runtime de .NET 8** instalado, además del SDK que uses para todo lo demás (si tenés un SDK más nuevo como .NET 10, `dotnet-ef` igual falla en tiempo de ejecución sin el runtime 8 físicamente presente). En macOS: `brew install dotnet@8` y anteponer `/opt/homebrew/opt/dotnet@8/bin` al `PATH` para esos comandos puntuales.
 
+Con `dotnet@8` en el `PATH`, buildear/correr **`backend/SmsBackend.csproj` directo**, no `SMS20.slnx` — el MSBuild que trae el SDK 8 no reconoce el formato `.slnx` (es más nuevo). `dotnet build`/`dotnet run` contra la carpeta `backend/` funcionan igual.
+
+`GET /health` hace un chequeo real contra la base (no solo "el proceso está vivo") — devuelve 503 si `SmsCentral` no responde.
+
 ## Aprovisionamiento de báscula (primer arranque)
 
 Cada instalación de báscula se identifica con un código corto de un solo uso, generado por el admin al pre-registrar la báscula en el panel central. Al primer arranque, el operador escribe ese código; la app lo cambia por la config completa de esa báscula (conexión serial/Ethernet, centro, impresora) más el snapshot inicial de `Maestro`, y queda operando offline desde ahí. Ver sección "Aprovisionamiento" del esquema de datos — el endpoint real (`POST /aprovisionamiento`) todavía es un placeholder en `electron/local-server.ts`.

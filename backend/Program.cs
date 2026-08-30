@@ -18,6 +18,10 @@ builder.Services.AddSwaggerGen();
 builder.Services.AddDbContext<SmsDbContext>(options =>
     options.UseSqlServer(builder.Configuration.GetConnectionString("SmsCentral")));
 
+// /health hace un SELECT 1 real contra SmsCentral — así sirve para probar
+// conectividad de verdad, no solo "el proceso está vivo".
+builder.Services.AddHealthChecks().AddDbContextCheck<SmsDbContext>("database");
+
 var app = builder.Build();
 
 if (app.Environment.IsDevelopment())
@@ -35,8 +39,7 @@ if (app.Environment.IsDevelopment())
 
 app.UseHttpsRedirection();
 
-app.MapGet("/health", () => Results.Ok(new { status = "ok" }))
-    .WithName("Health");
+app.MapHealthChecks("/health");
 
 app.MapTiposMovimiento();
 
