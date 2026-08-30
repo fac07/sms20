@@ -1,23 +1,41 @@
+import {
+  ApiOutlined,
+  AppstoreOutlined,
+  CheckCircleFilled,
+  EditOutlined,
+  ExportOutlined,
+  ImportOutlined,
+  MinusCircleFilled,
+  PlusOutlined,
+  StopOutlined,
+  SwapOutlined,
+} from '@ant-design/icons'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import {
   App,
   Button,
+  Card,
+  Col,
   Form,
   Input,
   Modal,
   Popconfirm,
+  Row,
   Select,
+  Statistic,
   Switch,
   Table,
   Tag,
+  Tooltip,
 } from 'antd'
 import type { ColumnsType } from 'antd/es/table'
-import { useState } from 'react'
+import { useMemo, useState } from 'react'
 import {
   actualizarTipoMovimiento,
   crearTipoMovimiento,
   desactivarTipoMovimiento,
   listarTiposMovimiento,
+  type DireccionMovimiento,
   type GuardarTipoMovimientoInput,
   type TipoMovimiento,
 } from '../../api/tiposMovimiento'
@@ -32,6 +50,51 @@ const CAMPOS_HABILITA: { name: keyof GuardarTipoMovimientoInput; label: string }
   { name: 'integracionD365', label: 'Integración D365' },
 ]
 
+const DIRECCION_UI: Record<
+  DireccionMovimiento,
+  { tagColor: string; iconColor: string; iconBg: string; icon: React.ReactNode }
+> = {
+  Entrada: { tagColor: 'green', iconColor: '#3F8F6E', iconBg: '#3F8F6E1a', icon: <ImportOutlined /> },
+  Salida: { tagColor: 'gold', iconColor: '#B8711F', iconBg: '#B8711F1a', icon: <ExportOutlined /> },
+  Transferencia: { tagColor: 'blue', iconColor: '#2F6FED', iconBg: '#2F6FED1a', icon: <SwapOutlined /> },
+}
+
+function StatCard({
+  title,
+  value,
+  icon,
+  color,
+}: {
+  title: string
+  value: number
+  icon: React.ReactNode
+  color: string
+}) {
+  return (
+    <Card
+      styles={{ body: { padding: '16px 20px', display: 'flex', alignItems: 'center', gap: 14 } }}
+    >
+      <div
+        style={{
+          width: 44,
+          height: 44,
+          borderRadius: 10,
+          background: `${color}1a`,
+          color,
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'center',
+          fontSize: 20,
+          flexShrink: 0,
+        }}
+      >
+        {icon}
+      </div>
+      <Statistic title={title} value={value} valueStyle={{ fontSize: 22 }} />
+    </Card>
+  )
+}
+
 export function TiposMovimientoPage() {
   const { message } = App.useApp()
   const queryClient = useQueryClient()
@@ -41,8 +104,18 @@ export function TiposMovimientoPage() {
 
   const { data: tipos, isLoading } = useQuery({
     queryKey: ['tipos-movimiento'],
-    queryFn: () => listarTiposMovimiento(),
+    queryFn: () => listarTiposMovimiento(true),
   })
+
+  const stats = useMemo(() => {
+    const lista = tipos ?? []
+    return {
+      total: lista.length,
+      activos: lista.filter((t) => t.activo).length,
+      inactivos: lista.filter((t) => !t.activo).length,
+      d365: lista.filter((t) => t.integracionD365 && t.activo).length,
+    }
+  }, [tipos])
 
   const invalidar = () => queryClient.invalidateQueries({ queryKey: ['tipos-movimiento'] })
 
@@ -115,45 +188,107 @@ export function TiposMovimientoPage() {
   }
 
   const columnas: ColumnsType<TipoMovimiento> = [
-    { title: 'Código', dataIndex: 'codigo', key: 'codigo' },
-    { title: 'Nombre', dataIndex: 'nombre', key: 'nombre' },
-    { title: 'Dirección', dataIndex: 'direccion', key: 'direccion' },
+    {
+      title: 'Tipo de movimiento',
+      key: 'nombre',
+      render: (_, tipo) => (
+        <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+          <div
+            style={{
+              width: 32,
+              height: 32,
+              borderRadius: 8,
+              background: DIRECCION_UI[tipo.direccion].iconBg,
+              color: DIRECCION_UI[tipo.direccion].iconColor,
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              flexShrink: 0,
+            }}
+          >
+            {DIRECCION_UI[tipo.direccion].icon}
+          </div>
+          <div>
+            <div style={{ fontWeight: 500 }}>{tipo.nombre}</div>
+            <div style={{ fontSize: 12, color: 'rgba(0,0,0,0.45)', fontFamily: 'monospace' }}>
+              {tipo.codigo}
+            </div>
+          </div>
+        </div>
+      ),
+    },
+    {
+      title: 'Dirección',
+      dataIndex: 'direccion',
+      key: 'direccion',
+      render: (direccion: DireccionMovimiento) => (
+        <Tag color={DIRECCION_UI[direccion].tagColor} icon={DIRECCION_UI[direccion].icon}>
+          {direccion}
+        </Tag>
+      ),
+    },
     {
       title: 'Secciones habilitadas',
       key: 'habilita',
       render: (_, tipo) => (
         <>
           {CAMPOS_HABILITA.filter(({ name }) => tipo[name]).map(({ name, label }) => (
-            <Tag key={name}>{label}</Tag>
+            <Tag key={name} color="purple" bordered={false}>
+              {label}
+            </Tag>
           ))}
         </>
       ),
+    },
+    {
+      title: 'D365',
+      dataIndex: 'integracionD365',
+      key: 'integracionD365',
+      align: 'center',
+      render: (habilitado: boolean) =>
+        habilitado ? (
+          <Tooltip title="Sincroniza a D365">
+            <ApiOutlined style={{ color: '#3F8F6E', fontSize: 16 }} />
+          </Tooltip>
+        ) : (
+          <span style={{ color: 'rgba(0,0,0,0.25)' }}>—</span>
+        ),
     },
     {
       title: 'Estado',
       dataIndex: 'activo',
       key: 'activo',
       render: (activo: boolean) => (
-        <Tag color={activo ? 'green' : 'default'}>{activo ? 'Activo' : 'Inactivo'}</Tag>
+        <Tag
+          color={activo ? 'success' : 'default'}
+          icon={activo ? <CheckCircleFilled /> : <MinusCircleFilled />}
+        >
+          {activo ? 'Activo' : 'Inactivo'}
+        </Tag>
       ),
     },
     {
       title: '',
       key: 'acciones',
+      align: 'right',
       render: (_, tipo) => (
         <>
-          <Button type="link" onClick={() => abrirModalEditar(tipo)}>
-            Editar
-          </Button>
+          <Tooltip title="Editar">
+            <Button
+              type="text"
+              icon={<EditOutlined />}
+              onClick={() => abrirModalEditar(tipo)}
+            />
+          </Tooltip>
           {tipo.activo && (
             <Popconfirm
               title="¿Desactivar este tipo de movimiento?"
               description="Las boletas ya creadas con este tipo no se ven afectadas."
               onConfirm={() => desactivar.mutate(tipo.id)}
             >
-              <Button type="link" danger>
-                Desactivar
-              </Button>
+              <Tooltip title="Desactivar">
+                <Button type="text" danger icon={<StopOutlined />} />
+              </Tooltip>
             </Popconfirm>
           )}
         </>
@@ -162,20 +297,54 @@ export function TiposMovimientoPage() {
   ]
 
   return (
-    <div style={{ padding: 24 }}>
-      <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 16 }}>
-        <h1>Tipos de movimiento</h1>
-        <Button type="primary" onClick={abrirModalCrear}>
-          Nuevo tipo de movimiento
-        </Button>
-      </div>
+    <div>
+      <Row gutter={16} style={{ marginBottom: 20 }}>
+        <Col span={6}>
+          <StatCard
+            title="Total"
+            value={stats.total}
+            icon={<AppstoreOutlined />}
+            color="#B8711F"
+          />
+        </Col>
+        <Col span={6}>
+          <StatCard
+            title="Activos"
+            value={stats.activos}
+            icon={<CheckCircleFilled />}
+            color="#3F8F6E"
+          />
+        </Col>
+        <Col span={6}>
+          <StatCard title="Con D365" value={stats.d365} icon={<ApiOutlined />} color="#2F6FED" />
+        </Col>
+        <Col span={6}>
+          <StatCard
+            title="Inactivos"
+            value={stats.inactivos}
+            icon={<StopOutlined />}
+            color="#8c8c8c"
+          />
+        </Col>
+      </Row>
 
-      <Table
-        rowKey="id"
-        columns={columnas}
-        dataSource={tipos}
-        loading={isLoading}
-      />
+      <Card
+        styles={{ body: { padding: 0 } }}
+        title="Catálogo"
+        extra={
+          <Button type="primary" icon={<PlusOutlined />} onClick={abrirModalCrear}>
+            Nuevo tipo de movimiento
+          </Button>
+        }
+      >
+        <Table
+          rowKey="id"
+          columns={columnas}
+          dataSource={tipos}
+          loading={isLoading}
+          pagination={{ pageSize: 10 }}
+        />
+      </Card>
 
       <Modal
         title={editando ? 'Editar tipo de movimiento' : 'Nuevo tipo de movimiento'}

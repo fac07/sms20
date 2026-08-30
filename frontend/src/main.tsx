@@ -10,7 +10,18 @@ const queryClient = new QueryClient()
 
 createRoot(document.getElementById('root')!).render(
   <StrictMode>
-    <ConfigProvider theme={{ token: { colorPrimary: '#B8711F' } }}>
+    <ConfigProvider
+      theme={{
+        token: {
+          // Mismos tokens semánticos del esquema de datos (documento vivo) —
+          // una sola paleta de marca en todo lo que el equipo produce.
+          colorPrimary: '#B8711F',
+          colorSuccess: '#3F8F6E',
+          colorError: '#B14A32',
+          borderRadius: 8,
+        },
+      }}
+    >
       <AntApp>
         <QueryClientProvider client={queryClient}>
           <HashRouter>
