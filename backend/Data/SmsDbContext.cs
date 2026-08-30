@@ -1,4 +1,5 @@
 using Microsoft.EntityFrameworkCore;
+using SmsBackend.Domain.Basculas;
 using SmsBackend.Domain.Maestros;
 using SmsBackend.Domain.TiposMovimiento;
 
@@ -9,6 +10,8 @@ public class SmsDbContext(DbContextOptions<SmsDbContext> options) : DbContext(op
     public DbSet<TipoMovimiento> TiposMovimiento => Set<TipoMovimiento>();
 
     public DbSet<Maestro> Maestros => Set<Maestro>();
+
+    public DbSet<Bascula> Basculas => Set<Bascula>();
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {

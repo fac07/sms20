@@ -1,0 +1,189 @@
+<nz-card [nzTitle]="'Básculas'" [nzExtra]="extraTpl" [nzBodyStyle]="{ padding: '0' }">
+  <ng-template #extraTpl>
+    <button nz-button nzType="primary" (click)="abrirModalCrear()">
+      <span nz-icon nzType="plus"></span>
+      Nueva báscula
+    </button>
+  </ng-template>
+
+  <nz-table #tabla [nzData]="basculas()" [nzLoading]="cargando()" [nzPageSize]="10">
+    <thead>
+      <tr>
+        <th>Código</th>
+        <th>Nombre</th>
+        <th>Centro</th>
+        <th>Conexión</th>
+        <th>Aprovisionamiento</th>
+        <th>Activa</th>
+        <th></th>
+      </tr>
+    </thead>
+    <tbody>
+      @for (b of tabla.data; track b.id) {
+        <tr>
+          <td class="codigo">{{ b.codigo }}</td>
+          <td>{{ b.nombre }}</td>
+          <td>{{ b.centroNombre ?? '—' }}</td>
+          <td>
+            <nz-tag [nzColor]="b.tipoConexion === 'Serial' ? 'blue' : 'purple'">
+              <span nz-icon [nzType]="b.tipoConexion === 'Serial' ? 'api' : 'swap'"></span>
+              {{ b.tipoConexion }}{{ b.tipoConexion === 'Serial' ? ' — ' + (b.puerto ?? '?') : ' — ' + (b.ip ?? '?') + ':' + (b.puertoTcp ?? '?') }}
+            </nz-tag>
+          </td>
+          <td>
+            @if (b.aprovisionada) {
+              <nz-tag nzColor="success">
+                <span nz-icon nzType="check-circle" nzTheme="fill"></span>
+                Aprovisionada
+              </nz-tag>
+            } @else if (b.tieneCodigoVigente) {
+              <nz-tag nzColor="warning">Código pendiente de usar</nz-tag>
+            } @else {
+              <nz-tag>Sin aprovisionar</nz-tag>
+            }
+          </td>
+          <td>
+            <nz-tag [nzColor]="b.activa ? 'success' : 'default'">
+              {{ b.activa ? 'Activa' : 'Inactiva' }}
+            </nz-tag>
+          </td>
+          <td class="acciones">
+            @if (!b.aprovisionada) {
+              <button
+                nz-button
+                nzType="text"
+                nz-tooltip
+                nzTooltipTitle="Generar código de aprovisionamiento"
+                (click)="generarCodigo(b)"
+              >
+                <span nz-icon nzType="import"></span>
+              </button>
+            }
+            <button nz-button nzType="text" nz-tooltip nzTooltipTitle="Editar" (click)="abrirModalEditar(b)">
+              <span nz-icon nzType="edit"></span>
+            </button>
+            @if (b.activa) {
+              <button
+                nz-button
+                nzType="text"
+                nzDanger
+                nz-tooltip
+                nzTooltipTitle="Desactivar"
+                nz-popconfirm
+                nzPopconfirmTitle="¿Desactivar esta báscula?"
+                (nzOnConfirm)="desactivar(b)"
+              >
+                <span nz-icon nzType="stop"></span>
+              </button>
+            }
+          </td>
+        </tr>
+      }
+    </tbody>
+  </nz-table>
+</nz-card>
+
+<nz-modal
+  [nzTitle]="editando() ? 'Editar báscula' : 'Nueva báscula'"
+  [nzVisible]="modalAbierto()"
+  [nzOkLoading]="guardando()"
+  nzOkText="Guardar"
+  nzCancelText="Cancelar"
+  (nzOnCancel)="cerrarModal()"
+  (nzOnOk)="guardar()"
+>
+  <ng-container *nzModalContent>
+    <form nz-form [formGroup]="form" nzLayout="vertical">
+      <nz-form-item>
+        <nz-form-label nzRequired>Código</nz-form-label>
+        <nz-form-control nzExtra="Namespace del correlativo de Boleta — no se puede repetir entre básculas.">
+          <input nz-input formControlName="codigo" placeholder="B01" />
+        </nz-form-control>
+      </nz-form-item>
+      <nz-form-item>
+        <nz-form-label nzRequired>Nombre</nz-form-label>
+        <nz-form-control>
+          <input nz-input formControlName="nombre" placeholder="Báscula 1 — Recepción" />
+        </nz-form-control>
+      </nz-form-item>
+      <nz-form-item>
+        <nz-form-label nzRequired>Centro</nz-form-label>
+        <nz-form-control>
+          <nz-select formControlName="centroId" nzPlaceHolder="Elegí el centro">
+            @for (centro of centros(); track centro.id) {
+              <nz-option [nzValue]="centro.id" [nzLabel]="centro.nombre"></nz-option>
+            }
+          </nz-select>
+        </nz-form-control>
+      </nz-form-item>
+      <nz-form-item>
+        <nz-form-label nzRequired>Tipo de conexión</nz-form-label>
+        <nz-form-control>
+          <nz-select formControlName="tipoConexion">
+            <nz-option nzValue="Serial" nzLabel="Serial"></nz-option>
+            <nz-option nzValue="Ethernet" nzLabel="Ethernet"></nz-option>
+          </nz-select>
+        </nz-form-control>
+      </nz-form-item>
+
+      @if (esSerial()) {
+        <nz-form-item>
+          <nz-form-label>Puerto</nz-form-label>
+          <nz-form-control>
+            <input nz-input formControlName="puerto" placeholder="COM3" />
+          </nz-form-control>
+        </nz-form-item>
+        <nz-form-item>
+          <nz-form-label>Velocidad (baudrate)</nz-form-label>
+          <nz-form-control>
+            <nz-input-number formControlName="velocidad" style="width: 100%" [nzMin]="0"></nz-input-number>
+          </nz-form-control>
+        </nz-form-item>
+        <nz-form-item>
+          <nz-form-label>Bits de datos</nz-form-label>
+          <nz-form-control>
+            <nz-input-number formControlName="bitsDatos" style="width: 100%" [nzMin]="0"></nz-input-number>
+          </nz-form-control>
+        </nz-form-item>
+      } @else {
+        <nz-form-item>
+          <nz-form-label>IP</nz-form-label>
+          <nz-form-control>
+            <input nz-input formControlName="ip" placeholder="192.168.1.50" />
+          </nz-form-control>
+        </nz-form-item>
+        <nz-form-item>
+          <nz-form-label>Puerto TCP</nz-form-label>
+          <nz-form-control>
+            <nz-input-number formControlName="puertoTcp" style="width: 100%" [nzMin]="0"></nz-input-number>
+          </nz-form-control>
+        </nz-form-item>
+      }
+
+      <nz-form-item>
+        <nz-form-label nz-tooltip nzTooltipTitle="Protocolo del indicador: serial con STX o transmisión continua tipo MT.">
+          Modo de comunicación
+        </nz-form-label>
+        <nz-form-control>
+          <input nz-input formControlName="modoComunicacion" placeholder="STX" />
+        </nz-form-control>
+      </nz-form-item>
+    </form>
+  </ng-container>
+</nz-modal>
+
+<nz-modal
+  nzTitle="Código de aprovisionamiento"
+  [nzVisible]="!!codigoGenerado()"
+  nzOkText="Listo"
+  [nzCancelText]="null"
+  (nzOnCancel)="cerrarCodigoGenerado()"
+  (nzOnOk)="cerrarCodigoGenerado()"
+>
+  <ng-container *nzModalContent>
+    @if (codigoGenerado(); as c) {
+      <p>Compartilo con quien instale esta báscula — vence el {{ c.expira | date: 'medium' }}.</p>
+      <div class="codigo-generado">{{ c.codigo }}</div>
+    }
+  </ng-container>
+</nz-modal>

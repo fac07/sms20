@@ -1,6 +1,7 @@
 using System.Text.Json.Serialization;
 using Microsoft.EntityFrameworkCore;
 using SmsBackend.Data;
+using SmsBackend.Domain.Basculas;
 using SmsBackend.Domain.Maestros;
 using SmsBackend.Domain.TiposMovimiento;
 
@@ -59,5 +60,6 @@ app.MapHealthChecks("/health");
 
 app.MapTiposMovimiento();
 app.MapMaestros();
+app.MapBasculas();
 
 app.Run();

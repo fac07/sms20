@@ -26,6 +26,8 @@ backend/     .NET 8 Web API — sync central, outbox, integración D365
              - Domain/Maestros/         catálogo genérico (piloto, transportista,
                equipo, producto, tercero, finca, almacén, centro) +
                flujo de ítems provisionales (Aprobar / Fusionar)
+             - Domain/Basculas/         config por punto de pesaje (Serial/Ethernet)
+               + generación del código de aprovisionamiento
              - Data/                    SmsDbContext + migraciones
 SMS20.slnx   Solución .NET (backend)
 ```

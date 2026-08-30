@@ -1,0 +1,20 @@
+.codigo {
+  font-family: monospace;
+}
+
+.acciones {
+  text-align: right;
+  white-space: nowrap;
+}
+
+.codigo-generado {
+  font-family: monospace;
+  font-size: 28px;
+  font-weight: 600;
+  letter-spacing: 4px;
+  text-align: center;
+  padding: 16px;
+  background: #f5f6f8;
+  border-radius: 8px;
+  margin-top: 12px;
+}

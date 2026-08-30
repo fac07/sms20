@@ -14,7 +14,7 @@ interface NavItem {
 }
 
 const NAV_ITEMS: NavItem[] = [
-  { path: '/basculas', icon: 'desktop', label: 'Básculas', disabled: true },
+  { path: '/basculas', icon: 'desktop', label: 'Básculas' },
   { path: '/tipos-movimiento', icon: 'appstore', label: 'Tipos de movimiento' },
   { path: '/maestros', icon: 'database', label: 'Maestros' },
   { path: '/boletas', icon: 'file-text', label: 'Boletas', disabled: true },
@@ -22,6 +22,7 @@ const NAV_ITEMS: NavItem[] = [
 ];
 
 const PAGE_TITLES: Record<string, string> = {
+  '/basculas': 'Básculas',
   '/tipos-movimiento': 'Tipos de movimiento',
   '/maestros': 'Maestros',
 };
