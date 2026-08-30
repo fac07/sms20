@@ -23,6 +23,9 @@ frontend/    Angular + ng-zorro-antd, empaquetado con Electron. Confirmado
 backend/     .NET 8 Web API — sync central, outbox, integración D365
              - Domain/TiposMovimiento/  catálogo configurable de tipos de
                movimiento (entidad EF Core, config, DTOs, endpoints)
+             - Domain/Maestros/         catálogo genérico (piloto, transportista,
+               equipo, producto, tercero, finca, almacén, centro) +
+               flujo de ítems provisionales (Aprobar / Fusionar)
              - Data/                    SmsDbContext + migraciones
 SMS20.slnx   Solución .NET (backend)
 ```

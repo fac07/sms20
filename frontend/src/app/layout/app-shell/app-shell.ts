@@ -16,13 +16,14 @@ interface NavItem {
 const NAV_ITEMS: NavItem[] = [
   { path: '/basculas', icon: 'desktop', label: 'Básculas', disabled: true },
   { path: '/tipos-movimiento', icon: 'appstore', label: 'Tipos de movimiento' },
-  { path: '/maestros', icon: 'database', label: 'Maestros', disabled: true },
+  { path: '/maestros', icon: 'database', label: 'Maestros' },
   { path: '/boletas', icon: 'file-text', label: 'Boletas', disabled: true },
   { path: '/reportes', icon: 'bar-chart', label: 'Reportes', disabled: true },
 ];
 
 const PAGE_TITLES: Record<string, string> = {
   '/tipos-movimiento': 'Tipos de movimiento',
+  '/maestros': 'Maestros',
 };
 
 @Component({

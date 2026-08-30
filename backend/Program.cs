@@ -1,6 +1,7 @@
 using System.Text.Json.Serialization;
 using Microsoft.EntityFrameworkCore;
 using SmsBackend.Data;
+using SmsBackend.Domain.Maestros;
 using SmsBackend.Domain.TiposMovimiento;
 
 var builder = WebApplication.CreateBuilder(args);
@@ -57,5 +58,6 @@ if (app.Environment.IsDevelopment())
 app.MapHealthChecks("/health");
 
 app.MapTiposMovimiento();
+app.MapMaestros();
 
 app.Run();

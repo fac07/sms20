@@ -1,0 +1,154 @@
+<nz-tabs [nzSelectedIndex]="tipos.indexOf(tipoActivo())" (nzSelectedIndexChange)="cambiarTipoPorIndice($event)">
+  @for (tipo of tipos; track tipo) {
+    <nz-tab [nzTitle]="tipo"></nz-tab>
+  }
+</nz-tabs>
+
+<nz-card [nzTitle]="tipoActivo()" [nzExtra]="extraTpl" [nzBodyStyle]="{ padding: '0' }">
+  <ng-template #extraTpl>
+    <button nz-button nzType="primary" (click)="abrirModalCrear()">
+      <span nz-icon nzType="plus"></span>
+      Nuevo {{ tipoActivo() }}
+    </button>
+  </ng-template>
+
+  <nz-table #tabla [nzData]="maestros()" [nzLoading]="cargando()" [nzPageSize]="10">
+    <thead>
+      <tr>
+        <th>Código</th>
+        <th>Nombre</th>
+        <th>Estado</th>
+        <th>Activo</th>
+        <th></th>
+      </tr>
+    </thead>
+    <tbody>
+      @for (m of tabla.data; track m.id) {
+        <tr>
+          <td class="codigo">{{ m.codigo }}</td>
+          <td>{{ m.nombre }}</td>
+          <td>
+            @if (m.estado === 'Provisional') {
+              <nz-tag nzColor="warning">Provisional</nz-tag>
+            } @else {
+              <nz-tag nzColor="success">Oficial</nz-tag>
+            }
+          </td>
+          <td>
+            <nz-tag [nzColor]="m.activo ? 'success' : 'default'">
+              {{ m.activo ? 'Activo' : 'Inactivo' }}
+            </nz-tag>
+          </td>
+          <td class="acciones">
+            @if (m.estado === 'Provisional') {
+              <button nz-button nzType="text" nz-tooltip nzTooltipTitle="Aprobar" (click)="aprobar(m)">
+                <span nz-icon nzType="check-circle" nzTheme="fill"></span>
+              </button>
+              <button nz-button nzType="text" nz-tooltip nzTooltipTitle="Fusionar con un oficial" (click)="abrirFusion(m)">
+                <span nz-icon nzType="swap"></span>
+              </button>
+            }
+            <button nz-button nzType="text" nz-tooltip nzTooltipTitle="Editar" (click)="abrirModalEditar(m)">
+              <span nz-icon nzType="edit"></span>
+            </button>
+            @if (m.activo) {
+              <button
+                nz-button
+                nzType="text"
+                nzDanger
+                nz-tooltip
+                nzTooltipTitle="Desactivar"
+                nz-popconfirm
+                nzPopconfirmTitle="¿Desactivar este ítem?"
+                (nzOnConfirm)="desactivar(m)"
+              >
+                <span nz-icon nzType="stop"></span>
+              </button>
+            }
+          </td>
+        </tr>
+      }
+    </tbody>
+  </nz-table>
+</nz-card>
+
+<nz-modal
+  [nzTitle]="editando() ? 'Editar ' + tipoActivo() : 'Nuevo ' + tipoActivo()"
+  [nzVisible]="modalAbierto()"
+  [nzOkLoading]="guardando()"
+  nzOkText="Guardar"
+  nzCancelText="Cancelar"
+  (nzOnCancel)="cerrarModal()"
+  (nzOnOk)="guardar()"
+>
+  <ng-container *nzModalContent>
+    <form nz-form [formGroup]="form" nzLayout="vertical">
+      <nz-form-item>
+        <nz-form-label nzRequired>Tipo de catálogo</nz-form-label>
+        <nz-form-control>
+          <nz-select formControlName="tipoCatalogo" [nzDisabled]="!!editando()">
+            @for (tipo of tipos; track tipo) {
+              <nz-option [nzValue]="tipo" [nzLabel]="tipo"></nz-option>
+            }
+          </nz-select>
+        </nz-form-control>
+      </nz-form-item>
+      <nz-form-item>
+        <nz-form-label nzRequired>Código</nz-form-label>
+        <nz-form-control>
+          <input nz-input formControlName="codigo" placeholder="P-001" />
+        </nz-form-control>
+      </nz-form-item>
+      <nz-form-item>
+        <nz-form-label nzRequired>Nombre</nz-form-label>
+        <nz-form-control>
+          <input nz-input formControlName="nombre" placeholder="Juan Pérez" />
+        </nz-form-control>
+      </nz-form-item>
+      <nz-form-item>
+        <nz-form-label
+          nz-tooltip
+          nzTooltipTitle="Campos que varían por tipo de catálogo (licencia, hectáreas, capacidad...) — JSON libre, opcional."
+        >
+          Datos adicionales (JSON)
+        </nz-form-label>
+        <nz-form-control>
+          <textarea nz-input formControlName="datosAdicionales" rows="3" placeholder='{"licencia": "A-12345"}'></textarea>
+        </nz-form-control>
+      </nz-form-item>
+    </form>
+  </ng-container>
+</nz-modal>
+
+<nz-modal
+  nzTitle="Fusionar ítem provisional"
+  [nzVisible]="!!fusionandoDesde()"
+  nzOkText="Fusionar"
+  nzCancelText="Cancelar"
+  [nzOkDisabled]="!oficialSeleccionado()"
+  (nzOnCancel)="cerrarFusion()"
+  (nzOnOk)="confirmarFusion()"
+>
+  <ng-container *nzModalContent>
+    @if (fusionandoDesde(); as provisional) {
+      <p>
+        "<strong>{{ provisional.nombre }}</strong>" ({{ provisional.codigo }}) se va a descartar y
+        quedar apuntando al ítem oficial que elijas acá.
+      </p>
+      @if (candidatosFusion().length === 0) {
+        <p class="sin-candidatos">No hay ítems oficiales activos de este tipo para fusionar todavía.</p>
+      } @else {
+        <nz-select
+          style="width: 100%"
+          nzPlaceHolder="Elegí el ítem oficial"
+          [ngModel]="oficialSeleccionado()"
+          (ngModelChange)="oficialSeleccionado.set($event)"
+        >
+          @for (candidato of candidatosFusion(); track candidato.id) {
+            <nz-option [nzValue]="candidato.id" [nzLabel]="candidato.codigo + ' — ' + candidato.nombre"></nz-option>
+          }
+        </nz-select>
+      }
+    }
+  </ng-container>
+</nz-modal>

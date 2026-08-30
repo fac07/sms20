@@ -1,0 +1,12 @@
+.codigo {
+  font-family: monospace;
+}
+
+.acciones {
+  text-align: right;
+  white-space: nowrap;
+}
+
+.sin-candidatos {
+  color: rgba(0, 0, 0, 0.45);
+}
