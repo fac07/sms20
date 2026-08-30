@@ -1,7 +1,4 @@
 <Solution>
-  <Folder Name="/agente-bascula/">
-    <Project Path="agente-bascula/SmsAgenteBascula.csproj" />
-  </Folder>
   <Folder Name="/backend/">
     <Project Path="backend/SmsBackend.csproj" />
   </Folder>

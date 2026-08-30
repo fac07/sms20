@@ -1,25 +1,26 @@
 import react from '@vitejs/plugin-react'
 import { defineConfig } from 'vite'
-import { VitePWA } from 'vite-plugin-pwa'
+import electron from 'vite-plugin-electron/simple'
+import renderer from 'vite-plugin-electron-renderer'
 
 // https://vite.dev/config/
 export default defineConfig({
   plugins: [
     react(),
-    VitePWA({
-      registerType: 'autoUpdate',
-      // Offline-first: la báscula debe seguir pesando sin conexión al central.
-      workbox: {
-        globPatterns: ['**/*.{js,css,html,ico,png,svg}'],
+    // La app corre empaquetada con Electron (instalador único, updates con
+    // electron-updater) — el offline-first lo dan el proceso principal
+    // (servidor HTTP local + SQLite embebida), no un service worker, así
+    // que no hace falta vite-plugin-pwa acá: sumaría una segunda capa de
+    // caché de assets que puede quedar desincronizada de lo que
+    // electron-updater ya reemplazó en disco.
+    electron({
+      main: {
+        entry: 'electron/main.ts',
       },
-      manifest: {
-        name: 'SMS 2.0 — Báscula',
-        short_name: 'SMS 2.0',
-        start_url: '/',
-        display: 'standalone',
-        background_color: '#0F151E',
-        theme_color: '#B8711F',
+      preload: {
+        input: 'electron/preload.ts',
       },
     }),
+    renderer(),
   ],
 })
