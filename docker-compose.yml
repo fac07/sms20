@@ -18,14 +18,15 @@ services:
     volumes:
       - sqlserver-data:/var/opt/mssql
     healthcheck:
-      test:
-        [
-          "CMD-SHELL",
-          "/opt/mssql-tools/bin/sqlcmd -S localhost -U sa -P \"$$MSSQL_SA_PASSWORD\" -Q 'SELECT 1' || exit 1",
-        ]
+      # La imagen de Azure SQL Edge no trae mssql-tools/sqlcmd (a diferencia
+      # de la imagen oficial de SQL Server) — probado a mano, no está.
+      # Chequeo el puerto directo con bash en vez de depender de una
+      # herramienta que puede no existir en la imagen.
+      test: ["CMD-SHELL", "bash -c '</dev/tcp/127.0.0.1/1433' || exit 1"]
       interval: 10s
       timeout: 5s
-      retries: 10
+      retries: 15
+      start_period: 40s
 
 volumes:
   sqlserver-data:

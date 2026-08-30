@@ -1,8 +1,16 @@
+using System.Text.Json.Serialization;
 using Microsoft.EntityFrameworkCore;
 using SmsBackend.Data;
 using SmsBackend.Domain.TiposMovimiento;
 
 var builder = WebApplication.CreateBuilder(args);
+
+// Enums como string en JSON (request y response) — coherente con cómo ya
+// los persistimos en SQL Server (HasConversion<string>()). Sin esto, System.Text.Json
+// espera/devuelve el número del enum por default, que nadie en el equipo
+// va a poder leer sin abrir el código.
+builder.Services.ConfigureHttpJsonOptions(options =>
+    options.SerializerOptions.Converters.Add(new JsonStringEnumConverter()));
 
 builder.Services.AddEndpointsApiExplorer();
 builder.Services.AddSwaggerGen();
