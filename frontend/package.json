@@ -24,10 +24,13 @@
     }
   },
   "dependencies": {
+    "@tanstack/react-query": "^5.102.8",
+    "antd": "^6.6.2",
     "better-sqlite3": "^13.0.3",
     "express": "^5.2.1",
     "react": "^19.2.8",
-    "react-dom": "^19.2.8"
+    "react-dom": "^19.2.8",
+    "react-router-dom": "^7.18.3"
   },
   "devDependencies": {
     "@electron/rebuild": "^4.2.0",
