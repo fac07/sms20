@@ -22,68 +22,57 @@ const PAGE_TITLES: Record<string, string> = {
   '/tipos-movimiento': 'Tipos de movimiento',
 }
 
+// Barra superior oscura + sidebar claro debajo, mismo esquema que NatPlus
+// (la app web interna de Naturaceites) en vez de un estilo propio aislado.
+const HEADER_BG = '#0D3B36'
+
 export function AppShell() {
   const navigate = useNavigate()
   const location = useLocation()
 
   return (
     <Layout style={{ minHeight: '100vh' }}>
-      <Sider theme="light" width={232} style={{ borderRight: '1px solid #f0f0f0' }}>
-        <div
-          style={{
-            height: 64,
-            display: 'flex',
-            alignItems: 'center',
-            gap: 10,
-            padding: '0 20px',
-          }}
-        >
+      <Header
+        style={{
+          background: HEADER_BG,
+          padding: '0 20px',
+          display: 'flex',
+          alignItems: 'center',
+          height: 56,
+          lineHeight: '56px',
+        }}
+      >
+        <Typography.Text strong style={{ fontSize: 17 }}>
+          <span style={{ color: '#4CB556' }}>SMS</span>{' '}
+          <span style={{ color: '#EFA400' }}>2.0</span>
+        </Typography.Text>
+      </Header>
+      <Layout>
+        <Sider theme="light" width={232} style={{ borderRight: '1px solid #f0f0f0' }}>
+          <Menu
+            mode="inline"
+            selectedKeys={[location.pathname]}
+            items={NAV_ITEMS}
+            onClick={({ key }) => navigate(key)}
+            style={{ borderInlineEnd: 'none', paddingTop: 8 }}
+          />
+        </Sider>
+        <Layout>
           <div
             style={{
-              width: 32,
-              height: 32,
-              borderRadius: 8,
-              background: '#B8711F',
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'center',
-              color: 'white',
-              fontWeight: 700,
-              fontSize: 14,
-              flexShrink: 0,
+              background: '#fff',
+              borderBottom: '1px solid #f0f0f0',
+              padding: '14px 24px',
             }}
           >
-            SMS
+            <Typography.Title level={4} style={{ margin: 0, color: HEADER_BG }}>
+              {PAGE_TITLES[location.pathname] ?? ''}
+            </Typography.Title>
           </div>
-          <Typography.Text strong style={{ fontSize: 16 }}>
-            SMS 2.0
-          </Typography.Text>
-        </div>
-        <Menu
-          mode="inline"
-          selectedKeys={[location.pathname]}
-          items={NAV_ITEMS}
-          onClick={({ key }) => navigate(key)}
-          style={{ borderInlineEnd: 'none' }}
-        />
-      </Sider>
-      <Layout>
-        <Header
-          style={{
-            background: '#fff',
-            borderBottom: '1px solid #f0f0f0',
-            padding: '0 24px',
-            display: 'flex',
-            alignItems: 'center',
-          }}
-        >
-          <Typography.Title level={4} style={{ margin: 0 }}>
-            {PAGE_TITLES[location.pathname] ?? ''}
-          </Typography.Title>
-        </Header>
-        <Content style={{ padding: 24, background: '#F5F6F8' }}>
-          <Outlet />
-        </Content>
+          <Content style={{ padding: 24, background: '#F5F6F8' }}>
+            <Outlet />
+          </Content>
+        </Layout>
       </Layout>
     </Layout>
   )

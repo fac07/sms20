@@ -13,12 +13,16 @@ createRoot(document.getElementById('root')!).render(
     <ConfigProvider
       theme={{
         token: {
-          // Mismos tokens semánticos del esquema de datos (documento vivo) —
-          // una sola paleta de marca en todo lo que el equipo produce.
-          colorPrimary: '#B8711F',
-          colorSuccess: '#3F8F6E',
-          colorError: '#B14A32',
-          borderRadius: 8,
+          // Paleta de NatPlus (nat+), la app web interna de Naturaceites —
+          // pedido explícito del usuario, para que esto se sienta parte de
+          // la misma familia de productos en vez de una isla con su propio
+          // estilo. Estimados a partir de capturas, no valores exactos de
+          // marca — ajustar si el equipo de NatPlus comparte los hex reales.
+          colorPrimary: '#2E8540',
+          colorSuccess: '#2E8540',
+          colorError: '#D64541',
+          colorInfo: '#0D3B36',
+          borderRadius: 6,
         },
       }}
     >
