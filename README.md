@@ -15,6 +15,8 @@ frontend/    React + Vite + TypeScript, empaquetado con Electron.
              - electron/local-server.ts  servidor HTTP local (Express)
              - electron/db.ts       SQLite embebida (better-sqlite3)
              - electron/preload.ts  contextBridge — puente mínimo hacia el renderer
+             - src/pages/          pantallas (Ant Design + TanStack Query)
+             - src/api/            clientes fetch tipados contra el backend central
 backend/     .NET 8 Web API — sync central, outbox, integración D365
              - Domain/TiposMovimiento/  catálogo configurable de tipos de
                movimiento (entidad EF Core, config, DTOs, endpoints)
@@ -59,6 +61,8 @@ cd backend && dotnet run
 Con `dotnet@8` en el `PATH`, buildear/correr **`backend/SmsBackend.csproj` directo**, no `SMS20.slnx` — el MSBuild que trae el SDK 8 no reconoce el formato `.slnx` (es más nuevo). `dotnet build`/`dotnet run` contra la carpeta `backend/` funcionan igual.
 
 `GET /health` hace un chequeo real contra la base (no solo "el proceso está vivo") — devuelve 503 si `SmsCentral` no responde.
+
+El frontend habla **directo** contra el backend central (`http://localhost:5094` hardcodeado en `src/api/`, sin `.env` — no hay secretos en esa URL), no a través del servidor local de Electron: eso es solo para datos que necesitan funcionar offline (Boleta), y `TipoMovimiento` es `scope: central` únicamente en el esquema. En dev hace falta la política de CORS que ya está en `Program.cs` (solo activa en Development) para que el renderer, servido desde el dev server de Vite, pueda pegarle al backend.
 
 ## Aprovisionamiento de báscula (primer arranque)
 
