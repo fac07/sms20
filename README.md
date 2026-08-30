@@ -28,6 +28,19 @@ No hay un proceso separado para leer la báscula — esa lógica vive dentro del
 
 - Node.js 20+
 - .NET 8 SDK
+- Docker (para la base de datos local — ver abajo)
+
+## Base de datos local (Docker)
+
+IT todavía no nos dio el SQL Server central — hasta que lo tengamos, se trabaja contra un contenedor local.
+
+```bash
+docker compose up -d
+```
+
+Levanta SQL Server en `localhost:1433` (usuario `sa`, password de desarrollo en `docker-compose.yml` — nunca sale de tu máquina, no es una credencial real). La imagen es `azure-sql-edge`, no la de SQL Server: en Apple Silicon la imagen oficial de Microsoft no tiene build nativo para arm64 y solo corre emulada; Azure SQL Edge sí es nativo y suficientemente compatible con T-SQL/EF Core para desarrollo. El `docker-compose.yml` trae comentado el cambio a la imagen oficial si preferís correrla emulada para tener paridad exacta.
+
+No hace falta correr `dotnet ef database update` a mano: el backend aplica las migraciones pendientes solo al arrancar en modo Development (ver `Program.cs`) — contra el SQL Server central real ese paso se saca y las migraciones van por un deploy explícito.
 
 ## Correr cada parte
 
@@ -35,7 +48,7 @@ No hay un proceso separado para leer la báscula — esa lógica vive dentro del
 # Frontend + Electron (dev)
 cd frontend && npm install && npm run dev
 
-# Backend
+# Backend (con el contenedor de la base ya levantado)
 cd backend && dotnet run
 ```
 
