@@ -16,6 +16,7 @@ frontend/    React + Vite + TypeScript, empaquetado con Electron.
              - electron/db.ts       SQLite embebida (better-sqlite3)
              - electron/preload.ts  contextBridge — puente mínimo hacia el renderer
              - src/pages/          pantallas (Ant Design + TanStack Query)
+             - src/layout/         AppShell — sidebar + header, sin nada de Electron adentro
              - src/api/            clientes fetch tipados contra el backend central
 backend/     .NET 8 Web API — sync central, outbox, integración D365
              - Domain/TiposMovimiento/  catálogo configurable de tipos de
@@ -55,6 +56,8 @@ cd backend && dotnet run
 ```
 
 `npm run build:app` empaqueta el instalador de escritorio con `electron-builder` (`postinstall` corre `electron-rebuild` para que `better-sqlite3` quede compilado contra el Node ABI de Electron, no el del sistema).
+
+`npm run build:web` genera un `dist/` plano (sin Electron adentro) para hostear el panel de administración por separado, en caso de que termine siendo web-accedido en vez de vivir dentro de la app de báscula — todavía sin confirmar con el cliente. Mismo código en los dos casos: las pantallas que hablan directo con el backend central (como `TipoMovimiento`) no dependen de Electron, así que no hace falta duplicar nada.
 
 `dotnet ef migrations add` / `dotnet ef database update` necesitan el **runtime de .NET 8** instalado, además del SDK que uses para todo lo demás (si tenés un SDK más nuevo como .NET 10, `dotnet-ef` igual falla en tiempo de ejecución sin el runtime 8 físicamente presente). En macOS: `brew install dotnet@8` y anteponer `/opt/homebrew/opt/dotnet@8/bin` al `PATH` para esos comandos puntuales.
 
