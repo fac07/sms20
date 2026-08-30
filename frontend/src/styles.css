@@ -1,0 +1,21 @@
+/* Paleta de NatPlus (nat+), la app web interna de Naturaceites — estimada a
+   partir de capturas, no valores exactos de marca. Ver AppShell para el
+   header oscuro + wordmark a dos tonos. */
+:root {
+  --ant-primary-color: #2e8540;
+  --ant-primary-color-hover: #3c9950;
+  --ant-primary-color-active: #256b34;
+  --ant-primary-color-outline: rgba(46, 133, 64, 0.2);
+
+  --ant-success-color: #2e8540;
+  --ant-success-color-hover: #3c9950;
+
+  --ant-error-color: #d64541;
+  --ant-error-color-hover: #de5f5b;
+
+  --ant-info-color: #0d3b36;
+}
+
+body {
+  margin: 0;
+}

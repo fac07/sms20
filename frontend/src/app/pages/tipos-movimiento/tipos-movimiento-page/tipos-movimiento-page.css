@@ -1,0 +1,59 @@
+.stats-row {
+  margin-bottom: 20px;
+}
+
+.stat-card {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+}
+
+.stat-icon {
+  width: 44px;
+  height: 44px;
+  border-radius: 10px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 20px;
+  flex-shrink: 0;
+}
+
+.tipo-cell {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.tipo-icon {
+  width: 32px;
+  height: 32px;
+  border-radius: 8px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+}
+
+.tipo-nombre {
+  font-weight: 500;
+}
+
+.tipo-codigo {
+  font-size: 12px;
+  color: rgba(0, 0, 0, 0.45);
+  font-family: monospace;
+}
+
+.dash {
+  color: rgba(0, 0, 0, 0.25);
+}
+
+.acciones {
+  text-align: right;
+  white-space: nowrap;
+}
+
+.switch-item {
+  margin-bottom: 8px;
+}

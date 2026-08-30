@@ -1,0 +1,188 @@
+<div nz-row [nzGutter]="16" class="stats-row">
+  <div nz-col [nzSpan]="6">
+    <nz-card>
+      <div class="stat-card">
+        <div class="stat-icon" style="background: #B8711F1a; color: #B8711F">
+          <span nz-icon nzType="appstore"></span>
+        </div>
+        <nz-statistic [nzTitle]="'Total'" [nzValue]="stats().total"></nz-statistic>
+      </div>
+    </nz-card>
+  </div>
+  <div nz-col [nzSpan]="6">
+    <nz-card>
+      <div class="stat-card">
+        <div class="stat-icon" style="background: #3F8F6E1a; color: #3F8F6E">
+          <span nz-icon nzType="check-circle" nzTheme="fill"></span>
+        </div>
+        <nz-statistic [nzTitle]="'Activos'" [nzValue]="stats().activos"></nz-statistic>
+      </div>
+    </nz-card>
+  </div>
+  <div nz-col [nzSpan]="6">
+    <nz-card>
+      <div class="stat-card">
+        <div class="stat-icon" style="background: #2F6FED1a; color: #2F6FED">
+          <span nz-icon nzType="api"></span>
+        </div>
+        <nz-statistic [nzTitle]="'Con D365'" [nzValue]="stats().d365"></nz-statistic>
+      </div>
+    </nz-card>
+  </div>
+  <div nz-col [nzSpan]="6">
+    <nz-card>
+      <div class="stat-card">
+        <div class="stat-icon" style="background: #8c8c8c1a; color: #8c8c8c">
+          <span nz-icon nzType="stop"></span>
+        </div>
+        <nz-statistic [nzTitle]="'Inactivos'" [nzValue]="stats().inactivos"></nz-statistic>
+      </div>
+    </nz-card>
+  </div>
+</div>
+
+<nz-card [nzTitle]="'Catálogo'" [nzExtra]="extraTpl" [nzBodyStyle]="{ padding: '0' }">
+  <ng-template #extraTpl>
+    <button nz-button nzType="primary" (click)="abrirModalCrear()">
+      <span nz-icon nzType="plus"></span>
+      Nuevo tipo de movimiento
+    </button>
+  </ng-template>
+
+  <nz-table #tabla [nzData]="tipos()" [nzLoading]="cargando()" [nzPageSize]="10">
+    <thead>
+      <tr>
+        <th>Tipo de movimiento</th>
+        <th>Dirección</th>
+        <th>Secciones habilitadas</th>
+        <th nzAlign="center">D365</th>
+        <th>Estado</th>
+        <th></th>
+      </tr>
+    </thead>
+    <tbody>
+      @for (tipo of tabla.data; track tipo.id) {
+        <tr>
+          <td>
+            <div class="tipo-cell">
+              <div
+                class="tipo-icon"
+                [style.background]="direccionUi[tipo.direccion].iconBg"
+                [style.color]="direccionUi[tipo.direccion].iconColor"
+              >
+                <span nz-icon [nzType]="direccionUi[tipo.direccion].icon"></span>
+              </div>
+              <div>
+                <div class="tipo-nombre">{{ tipo.nombre }}</div>
+                <div class="tipo-codigo">{{ tipo.codigo }}</div>
+              </div>
+            </div>
+          </td>
+          <td>
+            <nz-tag [nzColor]="direccionUi[tipo.direccion].tagColor">
+              <span nz-icon [nzType]="direccionUi[tipo.direccion].icon"></span>
+              {{ tipo.direccion }}
+            </nz-tag>
+          </td>
+          <td>
+            @for (label of seccionesHabilitadas(tipo); track label) {
+              <nz-tag [nzColor]="'purple'" [nzBordered]="false">{{ label }}</nz-tag>
+            }
+          </td>
+          <td nzAlign="center">
+            @if (tipo.integracionD365) {
+              <span nz-icon nzType="api" nz-tooltip nzTooltipTitle="Sincroniza a D365" style="color: #3F8F6E"></span>
+            } @else {
+              <span class="dash">—</span>
+            }
+          </td>
+          <td>
+            @if (tipo.activo) {
+              <nz-tag nzColor="success">
+                <span nz-icon nzType="check-circle" nzTheme="fill"></span>
+                Activo
+              </nz-tag>
+            } @else {
+              <nz-tag>
+                <span nz-icon nzType="minus-circle" nzTheme="fill"></span>
+                Inactivo
+              </nz-tag>
+            }
+          </td>
+          <td class="acciones">
+            <button
+              nz-button
+              nzType="text"
+              nz-tooltip
+              nzTooltipTitle="Editar"
+              (click)="abrirModalEditar(tipo)"
+            >
+              <span nz-icon nzType="edit"></span>
+            </button>
+            @if (tipo.activo) {
+              <button
+                nz-button
+                nzType="text"
+                nzDanger
+                nz-tooltip
+                nzTooltipTitle="Desactivar"
+                nz-popconfirm
+                nzPopconfirmTitle="¿Desactivar este tipo de movimiento?"
+                nzPopconfirmDescription="Las boletas ya creadas con este tipo no se ven afectadas."
+                (nzOnConfirm)="desactivar(tipo)"
+              >
+                <span nz-icon nzType="stop"></span>
+              </button>
+            }
+          </td>
+        </tr>
+      }
+    </tbody>
+  </nz-table>
+</nz-card>
+
+<nz-modal
+  [nzTitle]="editando() ? 'Editar tipo de movimiento' : 'Nuevo tipo de movimiento'"
+  [nzVisible]="modalAbierto()"
+  [nzOkLoading]="guardando()"
+  nzOkText="Guardar"
+  nzCancelText="Cancelar"
+  (nzOnCancel)="cerrarModal()"
+  (nzOnOk)="guardar()"
+>
+  <ng-container *nzModalContent>
+    <form nz-form [formGroup]="form" nzLayout="vertical">
+      <nz-form-item>
+        <nz-form-label nzRequired>Código</nz-form-label>
+        <nz-form-control>
+          <input nz-input formControlName="codigo" placeholder="ING-FRUTA" />
+        </nz-form-control>
+      </nz-form-item>
+      <nz-form-item>
+        <nz-form-label nzRequired>Nombre</nz-form-label>
+        <nz-form-control>
+          <input nz-input formControlName="nombre" placeholder="Ingreso de fruta" />
+        </nz-form-control>
+      </nz-form-item>
+      <nz-form-item>
+        <nz-form-label nzRequired>Dirección</nz-form-label>
+        <nz-form-control>
+          <nz-select formControlName="direccion">
+            <nz-option nzValue="Entrada" nzLabel="Entrada"></nz-option>
+            <nz-option nzValue="Salida" nzLabel="Salida"></nz-option>
+            <nz-option nzValue="Transferencia" nzLabel="Transferencia"></nz-option>
+          </nz-select>
+        </nz-form-control>
+      </nz-form-item>
+
+      @for (campo of camposHabilita; track campo.name) {
+        <nz-form-item class="switch-item">
+          <nz-form-label>{{ campo.label }}</nz-form-label>
+          <nz-form-control>
+            <nz-switch [formControlName]="campo.name"></nz-switch>
+          </nz-form-control>
+        </nz-form-item>
+      }
+    </form>
+  </ng-container>
+</nz-modal>

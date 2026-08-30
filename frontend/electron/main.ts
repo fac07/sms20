@@ -1,10 +1,7 @@
 import { app, BrowserWindow } from 'electron'
-import path from 'node:path'
-import { fileURLToPath } from 'node:url'
-import { startLocalServer } from './local-server.js'
-import { getDb } from './db.js'
-
-const __dirname = path.dirname(fileURLToPath(import.meta.url))
+import * as path from 'node:path'
+import { startLocalServer } from './local-server'
+import { getDb } from './db'
 
 // La UI (renderer) no toca SQLite ni el puerto serial directamente — todo pasa
 // por este servidor HTTP local. Es el mismo contrato que usará el backend
@@ -19,16 +16,17 @@ function createWindow() {
     width: 1280,
     height: 800,
     webPreferences: {
-      preload: path.join(__dirname, 'preload.mjs'),
+      preload: path.join(__dirname, 'preload.js'),
       contextIsolation: true,
       nodeIntegration: false,
     },
   })
 
-  if (process.env.VITE_DEV_SERVER_URL) {
-    mainWindow.loadURL(process.env.VITE_DEV_SERVER_URL)
+  const devServerUrl = process.env.ELECTRON_START_URL
+  if (devServerUrl) {
+    mainWindow.loadURL(devServerUrl)
   } else {
-    mainWindow.loadFile(path.join(__dirname, '../dist/index.html'))
+    mainWindow.loadFile(path.join(__dirname, '../dist/frontend-ng/browser/index.html'))
   }
 }
 

@@ -7,7 +7,9 @@ Esquema de datos y decisiones de diseño: [documento vivo](https://claude.ai/cod
 ## Estructura
 
 ```
-frontend/    React + Vite + TypeScript, empaquetado con Electron.
+frontend/    Angular + ng-zorro-antd, empaquetado con Electron. Confirmado
+             contra la diapositiva "Solución propuesta" del kickoff — el
+             stack acordado con NAT es Angular, no otro framework.
              La UI (renderer) no toca SQLite ni el puerto serial directo —
              le pide todo a un servidor HTTP local (127.0.0.1) que corre en
              el proceso principal de Electron. Mismo contrato online/offline.
@@ -15,9 +17,9 @@ frontend/    React + Vite + TypeScript, empaquetado con Electron.
              - electron/local-server.ts  servidor HTTP local (Express)
              - electron/db.ts       SQLite embebida (better-sqlite3)
              - electron/preload.ts  contextBridge — puente mínimo hacia el renderer
-             - src/pages/          pantallas (Ant Design + TanStack Query)
-             - src/layout/         AppShell — sidebar + header, sin nada de Electron adentro
-             - src/api/            clientes fetch tipados contra el backend central
+             - src/app/pages/       pantallas standalone (ng-zorro-antd)
+             - src/app/layout/      AppShell — sidebar + header, sin nada de Electron adentro
+             - src/app/api/         servicios HttpClient contra el backend central
 backend/     .NET 8 Web API — sync central, outbox, integración D365
              - Domain/TiposMovimiento/  catálogo configurable de tipos de
                movimiento (entidad EF Core, config, DTOs, endpoints)
@@ -25,7 +27,9 @@ backend/     .NET 8 Web API — sync central, outbox, integración D365
 SMS20.slnx   Solución .NET (backend)
 ```
 
-No hay un proceso separado para leer la báscula — esa lógica vive dentro del proceso principal de Electron (`electron/`), no en un servicio aparte. Antes de esta versión existía `agente-bascula/` como Worker Service .NET independiente; se dio de baja al confirmar la arquitectura real (Electron + IPC/servidor local, sin proceso separado).
+Los archivos de `electron/` son TypeScript/Node puro — no dependen de si el renderer es React o Angular, así que sobrevivieron intactos al cambio de framework (`electron:compile` los compila aparte con `tsc`, sin pasar por el build de Angular).
+
+No hay un proceso separado para leer la báscula — esa lógica vive dentro del proceso principal de Electron (`electron/`), no en un servicio aparte. Antes de esta versión existía `agente-bascula/` como Worker Service .NET independiente; se dio de baja al confirmar la arquitectura real (Electron + servidor local, sin proceso separado).
 
 ## Requisitos
 
@@ -48,7 +52,7 @@ No hace falta correr `dotnet ef database update` a mano: el backend aplica las m
 ## Correr cada parte
 
 ```bash
-# Frontend + Electron (dev)
+# Frontend + Electron (dev) — levanta `ng serve` y Electron juntos
 cd frontend && npm install && npm run dev
 
 # Backend (con el contenedor de la base ya levantado)
@@ -57,7 +61,7 @@ cd backend && dotnet run
 
 `npm run build:app` empaqueta el instalador de escritorio con `electron-builder` (`postinstall` corre `electron-rebuild` para que `better-sqlite3` quede compilado contra el Node ABI de Electron, no el del sistema).
 
-`npm run build:web` genera un `dist/` plano (sin Electron adentro) para hostear el panel de administración por separado, en caso de que termine siendo web-accedido en vez de vivir dentro de la app de báscula — todavía sin confirmar con el cliente. Mismo código en los dos casos: las pantallas que hablan directo con el backend central (como `TipoMovimiento`) no dependen de Electron, así que no hace falta duplicar nada.
+`npm run build:web` genera un `dist/` plano (sin Electron adentro) para hostear el panel de administración por separado, en caso de que termine siendo web-accedido en vez de vivir dentro de la app de báscula — todavía sin confirmar con el cliente, pero la diapositiva del kickoff ya lista "Panel de administración y reportería" bajo *Servidor central*, separado de la capa de báscula. Mismo código en los dos casos: las pantallas que hablan directo con el backend central (como `TipoMovimiento`) no dependen de Electron, así que no hace falta duplicar nada.
 
 `dotnet ef migrations add` / `dotnet ef database update` necesitan el **runtime de .NET 8** instalado, además del SDK que uses para todo lo demás (si tenés un SDK más nuevo como .NET 10, `dotnet-ef` igual falla en tiempo de ejecución sin el runtime 8 físicamente presente). En macOS: `brew install dotnet@8` y anteponer `/opt/homebrew/opt/dotnet@8/bin` al `PATH` para esos comandos puntuales.
 
@@ -65,7 +69,7 @@ Con `dotnet@8` en el `PATH`, buildear/correr **`backend/SmsBackend.csproj` direc
 
 `GET /health` hace un chequeo real contra la base (no solo "el proceso está vivo") — devuelve 503 si `SmsCentral` no responde.
 
-El frontend habla **directo** contra el backend central (`http://localhost:5094` hardcodeado en `src/api/`, sin `.env` — no hay secretos en esa URL), no a través del servidor local de Electron: eso es solo para datos que necesitan funcionar offline (Boleta), y `TipoMovimiento` es `scope: central` únicamente en el esquema. En dev hace falta la política de CORS que ya está en `Program.cs` (solo activa en Development) para que el renderer, servido desde el dev server de Vite, pueda pegarle al backend.
+El frontend habla **directo** contra el backend central (`http://localhost:5094` hardcodeado en `src/app/api/`, sin `.env` — no hay secretos en esa URL), no a través del servidor local de Electron: eso es solo para datos que necesitan funcionar offline (Boleta), y `TipoMovimiento` es `scope: central` únicamente en el esquema. En dev hace falta la política de CORS que ya está en `Program.cs` (solo activa en Development, apuntando a `http://localhost:4200`) para que el renderer pueda pegarle al backend.
 
 ## Aprovisionamiento de báscula (primer arranque)
 

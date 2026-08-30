@@ -15,15 +15,15 @@ builder.Services.ConfigureHttpJsonOptions(options =>
 builder.Services.AddEndpointsApiExplorer();
 builder.Services.AddSwaggerGen();
 
-// El renderer de Electron en dev carga desde el dev server de Vite
-// (http://localhost:5173), un origen distinto al del backend — sin esto el
+// El renderer de Electron en dev carga desde el dev server de Angular
+// (http://localhost:4200), un origen distinto al del backend — sin esto el
 // browser bloquea el fetch por CORS aunque el backend responda bien.
 // TODO: en producción el renderer carga por file:// (Origin nulo) — revisar
 // esta política cuando se arme el build de escritorio real.
 const string DevFrontendPolicy = "DevFrontend";
 builder.Services.AddCors(options =>
     options.AddPolicy(DevFrontendPolicy, policy =>
-        policy.WithOrigins("http://localhost:5173").AllowAnyHeader().AllowAnyMethod()));
+        policy.WithOrigins("http://localhost:4200").AllowAnyHeader().AllowAnyMethod()));
 
 builder.Services.AddDbContext<SmsDbContext>(options =>
     options.UseSqlServer(builder.Configuration.GetConnectionString("SmsCentral")));

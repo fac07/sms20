@@ -1,6 +1,6 @@
 import express from 'express'
 import type { Server } from 'node:http'
-import { getConfig } from './db.js'
+import { getConfig } from './db'
 
 let server: Server | null = null
 

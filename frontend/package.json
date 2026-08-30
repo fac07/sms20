@@ -1,53 +1,58 @@
 {
   "name": "frontend",
-  "private": true,
   "version": "0.0.0",
-  "type": "module",
   "main": "dist-electron/main.js",
   "scripts": {
-    "dev": "vite",
-    "build": "tsc -b && vite build",
-    "build:app": "tsc -b && vite build && electron-builder",
-    "build:web": "tsc -b && vite build --mode web",
+    "ng": "ng",
+    "start": "ng serve",
+    "electron:compile": "tsc -p electron/tsconfig.json",
+    "dev": "concurrently -k \"ng serve\" \"wait-on http://localhost:4200 && npm run electron:compile && cross-env ELECTRON_START_URL=http://localhost:4200 electron .\"",
+    "build": "ng build",
+    "build:web": "ng build",
+    "build:app": "ng build && npm run electron:compile && electron-builder",
     "postinstall": "electron-rebuild -f -w better-sqlite3",
-    "lint": "oxlint",
-    "preview": "vite preview"
+    "watch": "ng build --watch --configuration development",
+    "test": "ng test"
   },
+  "private": true,
+  "packageManager": "npm@11.17.0",
   "build": {
     "appId": "com.naturaceites.sms20",
     "productName": "SMS 2.0",
-    "files": [
-      "dist/**/*",
-      "dist-electron/**/*"
-    ],
+    "files": ["dist/**/*", "dist-electron/**/*"],
     "win": {
       "target": "nsis"
     }
   },
   "dependencies": {
-    "@ant-design/icons": "^6.3.2",
-    "@tanstack/react-query": "^5.102.8",
-    "antd": "^6.6.2",
+    "@angular/common": "^22.1.0",
+    "@angular/compiler": "^22.1.0",
+    "@angular/core": "^22.1.0",
+    "@angular/forms": "^22.1.0",
+    "@angular/platform-browser": "^22.1.0",
+    "@angular/router": "^22.1.0",
     "better-sqlite3": "^13.0.3",
     "express": "^5.2.1",
-    "react": "^19.2.8",
-    "react-dom": "^19.2.8",
-    "react-router-dom": "^7.18.3"
+    "ng-zorro-antd": "^22.0.1",
+    "rxjs": "~7.8.0",
+    "tslib": "^2.3.0"
   },
   "devDependencies": {
+    "@angular/build": "^22.1.6",
+    "@angular/cli": "^22.1.6",
+    "@angular/compiler-cli": "^22.1.0",
     "@electron/rebuild": "^4.2.0",
     "@types/better-sqlite3": "^9.6.0",
     "@types/express": "^5.0.6",
-    "@types/node": "^24.13.3",
-    "@types/react": "^19.2.18",
-    "@types/react-dom": "^19.2.4",
-    "@vitejs/plugin-react": "^6.1.0",
+    "@types/node": "^26.4.0",
+    "concurrently": "^10.0.5",
+    "cross-env": "^10.1.0",
     "electron": "^44.0.0",
     "electron-builder": "^26.15.3",
-    "oxlint": "^1.79.0",
+    "jsdom": "^28.0.0",
+    "prettier": "^3.8.1",
     "typescript": "~6.0.2",
-    "vite": "^8.2.2",
-    "vite-plugin-electron": "^1.1.1",
-    "vite-plugin-electron-renderer": "^1.0.0"
+    "vitest": "^4.0.8",
+    "wait-on": "^9.1.0"
   }
 }

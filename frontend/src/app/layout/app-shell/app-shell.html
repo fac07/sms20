@@ -1,0 +1,33 @@
+<nz-layout style="min-height: 100vh">
+  <nz-header class="app-header">
+    <span class="wordmark">
+      <span class="wordmark-sms">SMS</span>
+      <span class="wordmark-version">2.0</span>
+    </span>
+  </nz-header>
+  <nz-layout>
+    <nz-sider nzTheme="light" [nzWidth]="232" class="app-sider">
+      <ul nz-menu nzMode="inline" class="app-menu">
+        @for (item of navItems; track item.path) {
+          <li
+            nz-menu-item
+            [nzSelected]="currentPath() === item.path"
+            [nzDisabled]="item.disabled"
+            [routerLink]="item.disabled ? null : item.path"
+          >
+            <span nz-icon [nzType]="item.icon"></span>
+            <span>{{ item.label }}</span>
+          </li>
+        }
+      </ul>
+    </nz-sider>
+    <nz-layout>
+      <div class="app-page-title">
+        <h4>{{ pageTitle }}</h4>
+      </div>
+      <nz-content class="app-content">
+        <router-outlet />
+      </nz-content>
+    </nz-layout>
+  </nz-layout>
+</nz-layout>

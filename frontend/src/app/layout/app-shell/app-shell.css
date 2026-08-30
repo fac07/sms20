@@ -1,0 +1,49 @@
+/* Barra superior oscura + sidebar claro debajo, mismo esquema que NatPlus
+   (la app web interna de Naturaceites) en vez de un estilo propio aislado. */
+.app-header {
+  background: #0d3b36;
+  padding: 0 20px;
+  display: flex;
+  align-items: center;
+  height: 56px;
+  line-height: 56px;
+}
+
+.wordmark {
+  font-weight: 600;
+  font-size: 17px;
+}
+
+.wordmark-sms {
+  color: #4cb556;
+}
+
+.wordmark-version {
+  color: #efa400;
+  margin-left: 6px;
+}
+
+.app-sider {
+  border-right: 1px solid #f0f0f0;
+}
+
+.app-menu {
+  border-inline-end: none !important;
+  padding-top: 8px;
+}
+
+.app-page-title {
+  background: #fff;
+  border-bottom: 1px solid #f0f0f0;
+  padding: 14px 24px;
+}
+
+.app-page-title h4 {
+  margin: 0;
+  color: #0d3b36;
+}
+
+.app-content {
+  padding: 24px;
+  background: #f5f6f8;
+}
