@@ -3,6 +3,7 @@ using Microsoft.EntityFrameworkCore;
 using SmsBackend.Data;
 using SmsBackend.Domain.Basculas;
 using SmsBackend.Domain.Boletas;
+using SmsBackend.Domain.Boletas.Extensiones;
 using SmsBackend.Domain.Maestros;
 using SmsBackend.Domain.TiposMovimiento;
 
@@ -63,5 +64,6 @@ app.MapTiposMovimiento();
 app.MapMaestros();
 app.MapBasculas();
 app.MapBoletas();
+app.MapBoletaExtensiones();
 
 app.Run();

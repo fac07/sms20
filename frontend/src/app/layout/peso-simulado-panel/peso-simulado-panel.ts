@@ -21,6 +21,7 @@ interface EstadoLocal {
 }
 
 const POLL_MS = 2000;
+const CLAVE_MINIMIZADO = 'sms20:peso-simulado-panel:minimizado';
 
 /**
  * Panel flotante solo-dev: deja fijar "a mano" lo que la báscula está
@@ -40,6 +41,9 @@ export class PesoSimuladoPanel implements OnInit, OnDestroy {
   readonly visible = signal(false);
   readonly pesoInput = signal<number | null>(null);
   readonly lectura = signal<LecturaPeso>({ peso: null, origen: null });
+  // Recuerda si el panel estaba minimizado — tapa parte de la pantalla y no
+  // hace falta perder ese estado cada vez que se recarga.
+  readonly minimizado = signal(localStorage.getItem(CLAVE_MINIMIZADO) === '1');
 
   private intervalId: ReturnType<typeof setInterval> | null = null;
 
@@ -75,6 +79,12 @@ export class PesoSimuladoPanel implements OnInit, OnDestroy {
       .subscribe((lectura) => {
         if (lectura) this.lectura.set(lectura);
       });
+  }
+
+  alternarMinimizado(): void {
+    const nuevo = !this.minimizado();
+    this.minimizado.set(nuevo);
+    localStorage.setItem(CLAVE_MINIMIZADO, nuevo ? '1' : '0');
   }
 
   private actualizarLectura(): void {

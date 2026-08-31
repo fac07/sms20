@@ -1,0 +1,65 @@
+namespace SmsBackend.Domain.Boletas.Extensiones;
+
+public record BoletaCalidadDto(
+    Guid Id,
+    Guid BoletaId,
+    decimal? Acidez,
+    decimal? DOBI,
+    decimal? Humedad,
+    decimal? Temperatura,
+    string? NumeroRevisionQA);
+
+public record GuardarBoletaCalidadRequest(
+    decimal? Acidez,
+    decimal? DOBI,
+    decimal? Humedad,
+    decimal? Temperatura,
+    string? NumeroRevisionQA);
+
+public record BoletaDetalleFrutaDto(
+    Guid Id,
+    Guid BoletaId,
+    int RacimosVerdes,
+    int RacimosMaduros,
+    int RacimosSobreMaduros,
+    int RacimosPasados,
+    int PedunculoLargo,
+    decimal Sacos,
+    decimal Jornales,
+    decimal Hectareas);
+
+public record GuardarBoletaDetalleFrutaRequest(
+    int RacimosVerdes,
+    int RacimosMaduros,
+    int RacimosSobreMaduros,
+    int RacimosPasados,
+    int PedunculoLargo,
+    decimal Sacos,
+    decimal Jornales,
+    decimal Hectareas);
+
+public record BoletaCaracteristicaDto(
+    Guid Id,
+    Guid BoletaId,
+    string Clave,
+    string Valor,
+    string TipoDato);
+
+public record GuardarBoletaCaracteristicaRequest(
+    string Clave,
+    string Valor,
+    string TipoDato);
+
+public record BoletaComposteraDto(
+    Guid Id,
+    Guid BoletaId,
+    string CUI,
+    Guid CamaId,
+    Guid SeccionId,
+    Guid CicloId);
+
+public record GuardarBoletaComposteraRequest(
+    string CUI,
+    Guid CamaId,
+    Guid SeccionId,
+    Guid CicloId);

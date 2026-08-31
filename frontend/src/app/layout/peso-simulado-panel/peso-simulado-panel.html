@@ -1,22 +1,43 @@
 @if (visible()) {
-  <div class="peso-simulado-panel">
-    <div class="peso-simulado-panel__label">Simulador de peso (dev)</div>
+  @if (minimizado()) {
+    <button
+      type="button"
+      class="peso-simulado-panel__pastilla"
+      (click)="alternarMinimizado()"
+      title="Abrir simulador de peso (dev)"
+    >
+      ⚖ {{ lectura().peso ?? '—' }}
+    </button>
+  } @else {
+    <div class="peso-simulado-panel">
+      <div class="peso-simulado-panel__header">
+        <div class="peso-simulado-panel__label">Simulador de peso (dev)</div>
+        <button
+          type="button"
+          class="peso-simulado-panel__minimizar"
+          (click)="alternarMinimizado()"
+          title="Minimizar"
+        >
+          _
+        </button>
+      </div>
 
-    <input
-      class="peso-simulado-panel__input"
-      type="number"
-      placeholder="Peso"
-      [value]="pesoInput() ?? ''"
-      (input)="onInputChange($event)"
-    />
+      <input
+        class="peso-simulado-panel__input"
+        type="number"
+        placeholder="Peso"
+        [value]="pesoInput() ?? ''"
+        (input)="onInputChange($event)"
+      />
 
-    <div class="peso-simulado-panel__botones">
-      <button type="button" (click)="enviar('Bascula')">Enviar como Báscula</button>
-      <button type="button" (click)="enviar('Manual')">Enviar como Manual</button>
+      <div class="peso-simulado-panel__botones">
+        <button type="button" (click)="enviar('Bascula')">Enviar como Báscula</button>
+        <button type="button" (click)="enviar('Manual')">Enviar como Manual</button>
+      </div>
+
+      <div class="peso-simulado-panel__lectura">
+        Lectura actual: {{ lectura().peso ?? '—' }} ({{ lectura().origen ?? 'sin origen' }})
+      </div>
     </div>
-
-    <div class="peso-simulado-panel__lectura">
-      Lectura actual: {{ lectura().peso ?? '—' }} ({{ lectura().origen ?? 'sin origen' }})
-    </div>
-  </div>
+  }
 }

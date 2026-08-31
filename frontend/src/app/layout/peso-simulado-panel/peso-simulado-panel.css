@@ -15,10 +15,46 @@
   font-family: monospace;
 }
 
+.peso-simulado-panel__header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 8px;
+}
+
 .peso-simulado-panel__label {
   font-weight: bold;
   color: #0d3b36;
-  margin-bottom: 8px;
+}
+
+.peso-simulado-panel__minimizar {
+  cursor: pointer;
+  border: 1px solid #0d3b36;
+  background: #fff;
+  color: #0d3b36;
+  border-radius: 4px;
+  width: 20px;
+  height: 20px;
+  line-height: 1;
+  padding: 0;
+}
+
+/* Pastilla chica cuando está minimizado — no tapa la pantalla, pero sigue
+   mostrando la última lectura y queda a un click de reabrirse. */
+.peso-simulado-panel__pastilla {
+  position: fixed;
+  right: 16px;
+  bottom: 16px;
+  z-index: 9999;
+  cursor: pointer;
+  padding: 6px 10px;
+  background: #fff;
+  border: 2px solid #0d3b36;
+  border-radius: 999px;
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.25);
+  font-size: 12px;
+  font-family: monospace;
+  color: #0d3b36;
 }
 
 .peso-simulado-panel__input {
