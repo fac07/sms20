@@ -53,6 +53,7 @@ public static class BoletaExtensionesEndpoints
             }
 
             fila.Acidez = request.Acidez;
+            fila.Luz = request.Luz;
             fila.DOBI = request.DOBI;
             fila.Humedad = request.Humedad;
             fila.Temperatura = request.Temperatura;
@@ -115,52 +116,33 @@ public static class BoletaExtensionesEndpoints
                 return Results.NotFound($"No existe la boleta {boletaId}.");
             }
 
-            var filas = await db.BoletaDetalleFrutas.AsNoTracking()
-                .Where(d => d.BoletaId == boletaId)
-                .Select(d => ADto(d))
-                .ToListAsync();
-            return Results.Ok(filas);
+            var fila = await db.BoletaDetalleFrutas.AsNoTracking()
+                .FirstOrDefaultAsync(d => d.BoletaId == boletaId);
+            return fila is null ? Results.NotFound() : Results.Ok(ADto(fila));
         });
 
-        group.MapPost("/", async (Guid boletaId, GuardarBoletaDetalleFrutaRequest request, SmsDbContext db) =>
+        // Upsert — a lo sumo una fila de DetalleFruta por boleta.
+        group.MapPut("/", async (Guid boletaId, GuardarBoletaDetalleFrutaRequest request, SmsDbContext db) =>
         {
             var error = await ValidarGate(boletaId, tm => tm.HabilitaDetalleFruta, "DetalleFruta", db);
             if (error is not null) return error;
 
-            var fila = new BoletaDetalleFruta
+            var fila = await db.BoletaDetalleFrutas.FirstOrDefaultAsync(d => d.BoletaId == boletaId);
+            if (fila is null)
             {
-                Id = Guid.NewGuid(),
-                BoletaId = boletaId,
-                RacimosVerdes = request.RacimosVerdes,
-                RacimosMaduros = request.RacimosMaduros,
-                RacimosSobreMaduros = request.RacimosSobreMaduros,
-                RacimosPasados = request.RacimosPasados,
-                PedunculoLargo = request.PedunculoLargo,
-                Sacos = request.Sacos,
-                Jornales = request.Jornales,
-                Hectareas = request.Hectareas,
-            };
+                fila = new BoletaDetalleFruta { Id = Guid.NewGuid(), BoletaId = boletaId };
+                db.BoletaDetalleFrutas.Add(fila);
+            }
 
-            db.BoletaDetalleFrutas.Add(fila);
+            fila.RacimosVerdes = request.RacimosVerdes;
+            fila.RacimosMaduros = request.RacimosMaduros;
+            fila.RacimosSobreMaduros = request.RacimosSobreMaduros;
+            fila.RacimosPasados = request.RacimosPasados;
+            fila.PedunculoLargo = request.PedunculoLargo;
+
             await db.SaveChangesAsync();
 
-            return Results.Created($"/api/boletas/{boletaId}/detalle-fruta/{fila.Id}", ADto(fila));
-        });
-
-        // Hard delete acá está bien — a diferencia de Maestro/TipoMovimiento/
-        // Bascula/Boleta, un detalle de fruta cargado por error antes de
-        // cerrar la boleta no necesita rastro de auditoría propio; la boleta
-        // en sí ya lo tiene.
-        group.MapDelete("/{id:guid}", async (Guid boletaId, Guid id, SmsDbContext db) =>
-        {
-            var fila = await db.BoletaDetalleFrutas
-                .FirstOrDefaultAsync(d => d.Id == id && d.BoletaId == boletaId);
-            if (fila is null) return Results.NotFound();
-
-            db.BoletaDetalleFrutas.Remove(fila);
-            await db.SaveChangesAsync();
-
-            return Results.NoContent();
+            return Results.Ok(ADto(fila));
         });
     }
 
@@ -261,11 +243,11 @@ public static class BoletaExtensionesEndpoints
         db.Boletas.AsNoTracking().AnyAsync(b => b.Id == boletaId);
 
     private static BoletaCalidadDto ADto(BoletaCalidad c) => new(
-        c.Id, c.BoletaId, c.Acidez, c.DOBI, c.Humedad, c.Temperatura, c.NumeroRevisionQA);
+        c.Id, c.BoletaId, c.Acidez, c.Luz, c.DOBI, c.Humedad, c.Temperatura, c.NumeroRevisionQA);
 
     private static BoletaDetalleFrutaDto ADto(BoletaDetalleFruta d) => new(
         d.Id, d.BoletaId, d.RacimosVerdes, d.RacimosMaduros, d.RacimosSobreMaduros,
-        d.RacimosPasados, d.PedunculoLargo, d.Sacos, d.Jornales, d.Hectareas);
+        d.RacimosPasados, d.PedunculoLargo);
 
     private static BoletaComposteraDto ADto(BoletaCompostera c) => new(
         c.Id, c.BoletaId, c.CUI, c.CamaId, c.SeccionId, c.CicloId);

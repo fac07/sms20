@@ -102,6 +102,7 @@ export interface BoletaCalidadLocal {
   id: string;
   boletaId: string;
   acidez: number | null;
+  luz: number | null;
   dobi: number | null;
   humedad: number | null;
   temperatura: number | null;
@@ -110,6 +111,7 @@ export interface BoletaCalidadLocal {
 
 export interface GuardarBoletaCalidadInput {
   acidez: number | null;
+  luz: number | null;
   dobi: number | null;
   humedad: number | null;
   temperatura: number | null;
@@ -140,12 +142,9 @@ export interface BoletaDetalleFrutaLocal {
   racimosSobreMaduros: number;
   racimosPasados: number;
   pedunculoLargo: number;
-  sacos: number;
-  jornales: number;
-  hectareas: number;
 }
 
-export type AgregarBoletaDetalleFrutaInput = Omit<BoletaDetalleFrutaLocal, 'id' | 'boletaId'>;
+export type GuardarBoletaDetalleFrutaInput = Omit<BoletaDetalleFrutaLocal, 'id' | 'boletaId'>;
 
 export interface BoletaCaracteristicaLocal {
   id: string;
@@ -187,8 +186,9 @@ export class LocalServerService {
     return this.http.post<BoletaLocal>(`${LOCAL_SERVER_URL}/boletas/${id}/cerrar`, input);
   }
 
-  // Extensiones — Calidad y Compostera son upsert 1:1 por boleta (PUT),
-  // DetalleFruta y Caracteristica son colecciones 1:N (POST/DELETE por fila).
+  // Extensiones — Calidad, DetalleFruta y Compostera son upsert 1:1 por
+  // boleta (PUT); Caracteristica es la única colección 1:N (POST/DELETE por
+  // fila).
   obtenerCalidad(boletaId: string): Observable<BoletaCalidadLocal> {
     return this.http.get<BoletaCalidadLocal>(`${LOCAL_SERVER_URL}/boletas/${boletaId}/calidad`);
   }
@@ -211,24 +211,23 @@ export class LocalServerService {
     );
   }
 
-  listarDetalleFruta(boletaId: string): Observable<BoletaDetalleFrutaLocal[]> {
-    return this.http.get<BoletaDetalleFrutaLocal[]>(
+  // Un 404 acá es el caso normal de "nada guardado todavía" — el caller lo
+  // maneja (ver abrirDetalle() en pesaje-page), no es responsabilidad de
+  // este service.
+  obtenerDetalleFruta(boletaId: string): Observable<BoletaDetalleFrutaLocal> {
+    return this.http.get<BoletaDetalleFrutaLocal>(
       `${LOCAL_SERVER_URL}/boletas/${boletaId}/detalle-fruta`,
     );
   }
 
-  agregarDetalleFruta(
+  guardarDetalleFruta(
     boletaId: string,
-    input: AgregarBoletaDetalleFrutaInput,
+    input: GuardarBoletaDetalleFrutaInput,
   ): Observable<BoletaDetalleFrutaLocal> {
-    return this.http.post<BoletaDetalleFrutaLocal>(
+    return this.http.put<BoletaDetalleFrutaLocal>(
       `${LOCAL_SERVER_URL}/boletas/${boletaId}/detalle-fruta`,
       input,
     );
-  }
-
-  eliminarDetalleFruta(boletaId: string, id: string): Observable<void> {
-    return this.http.delete<void>(`${LOCAL_SERVER_URL}/boletas/${boletaId}/detalle-fruta/${id}`);
   }
 
   listarCaracteristicas(boletaId: string): Observable<BoletaCaracteristicaLocal[]> {

@@ -13,6 +13,7 @@ public class BoletaCalidadConfiguration : IEntityTypeConfiguration<BoletaCalidad
 
         // Lecturas/porcentajes, no pesos — decimal(8,2), no decimal(12,2).
         builder.Property(c => c.Acidez).HasColumnType("decimal(8,2)");
+        builder.Property(c => c.Luz).HasColumnType("decimal(8,2)");
         builder.Property(c => c.DOBI).HasColumnType("decimal(8,2)");
         builder.Property(c => c.Humedad).HasColumnType("decimal(8,2)");
         builder.Property(c => c.Temperatura).HasColumnType("decimal(8,2)");

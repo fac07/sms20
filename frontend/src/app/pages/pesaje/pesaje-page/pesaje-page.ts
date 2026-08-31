@@ -21,7 +21,6 @@ import { Maestro, MaestrosService } from '../../../api/maestros.service';
 import { TipoMovimiento, TiposMovimientoService } from '../../../api/tipos-movimiento.service';
 import {
   AgregarBoletaCaracteristicaInput,
-  AgregarBoletaDetalleFrutaInput,
   BoletaCalidadLocal,
   BoletaCaracteristicaLocal,
   BoletaComposteraLocal,
@@ -30,6 +29,7 @@ import {
   CerrarBoletaInput,
   CrearBoletaInput,
   EstadoLocal,
+  GuardarBoletaDetalleFrutaInput,
   LecturaPeso,
   LocalServerService,
 } from '../../../api/local-server.service';
@@ -110,8 +110,8 @@ export class PesajePage implements OnInit, OnDestroy {
   readonly calidad = signal<BoletaCalidadLocal | null>(null);
   readonly guardandoCompostera = signal(false);
   readonly compostera = signal<BoletaComposteraLocal | null>(null);
-  readonly detalleFruta = signal<BoletaDetalleFrutaLocal[]>([]);
-  readonly agregandoDetalleFruta = signal(false);
+  readonly guardandoDetalleFruta = signal(false);
+  readonly detalleFruta = signal<BoletaDetalleFrutaLocal | null>(null);
   readonly caracteristicas = signal<BoletaCaracteristicaLocal[]>([]);
   readonly agregandoCaracteristica = signal(false);
 
@@ -172,6 +172,7 @@ export class PesajePage implements OnInit, OnDestroy {
 
   readonly formCalidadCreacion = this.fb.nonNullable.group({
     acidez: [null as number | null],
+    luz: [null as number | null],
     dobi: [null as number | null],
     humedad: [null as number | null],
     temperatura: [null as number | null],
@@ -191,9 +192,6 @@ export class PesajePage implements OnInit, OnDestroy {
     racimosSobreMaduros: [0, Validators.required],
     racimosPasados: [0, Validators.required],
     pedunculoLargo: [0, Validators.required],
-    sacos: [0, Validators.required],
-    jornales: [0, Validators.required],
-    hectareas: [0, Validators.required],
   });
 
   readonly formCaracteristicaCreacion = this.fb.nonNullable.group({
@@ -201,11 +199,11 @@ export class PesajePage implements OnInit, OnDestroy {
     cantidad: [0, Validators.required],
   });
 
-  readonly detalleFrutaCreacion = signal<AgregarBoletaDetalleFrutaInput[]>([]);
   readonly caracteristicasCreacion = signal<AgregarBoletaCaracteristicaInput[]>([]);
 
   readonly formCalidad = this.fb.nonNullable.group({
     acidez: [null as number | null],
+    luz: [null as number | null],
     dobi: [null as number | null],
     humedad: [null as number | null],
     temperatura: [null as number | null],
@@ -225,9 +223,6 @@ export class PesajePage implements OnInit, OnDestroy {
     racimosSobreMaduros: [0, Validators.required],
     racimosPasados: [0, Validators.required],
     pedunculoLargo: [0, Validators.required],
-    sacos: [0, Validators.required],
-    jornales: [0, Validators.required],
-    hectareas: [0, Validators.required],
   });
 
   readonly formCaracteristica = this.fb.nonNullable.group({
@@ -356,32 +351,10 @@ export class PesajePage implements OnInit, OnDestroy {
     return this.caracteristicasCatalogo().find((m) => m.id === id)?.nombre ?? id;
   }
 
-  // Tabs de creación — "Agregar" acá solo empuja al array local, no hay
-  // boletaId todavía para llamar al servidor local. Mismo mini-form/reset
-  // que las contrapartes del modal de Detalle.
-  agregarDetalleFrutaCreacion(): void {
-    if (this.formDetalleFrutaCreacion.invalid) {
-      this.formDetalleFrutaCreacion.markAllAsTouched();
-      return;
-    }
-    const input: AgregarBoletaDetalleFrutaInput = this.formDetalleFrutaCreacion.getRawValue();
-    this.detalleFrutaCreacion.update((lista) => [...lista, input]);
-    this.formDetalleFrutaCreacion.reset({
-      racimosVerdes: 0,
-      racimosMaduros: 0,
-      racimosSobreMaduros: 0,
-      racimosPasados: 0,
-      pedunculoLargo: 0,
-      sacos: 0,
-      jornales: 0,
-      hectareas: 0,
-    });
-  }
-
-  eliminarDetalleFrutaCreacion(index: number): void {
-    this.detalleFrutaCreacion.update((lista) => lista.filter((_, i) => i !== index));
-  }
-
+  // Tab de creación — "Agregar" acá solo empuja al array local, no hay
+  // boletaId todavía para llamar al servidor local. Detalle de fruta ya no
+  // sigue este patrón (ver crearBoleta()): es 1:1, así que se guarda por
+  // dirty-check en la cascada, igual que Compostera.
   agregarCaracteristicaCreacion(): void {
     if (this.formCaracteristicaCreacion.invalid) {
       this.formCaracteristicaCreacion.markAllAsTouched();
@@ -488,14 +461,16 @@ export class PesajePage implements OnInit, OnDestroy {
       );
     }
 
-    for (const fila of this.detalleFrutaCreacion()) {
+    if (boleta.habilitaDetalleFruta && this.formDetalleFrutaCreacion.dirty) {
       llamadas.push(
-        this.localServer.agregarDetalleFruta(boleta.id, fila).pipe(
-          catchError(() => {
-            fallos.push('Detalle de fruta');
-            return of(null);
-          }),
-        ),
+        this.localServer
+          .guardarDetalleFruta(boleta.id, this.formDetalleFrutaCreacion.getRawValue())
+          .pipe(
+            catchError(() => {
+              fallos.push('Detalle de fruta');
+              return of(null);
+            }),
+          ),
       );
     }
 
@@ -520,15 +495,13 @@ export class PesajePage implements OnInit, OnDestroy {
   private finalizarCreacion(boleta: BoletaLocal, fallos: string[]): void {
     if (fallos.length > 0) {
       // Únicos duplicados posibles son la misma sección repetida, pero cada
-      // sección solo agrega una vez a `fallos` (Calidad/Compostera son 1
-      // llamada; DetalleFruta/Características pueden agregar varias veces,
-      // una por fila fallida — se muestra tal cual, es información real).
+      // sección solo agrega una vez a `fallos` (Calidad/DetalleFruta/
+      // Compostera son 1 llamada; Características puede agregar varias
+      // veces, una por fila fallida — se muestra tal cual, es información real).
       this.message.error(`Boleta ${boleta.numeroBoleta} creada, pero no se pudo guardar: ${fallos.join(', ')}.`);
     } else {
       const extras: string[] = [];
-      const detalleCount = this.detalleFrutaCreacion().length;
       const caracteristicasCount = this.caracteristicasCreacion().length;
-      if (detalleCount > 0) extras.push(`${detalleCount} fila(s) de detalle de fruta`);
       if (caracteristicasCount > 0) extras.push(`${caracteristicasCount} característica(s)`);
       const sufijo = extras.length > 0 ? ` (${extras.join(', ')})` : '';
       this.message.success(`Boleta ${boleta.numeroBoleta} creada.${sufijo}`);
@@ -552,6 +525,7 @@ export class PesajePage implements OnInit, OnDestroy {
     });
     this.formCalidadCreacion.reset({
       acidez: null,
+      luz: null,
       dobi: null,
       humedad: null,
       temperatura: null,
@@ -564,12 +538,8 @@ export class PesajePage implements OnInit, OnDestroy {
       racimosSobreMaduros: 0,
       racimosPasados: 0,
       pedunculoLargo: 0,
-      sacos: 0,
-      jornales: 0,
-      hectareas: 0,
     });
     this.formCaracteristicaCreacion.reset({ caracteristicaId: '', cantidad: 0 });
-    this.detalleFrutaCreacion.set([]);
     this.caracteristicasCreacion.set([]);
     this.tabActivaCreacion.set(0);
   }
@@ -619,6 +589,7 @@ export class PesajePage implements OnInit, OnDestroy {
     this.boletaDetalle.set(boleta);
     this.formCalidad.reset({
       acidez: null,
+      luz: null,
       dobi: null,
       humedad: null,
       temperatura: null,
@@ -631,14 +602,11 @@ export class PesajePage implements OnInit, OnDestroy {
       racimosSobreMaduros: 0,
       racimosPasados: 0,
       pedunculoLargo: 0,
-      sacos: 0,
-      jornales: 0,
-      hectareas: 0,
     });
     this.formCaracteristica.reset({ caracteristicaId: '', cantidad: 0 });
     this.calidad.set(null);
     this.compostera.set(null);
-    this.detalleFruta.set([]);
+    this.detalleFruta.set(null);
     this.caracteristicas.set([]);
 
     this.cargandoDetalle.set(true);
@@ -666,13 +634,15 @@ export class PesajePage implements OnInit, OnDestroy {
       : of(null);
 
     const detalleFruta$ = boleta.habilitaDetalleFruta
-      ? this.localServer.listarDetalleFruta(boleta.id).pipe(
+      ? this.localServer.obtenerDetalleFruta(boleta.id).pipe(
           catchError((err) => {
-            this.message.error(err?.error?.error ?? 'No se pudo cargar Detalle de fruta.');
-            return of([] as BoletaDetalleFrutaLocal[]);
+            if (err?.status !== 404) {
+              this.message.error(err?.error?.error ?? 'No se pudo cargar Detalle de fruta.');
+            }
+            return of(null);
           }),
         )
-      : of([] as BoletaDetalleFrutaLocal[]);
+      : of(null);
 
     const caracteristicas$ = this.localServer.listarCaracteristicas(boleta.id).pipe(
       catchError((err) => {
@@ -696,6 +666,7 @@ export class PesajePage implements OnInit, OnDestroy {
       if (calidad) {
         this.formCalidad.patchValue({
           acidez: calidad.acidez,
+          luz: calidad.luz,
           dobi: calidad.dobi,
           humedad: calidad.humedad,
           temperatura: calidad.temperatura,
@@ -710,6 +681,15 @@ export class PesajePage implements OnInit, OnDestroy {
           cicloId: compostera.cicloId,
         });
       }
+      if (detalleFruta) {
+        this.formDetalleFruta.patchValue({
+          racimosVerdes: detalleFruta.racimosVerdes,
+          racimosMaduros: detalleFruta.racimosMaduros,
+          racimosSobreMaduros: detalleFruta.racimosSobreMaduros,
+          racimosPasados: detalleFruta.racimosPasados,
+          pedunculoLargo: detalleFruta.pedunculoLargo,
+        });
+      }
     });
   }
 
@@ -717,7 +697,7 @@ export class PesajePage implements OnInit, OnDestroy {
     this.boletaDetalle.set(null);
     this.calidad.set(null);
     this.compostera.set(null);
-    this.detalleFruta.set([]);
+    this.detalleFruta.set(null);
     this.caracteristicas.set([]);
   }
 
@@ -765,7 +745,7 @@ export class PesajePage implements OnInit, OnDestroy {
     });
   }
 
-  agregarDetalleFruta(): void {
+  guardarDetalleFruta(): void {
     if (this.formDetalleFruta.invalid) {
       this.formDetalleFruta.markAllAsTouched();
       return;
@@ -773,39 +753,19 @@ export class PesajePage implements OnInit, OnDestroy {
     const boleta = this.boletaDetalle();
     if (!boleta) return;
 
-    const input: AgregarBoletaDetalleFrutaInput = this.formDetalleFruta.getRawValue();
+    const input: GuardarBoletaDetalleFrutaInput = this.formDetalleFruta.getRawValue();
 
-    this.agregandoDetalleFruta.set(true);
-    this.localServer.agregarDetalleFruta(boleta.id, input).subscribe({
+    this.guardandoDetalleFruta.set(true);
+    this.localServer.guardarDetalleFruta(boleta.id, input).subscribe({
       next: (detalle) => {
-        this.message.success('Detalle de fruta agregado.');
-        this.detalleFruta.update((lista) => [...lista, detalle]);
-        this.agregandoDetalleFruta.set(false);
-        this.formDetalleFruta.reset({
-          racimosVerdes: 0,
-          racimosMaduros: 0,
-          racimosSobreMaduros: 0,
-          racimosPasados: 0,
-          pedunculoLargo: 0,
-          sacos: 0,
-          jornales: 0,
-          hectareas: 0,
-        });
+        this.message.success('Detalle de fruta guardado.');
+        this.detalleFruta.set(detalle);
+        this.guardandoDetalleFruta.set(false);
       },
       error: (err) => {
-        this.message.error(err?.error?.error ?? 'No se pudo agregar el detalle de fruta.');
-        this.agregandoDetalleFruta.set(false);
+        this.message.error(err?.error?.error ?? 'No se pudo guardar el detalle de fruta.');
+        this.guardandoDetalleFruta.set(false);
       },
-    });
-  }
-
-  eliminarDetalleFruta(id: string): void {
-    const boleta = this.boletaDetalle();
-    if (!boleta) return;
-
-    this.localServer.eliminarDetalleFruta(boleta.id, id).subscribe({
-      next: () => this.detalleFruta.update((lista) => lista.filter((d) => d.id !== id)),
-      error: (err) => this.message.error(err?.error?.error ?? 'No se pudo eliminar el detalle de fruta.'),
     });
   }
 

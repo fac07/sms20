@@ -11,11 +11,12 @@ public class BoletaDetalleFrutaConfiguration : IEntityTypeConfiguration<BoletaDe
 
         builder.HasKey(d => d.Id);
 
-        builder.Property(d => d.Sacos).HasColumnType("decimal(10,2)");
-        builder.Property(d => d.Jornales).HasColumnType("decimal(10,2)");
-        builder.Property(d => d.Hectareas).HasColumnType("decimal(10,2)");
+        // 1:1 — a lo sumo una fila de detalle de fruta por boleta, enforced en la BD.
+        builder.HasIndex(d => d.BoletaId).IsUnique();
 
-        // 1:N — sin índice único, una boleta puede traer varios envíos.
+        // Restrict — una fila de extensión nunca sobrevive al borrado de su
+        // boleta, aunque las boletas en este sistema nunca se borran duro de
+        // todas formas; Restrict es solo consistente con el resto del esquema.
         builder.HasOne<Boleta>()
             .WithMany()
             .HasForeignKey(d => d.BoletaId)

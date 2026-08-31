@@ -3,21 +3,20 @@ import express from 'express'
 import type { Server } from 'node:http'
 import {
   agregarBoletaCaracteristicaLocal,
-  agregarBoletaDetalleFrutaLocal,
   anularBoletaLocal,
   cerrarBoletaLocal,
   crearBoletaLocal,
   eliminarBoletaCaracteristicaLocal,
-  eliminarBoletaDetalleFrutaLocal,
   getConfig,
   guardarBoletaCalidadLocal,
   guardarBoletaComposteraLocal,
+  guardarBoletaDetalleFrutaLocal,
   listarBoletaCaracteristicaLocal,
-  listarBoletaDetalleFrutaLocal,
   listarBoletasLocal,
   listarOutboxLocal,
   obtenerBoletaCalidadLocal,
   obtenerBoletaComposteraLocal,
+  obtenerBoletaDetalleFrutaLocal,
   obtenerBoletaLocal,
   setConfig,
 } from './db'
@@ -280,8 +279,9 @@ export function startLocalServer(port: number, esDev: boolean): Server {
       return
     }
 
-    const { acidez, dobi, humedad, temperatura, numeroRevisionQA } = req.body as {
+    const { acidez, luz, dobi, humedad, temperatura, numeroRevisionQA } = req.body as {
       acidez?: number | null
+      luz?: number | null
       dobi?: number | null
       humedad?: number | null
       temperatura?: number | null
@@ -290,16 +290,20 @@ export function startLocalServer(port: number, esDev: boolean): Server {
 
     if (
       !esNumeroONulo(acidez) ||
+      !esNumeroONulo(luz) ||
       !esNumeroONulo(dobi) ||
       !esNumeroONulo(humedad) ||
       !esNumeroONulo(temperatura)
     ) {
-      res.status(400).json({ error: 'Acidez, DOBI, Humedad y Temperatura deben ser números o nulos.' })
+      res
+        .status(400)
+        .json({ error: 'Acidez, Luz, DOBI, Humedad y Temperatura deben ser números o nulos.' })
       return
     }
 
     const calidad = guardarBoletaCalidadLocal(req.params.id, {
       acidez: acidez ?? null,
+      luz: luz ?? null,
       dobi: dobi ?? null,
       humedad: humedad ?? null,
       temperatura: temperatura ?? null,
@@ -354,10 +358,16 @@ export function startLocalServer(port: number, esDev: boolean): Server {
       res.status(404).json({ error: 'No existe esa boleta.' })
       return
     }
-    res.json(listarBoletaDetalleFrutaLocal(req.params.id))
+
+    const detalle = obtenerBoletaDetalleFrutaLocal(req.params.id)
+    if (!detalle) {
+      res.status(404).json({ error: 'Esta boleta no tiene datos de detalle de fruta.' })
+      return
+    }
+    res.json(detalle)
   })
 
-  app.post('/boletas/:id/detalle-fruta', (req, res) => {
+  app.put('/boletas/:id/detalle-fruta', (req, res) => {
     const habilitada = boletaHabilita(req.params.id, 'habilitaDetalleFruta')
     if (habilitada === null) {
       res.status(404).json({ error: 'No existe esa boleta.' })
@@ -374,9 +384,6 @@ export function startLocalServer(port: number, esDev: boolean): Server {
       racimosSobreMaduros?: number
       racimosPasados?: number
       pedunculoLargo?: number
-      sacos?: number
-      jornales?: number
-      hectareas?: number
     }
 
     const campos = [
@@ -385,38 +392,23 @@ export function startLocalServer(port: number, esDev: boolean): Server {
       body.racimosSobreMaduros,
       body.racimosPasados,
       body.pedunculoLargo,
-      body.sacos,
-      body.jornales,
-      body.hectareas,
     ]
     if (campos.some((v) => typeof v !== 'number' || !Number.isFinite(v))) {
       res.status(400).json({
         error:
-          'racimosVerdes, racimosMaduros, racimosSobreMaduros, racimosPasados, pedunculoLargo, sacos, jornales y hectareas deben ser números.',
+          'racimosVerdes, racimosMaduros, racimosSobreMaduros, racimosPasados y pedunculoLargo deben ser números.',
       })
       return
     }
 
-    const detalle = agregarBoletaDetalleFrutaLocal(req.params.id, {
+    const detalle = guardarBoletaDetalleFrutaLocal(req.params.id, {
       racimosVerdes: body.racimosVerdes!,
       racimosMaduros: body.racimosMaduros!,
       racimosSobreMaduros: body.racimosSobreMaduros!,
       racimosPasados: body.racimosPasados!,
       pedunculoLargo: body.pedunculoLargo!,
-      sacos: body.sacos!,
-      jornales: body.jornales!,
-      hectareas: body.hectareas!,
     })
-    res.status(201).json(detalle)
-  })
-
-  app.delete('/boletas/:id/detalle-fruta/:detalleId', (req, res) => {
-    const borrado = eliminarBoletaDetalleFrutaLocal(req.params.id, req.params.detalleId)
-    if (!borrado) {
-      res.status(404).json({ error: 'No existe ese detalle de fruta.' })
-      return
-    }
-    res.status(204).end()
+    res.json(detalle)
   })
 
   // Ungated — Caracteristica es el escape hatch genérico, igual que en el

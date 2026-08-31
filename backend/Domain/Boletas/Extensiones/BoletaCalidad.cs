@@ -14,6 +14,8 @@ public class BoletaCalidad
 
     public decimal? Acidez { get; set; }
 
+    public decimal? Luz { get; set; }
+
     public decimal? DOBI { get; set; }
 
     public decimal? Humedad { get; set; }

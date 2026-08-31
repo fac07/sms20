@@ -4,6 +4,7 @@ public record BoletaCalidadDto(
     Guid Id,
     Guid BoletaId,
     decimal? Acidez,
+    decimal? Luz,
     decimal? DOBI,
     decimal? Humedad,
     decimal? Temperatura,
@@ -11,6 +12,7 @@ public record BoletaCalidadDto(
 
 public record GuardarBoletaCalidadRequest(
     decimal? Acidez,
+    decimal? Luz,
     decimal? DOBI,
     decimal? Humedad,
     decimal? Temperatura,
@@ -23,20 +25,14 @@ public record BoletaDetalleFrutaDto(
     int RacimosMaduros,
     int RacimosSobreMaduros,
     int RacimosPasados,
-    int PedunculoLargo,
-    decimal Sacos,
-    decimal Jornales,
-    decimal Hectareas);
+    int PedunculoLargo);
 
 public record GuardarBoletaDetalleFrutaRequest(
     int RacimosVerdes,
     int RacimosMaduros,
     int RacimosSobreMaduros,
     int RacimosPasados,
-    int PedunculoLargo,
-    decimal Sacos,
-    decimal Jornales,
-    decimal Hectareas);
+    int PedunculoLargo);
 
 public record BoletaCaracteristicaDto(
     Guid Id,

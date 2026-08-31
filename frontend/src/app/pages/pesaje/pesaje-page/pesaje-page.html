@@ -200,6 +200,12 @@
                     </nz-form-control>
                   </nz-form-item>
                   <nz-form-item>
+                    <nz-form-label>Luz</nz-form-label>
+                    <nz-form-control>
+                      <nz-input-number formControlName="luz" style="width: 100%"></nz-input-number>
+                    </nz-form-control>
+                  </nz-form-item>
+                  <nz-form-item>
                     <nz-form-label>DOBI</nz-form-label>
                     <nz-form-control>
                       <nz-input-number formControlName="dobi" style="width: 100%"></nz-input-number>
@@ -232,114 +238,45 @@
         @if (tm.habilitaDetalleFruta) {
           <nz-tab nzTitle="Detalle de fruta">
             <ng-template nz-tab>
-              <div class="tab-contenido">
-                <nz-table [nzData]="detalleFrutaCreacion()" [nzShowPagination]="false" nzSize="small">
-                  <thead>
-                    <tr>
-                      <th>Verdes</th>
-                      <th>Maduros</th>
-                      <th>SobreMaduros</th>
-                      <th>Pasados</th>
-                      <th>Pedúnculo largo</th>
-                      <th>Sacos</th>
-                      <th>Jornales</th>
-                      <th>Hectáreas</th>
-                      <th></th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    @for (d of detalleFrutaCreacion(); track $index) {
-                      <tr>
-                        <td>{{ d.racimosVerdes }}</td>
-                        <td>{{ d.racimosMaduros }}</td>
-                        <td>{{ d.racimosSobreMaduros }}</td>
-                        <td>{{ d.racimosPasados }}</td>
-                        <td>{{ d.pedunculoLargo }}</td>
-                        <td>{{ d.sacos }}</td>
-                        <td>{{ d.jornales }}</td>
-                        <td>{{ d.hectareas }}</td>
-                        <td class="acciones">
-                          <button
-                            nz-button
-                            nzType="text"
-                            nzDanger
-                            type="button"
-                            (click)="eliminarDetalleFrutaCreacion($index)"
-                          >
-                            <span nz-icon nzType="stop"></span>
-                          </button>
-                        </td>
-                      </tr>
-                    } @empty {
-                      <tr>
-                        <td colspan="9" class="vacio">Sin filas todavía.</td>
-                      </tr>
-                    }
-                  </tbody>
-                </nz-table>
-
-                <form
-                  nz-form
-                  [formGroup]="formDetalleFrutaCreacion"
-                  nzLayout="vertical"
-                  class="form-seccion form-inline-agregar"
-                >
-                  <div class="form-grid form-grid--4">
-                    <nz-form-item>
-                      <nz-form-label>Verdes</nz-form-label>
-                      <nz-form-control>
-                        <nz-input-number formControlName="racimosVerdes" style="width: 100%" [nzMin]="0"></nz-input-number>
-                      </nz-form-control>
-                    </nz-form-item>
-                    <nz-form-item>
-                      <nz-form-label>Maduros</nz-form-label>
-                      <nz-form-control>
-                        <nz-input-number formControlName="racimosMaduros" style="width: 100%" [nzMin]="0"></nz-input-number>
-                      </nz-form-control>
-                    </nz-form-item>
-                    <nz-form-item>
-                      <nz-form-label>SobreMaduros</nz-form-label>
-                      <nz-form-control>
-                        <nz-input-number formControlName="racimosSobreMaduros" style="width: 100%" [nzMin]="0"></nz-input-number>
-                      </nz-form-control>
-                    </nz-form-item>
-                    <nz-form-item>
-                      <nz-form-label>Pasados</nz-form-label>
-                      <nz-form-control>
-                        <nz-input-number formControlName="racimosPasados" style="width: 100%" [nzMin]="0"></nz-input-number>
-                      </nz-form-control>
-                    </nz-form-item>
-                    <nz-form-item>
-                      <nz-form-label>Pedúnculo largo</nz-form-label>
-                      <nz-form-control>
-                        <nz-input-number formControlName="pedunculoLargo" style="width: 100%" [nzMin]="0"></nz-input-number>
-                      </nz-form-control>
-                    </nz-form-item>
-                    <nz-form-item>
-                      <nz-form-label>Sacos</nz-form-label>
-                      <nz-form-control>
-                        <nz-input-number formControlName="sacos" style="width: 100%" [nzMin]="0"></nz-input-number>
-                      </nz-form-control>
-                    </nz-form-item>
-                    <nz-form-item>
-                      <nz-form-label>Jornales</nz-form-label>
-                      <nz-form-control>
-                        <nz-input-number formControlName="jornales" style="width: 100%" [nzMin]="0"></nz-input-number>
-                      </nz-form-control>
-                    </nz-form-item>
-                    <nz-form-item>
-                      <nz-form-label>Hectáreas</nz-form-label>
-                      <nz-form-control>
-                        <nz-input-number formControlName="hectareas" style="width: 100%" [nzMin]="0"></nz-input-number>
-                      </nz-form-control>
-                    </nz-form-item>
-                  </div>
-                  <button nz-button nzType="default" type="button" (click)="agregarDetalleFrutaCreacion()">
-                    <span nz-icon nzType="plus"></span>
-                    Agregar
-                  </button>
-                </form>
-              </div>
+              <form
+                nz-form
+                [formGroup]="formDetalleFrutaCreacion"
+                nzLayout="vertical"
+                class="form-seccion tab-contenido"
+              >
+                <div class="form-grid form-grid--4">
+                  <nz-form-item>
+                    <nz-form-label>Verdes</nz-form-label>
+                    <nz-form-control>
+                      <nz-input-number formControlName="racimosVerdes" style="width: 100%" [nzMin]="0"></nz-input-number>
+                    </nz-form-control>
+                  </nz-form-item>
+                  <nz-form-item>
+                    <nz-form-label>Maduros</nz-form-label>
+                    <nz-form-control>
+                      <nz-input-number formControlName="racimosMaduros" style="width: 100%" [nzMin]="0"></nz-input-number>
+                    </nz-form-control>
+                  </nz-form-item>
+                  <nz-form-item>
+                    <nz-form-label>SobreMaduros</nz-form-label>
+                    <nz-form-control>
+                      <nz-input-number formControlName="racimosSobreMaduros" style="width: 100%" [nzMin]="0"></nz-input-number>
+                    </nz-form-control>
+                  </nz-form-item>
+                  <nz-form-item>
+                    <nz-form-label>Pasados</nz-form-label>
+                    <nz-form-control>
+                      <nz-input-number formControlName="racimosPasados" style="width: 100%" [nzMin]="0"></nz-input-number>
+                    </nz-form-control>
+                  </nz-form-item>
+                  <nz-form-item>
+                    <nz-form-label>Pedúnculo largo</nz-form-label>
+                    <nz-form-control>
+                      <nz-input-number formControlName="pedunculoLargo" style="width: 100%" [nzMin]="0"></nz-input-number>
+                    </nz-form-control>
+                  </nz-form-item>
+                </div>
+              </form>
             </ng-template>
           </nz-tab>
         }
@@ -598,6 +535,12 @@
                     </nz-form-control>
                   </nz-form-item>
                   <nz-form-item>
+                    <nz-form-label>Luz</nz-form-label>
+                    <nz-form-control>
+                      <nz-input-number formControlName="luz" style="width: 100%"></nz-input-number>
+                    </nz-form-control>
+                  </nz-form-item>
+                  <nz-form-item>
                     <nz-form-label>DOBI</nz-form-label>
                     <nz-form-control>
                       <nz-input-number formControlName="dobi" style="width: 100%"></nz-input-number>
@@ -633,116 +576,49 @@
         @if (b.habilitaDetalleFruta) {
           <nz-tab nzTitle="Detalle de fruta">
             <ng-template nz-tab>
-              <div class="tab-contenido">
-                <nz-table [nzData]="detalleFruta()" [nzShowPagination]="false" nzSize="small">
-                  <thead>
-                    <tr>
-                      <th>Verdes</th>
-                      <th>Maduros</th>
-                      <th>SobreMaduros</th>
-                      <th>Pasados</th>
-                      <th>Pedúnculo largo</th>
-                      <th>Sacos</th>
-                      <th>Jornales</th>
-                      <th>Hectáreas</th>
-                      <th></th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    @for (d of detalleFruta(); track d.id) {
-                      <tr>
-                        <td>{{ d.racimosVerdes }}</td>
-                        <td>{{ d.racimosMaduros }}</td>
-                        <td>{{ d.racimosSobreMaduros }}</td>
-                        <td>{{ d.racimosPasados }}</td>
-                        <td>{{ d.pedunculoLargo }}</td>
-                        <td>{{ d.sacos }}</td>
-                        <td>{{ d.jornales }}</td>
-                        <td>{{ d.hectareas }}</td>
-                        <td class="acciones">
-                          <button
-                            nz-button
-                            nzType="text"
-                            nzDanger
-                            nz-popconfirm
-                            nzPopconfirmTitle="¿Eliminar esta fila?"
-                            (nzOnConfirm)="eliminarDetalleFruta(d.id)"
-                          >
-                            <span nz-icon nzType="stop"></span>
-                          </button>
-                        </td>
-                      </tr>
-                    } @empty {
-                      <tr>
-                        <td colspan="9" class="vacio">Sin filas todavía.</td>
-                      </tr>
-                    }
-                  </tbody>
-                </nz-table>
-
-                <form nz-form [formGroup]="formDetalleFruta" nzLayout="vertical" class="form-seccion form-inline-agregar">
-                  <div class="form-grid form-grid--4">
-                    <nz-form-item>
-                      <nz-form-label>Verdes</nz-form-label>
-                      <nz-form-control>
-                        <nz-input-number formControlName="racimosVerdes" style="width: 100%" [nzMin]="0"></nz-input-number>
-                      </nz-form-control>
-                    </nz-form-item>
-                    <nz-form-item>
-                      <nz-form-label>Maduros</nz-form-label>
-                      <nz-form-control>
-                        <nz-input-number formControlName="racimosMaduros" style="width: 100%" [nzMin]="0"></nz-input-number>
-                      </nz-form-control>
-                    </nz-form-item>
-                    <nz-form-item>
-                      <nz-form-label>SobreMaduros</nz-form-label>
-                      <nz-form-control>
-                        <nz-input-number formControlName="racimosSobreMaduros" style="width: 100%" [nzMin]="0"></nz-input-number>
-                      </nz-form-control>
-                    </nz-form-item>
-                    <nz-form-item>
-                      <nz-form-label>Pasados</nz-form-label>
-                      <nz-form-control>
-                        <nz-input-number formControlName="racimosPasados" style="width: 100%" [nzMin]="0"></nz-input-number>
-                      </nz-form-control>
-                    </nz-form-item>
-                    <nz-form-item>
-                      <nz-form-label>Pedúnculo largo</nz-form-label>
-                      <nz-form-control>
-                        <nz-input-number formControlName="pedunculoLargo" style="width: 100%" [nzMin]="0"></nz-input-number>
-                      </nz-form-control>
-                    </nz-form-item>
-                    <nz-form-item>
-                      <nz-form-label>Sacos</nz-form-label>
-                      <nz-form-control>
-                        <nz-input-number formControlName="sacos" style="width: 100%" [nzMin]="0"></nz-input-number>
-                      </nz-form-control>
-                    </nz-form-item>
-                    <nz-form-item>
-                      <nz-form-label>Jornales</nz-form-label>
-                      <nz-form-control>
-                        <nz-input-number formControlName="jornales" style="width: 100%" [nzMin]="0"></nz-input-number>
-                      </nz-form-control>
-                    </nz-form-item>
-                    <nz-form-item>
-                      <nz-form-label>Hectáreas</nz-form-label>
-                      <nz-form-control>
-                        <nz-input-number formControlName="hectareas" style="width: 100%" [nzMin]="0"></nz-input-number>
-                      </nz-form-control>
-                    </nz-form-item>
-                  </div>
-                  <button
-                    nz-button
-                    nzType="default"
-                    type="button"
-                    [nzLoading]="agregandoDetalleFruta()"
-                    (click)="agregarDetalleFruta()"
-                  >
-                    <span nz-icon nzType="plus"></span>
-                    Agregar
-                  </button>
-                </form>
-              </div>
+              <form nz-form [formGroup]="formDetalleFruta" nzLayout="vertical" class="form-seccion tab-contenido">
+                <div class="form-grid form-grid--4">
+                  <nz-form-item>
+                    <nz-form-label>Verdes</nz-form-label>
+                    <nz-form-control>
+                      <nz-input-number formControlName="racimosVerdes" style="width: 100%" [nzMin]="0"></nz-input-number>
+                    </nz-form-control>
+                  </nz-form-item>
+                  <nz-form-item>
+                    <nz-form-label>Maduros</nz-form-label>
+                    <nz-form-control>
+                      <nz-input-number formControlName="racimosMaduros" style="width: 100%" [nzMin]="0"></nz-input-number>
+                    </nz-form-control>
+                  </nz-form-item>
+                  <nz-form-item>
+                    <nz-form-label>SobreMaduros</nz-form-label>
+                    <nz-form-control>
+                      <nz-input-number formControlName="racimosSobreMaduros" style="width: 100%" [nzMin]="0"></nz-input-number>
+                    </nz-form-control>
+                  </nz-form-item>
+                  <nz-form-item>
+                    <nz-form-label>Pasados</nz-form-label>
+                    <nz-form-control>
+                      <nz-input-number formControlName="racimosPasados" style="width: 100%" [nzMin]="0"></nz-input-number>
+                    </nz-form-control>
+                  </nz-form-item>
+                  <nz-form-item>
+                    <nz-form-label>Pedúnculo largo</nz-form-label>
+                    <nz-form-control>
+                      <nz-input-number formControlName="pedunculoLargo" style="width: 100%" [nzMin]="0"></nz-input-number>
+                    </nz-form-control>
+                  </nz-form-item>
+                </div>
+                <button
+                  nz-button
+                  nzType="primary"
+                  type="button"
+                  [nzLoading]="guardandoDetalleFruta()"
+                  (click)="guardarDetalleFruta()"
+                >
+                  Guardar
+                </button>
+              </form>
             </ng-template>
           </nz-tab>
         }

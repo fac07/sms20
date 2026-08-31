@@ -85,23 +85,27 @@ export function getDb(): Database.Database {
       Id TEXT PRIMARY KEY,
       BoletaId TEXT NOT NULL UNIQUE,
       Acidez REAL,
+      Luz REAL,
       DOBI REAL,
       Humedad REAL,
       Temperatura REAL,
       NumeroRevisionQA TEXT
     );
 
+    -- Reshape directo (sin ALTER TABLE) — corrección post-verificación contra
+    -- el legacy: pasa de 1:N a 1:1 (BoletaId UNIQUE, igual que BoletaCalidad/
+    -- BoletaCompostera arriba) y deja caer Sacos/Jornales/Hectareas (mal
+    -- ubicados — ver el doc comment de backend/Domain/Boletas/Extensiones/
+    -- BoletaDetalleFruta.cs). Solo hay datos descartables de desarrollo en
+    -- esta tabla hoy, así que no hace falta migrar filas existentes.
     CREATE TABLE IF NOT EXISTS BoletaDetalleFruta (
       Id TEXT PRIMARY KEY,
-      BoletaId TEXT NOT NULL,
+      BoletaId TEXT NOT NULL UNIQUE,
       RacimosVerdes INTEGER NOT NULL,
       RacimosMaduros INTEGER NOT NULL,
       RacimosSobreMaduros INTEGER NOT NULL,
       RacimosPasados INTEGER NOT NULL,
-      PedunculoLargo INTEGER NOT NULL,
-      Sacos REAL NOT NULL,
-      Jornales REAL NOT NULL,
-      Hectareas REAL NOT NULL
+      PedunculoLargo INTEGER NOT NULL
     );
 
     CREATE TABLE IF NOT EXISTS BoletaCompostera (
@@ -729,6 +733,7 @@ export interface BoletaCalidadLocal {
   id: string
   boletaId: string
   acidez: number | null
+  luz: number | null
   dobi: number | null
   humedad: number | null
   temperatura: number | null
@@ -739,6 +744,7 @@ interface BoletaCalidadRow {
   Id: string
   BoletaId: string
   Acidez: number | null
+  Luz: number | null
   DOBI: number | null
   Humedad: number | null
   Temperatura: number | null
@@ -750,6 +756,7 @@ function filaABoletaCalidadLocal(row: BoletaCalidadRow): BoletaCalidadLocal {
     id: row.Id,
     boletaId: row.BoletaId,
     acidez: row.Acidez,
+    luz: row.Luz,
     dobi: row.DOBI,
     humedad: row.Humedad,
     temperatura: row.Temperatura,
@@ -771,10 +778,11 @@ export function guardarBoletaCalidadLocal(
 ): BoletaCalidadLocal {
   getDb()
     .prepare(
-      `INSERT INTO BoletaCalidad (Id, BoletaId, Acidez, DOBI, Humedad, Temperatura, NumeroRevisionQA)
-       VALUES (@id, @boletaId, @acidez, @dobi, @humedad, @temperatura, @numeroRevisionQA)
+      `INSERT INTO BoletaCalidad (Id, BoletaId, Acidez, Luz, DOBI, Humedad, Temperatura, NumeroRevisionQA)
+       VALUES (@id, @boletaId, @acidez, @luz, @dobi, @humedad, @temperatura, @numeroRevisionQA)
        ON CONFLICT(BoletaId) DO UPDATE SET
          Acidez = excluded.Acidez,
+         Luz = excluded.Luz,
          DOBI = excluded.DOBI,
          Humedad = excluded.Humedad,
          Temperatura = excluded.Temperatura,
@@ -784,6 +792,7 @@ export function guardarBoletaCalidadLocal(
       id: crypto.randomUUID(),
       boletaId,
       acidez: input.acidez,
+      luz: input.luz,
       dobi: input.dobi,
       humedad: input.humedad,
       temperatura: input.temperatura,
@@ -864,9 +873,6 @@ export interface BoletaDetalleFrutaLocal {
   racimosSobreMaduros: number
   racimosPasados: number
   pedunculoLargo: number
-  sacos: number
-  jornales: number
-  hectareas: number
 }
 
 interface BoletaDetalleFrutaRow {
@@ -877,9 +883,6 @@ interface BoletaDetalleFrutaRow {
   RacimosSobreMaduros: number
   RacimosPasados: number
   PedunculoLargo: number
-  Sacos: number
-  Jornales: number
-  Hectareas: number
 }
 
 function filaABoletaDetalleFrutaLocal(row: BoletaDetalleFrutaRow): BoletaDetalleFrutaLocal {
@@ -891,49 +894,40 @@ function filaABoletaDetalleFrutaLocal(row: BoletaDetalleFrutaRow): BoletaDetalle
     racimosSobreMaduros: row.RacimosSobreMaduros,
     racimosPasados: row.RacimosPasados,
     pedunculoLargo: row.PedunculoLargo,
-    sacos: row.Sacos,
-    jornales: row.Jornales,
-    hectareas: row.Hectareas,
   }
 }
 
-export function listarBoletaDetalleFrutaLocal(boletaId: string): BoletaDetalleFrutaLocal[] {
-  const rows = getDb()
+export function obtenerBoletaDetalleFrutaLocal(boletaId: string): BoletaDetalleFrutaLocal | null {
+  const row = getDb()
     .prepare('SELECT * FROM BoletaDetalleFruta WHERE BoletaId = ?')
-    .all(boletaId) as BoletaDetalleFrutaRow[]
-  return rows.map(filaABoletaDetalleFrutaLocal)
+    .get(boletaId) as BoletaDetalleFrutaRow | undefined
+  return row ? filaABoletaDetalleFrutaLocal(row) : null
 }
 
-export function agregarBoletaDetalleFrutaLocal(
+/** Upsert — a lo sumo una fila de DetalleFruta por boleta (BoletaId UNIQUE). */
+export function guardarBoletaDetalleFrutaLocal(
   boletaId: string,
   input: Omit<BoletaDetalleFrutaLocal, 'id' | 'boletaId'>,
 ): BoletaDetalleFrutaLocal {
-  const id = crypto.randomUUID()
-
   getDb()
     .prepare(
       `INSERT INTO BoletaDetalleFruta (
         Id, BoletaId, RacimosVerdes, RacimosMaduros, RacimosSobreMaduros,
-        RacimosPasados, PedunculoLargo, Sacos, Jornales, Hectareas
+        RacimosPasados, PedunculoLargo
       ) VALUES (
         @id, @boletaId, @racimosVerdes, @racimosMaduros, @racimosSobreMaduros,
-        @racimosPasados, @pedunculoLargo, @sacos, @jornales, @hectareas
-      )`,
+        @racimosPasados, @pedunculoLargo
+      )
+      ON CONFLICT(BoletaId) DO UPDATE SET
+        RacimosVerdes = excluded.RacimosVerdes,
+        RacimosMaduros = excluded.RacimosMaduros,
+        RacimosSobreMaduros = excluded.RacimosSobreMaduros,
+        RacimosPasados = excluded.RacimosPasados,
+        PedunculoLargo = excluded.PedunculoLargo`,
     )
-    .run({ id, boletaId, ...input })
+    .run({ id: crypto.randomUUID(), boletaId, ...input })
 
-  const row = getDb()
-    .prepare('SELECT * FROM BoletaDetalleFruta WHERE Id = ?')
-    .get(id) as BoletaDetalleFrutaRow
-  return filaABoletaDetalleFrutaLocal(row)
-}
-
-/** true si existía y se borró. */
-export function eliminarBoletaDetalleFrutaLocal(boletaId: string, id: string): boolean {
-  const resultado = getDb()
-    .prepare('DELETE FROM BoletaDetalleFruta WHERE Id = ? AND BoletaId = ?')
-    .run(id, boletaId)
-  return resultado.changes > 0
+  return obtenerBoletaDetalleFrutaLocal(boletaId)!
 }
 
 export interface BoletaCaracteristicaLocal {
