@@ -1,4 +1,5 @@
 import { ApplicationConfig, provideBrowserGlobalErrorListeners } from '@angular/core';
+import { provideAnimationsAsync } from '@angular/platform-browser/animations/async';
 import { provideHttpClient } from '@angular/common/http';
 import { provideRouter, withHashLocation } from '@angular/router';
 import { routes } from './app.routes';
@@ -12,10 +13,12 @@ import {
   AppstoreOutline,
   BarChartOutline,
   CheckCircleFill,
+  DashboardOutline,
   DatabaseOutline,
   DesktopOutline,
   EditOutline,
   ExportOutline,
+  EyeOutline,
   FileTextOutline,
   ImportOutline,
   MinusCircleFill,
@@ -32,6 +35,12 @@ export const appConfig: ApplicationConfig = {
     // Hash routing — el renderer de Electron carga desde file:// en
     // producción, sin servidor detrás que resuelva rutas reales.
     provideRouter(routes, withHashLocation()),
+    // Sin esto, ng-zorro nunca dispara el callback de "animación terminada"
+    // al cerrar un modal — el overlay se queda invisible pero sigue
+    // capturando clicks (pointer-events: auto con opacity: 0), bloqueando
+    // toda la pantalla hasta recargar. Encontrado cerrando el modal de
+    // "Cerrar boleta" en Pesaje, pero afecta a CUALQUIER nz-modal.
+    provideAnimationsAsync(),
     provideHttpClient(),
     provideNzI18n(es_ES),
     provideNzDateFnsAdapter(),
@@ -40,10 +49,12 @@ export const appConfig: ApplicationConfig = {
       AppstoreOutline,
       BarChartOutline,
       CheckCircleFill,
+      DashboardOutline,
       DatabaseOutline,
       DesktopOutline,
       EditOutline,
       ExportOutline,
+      EyeOutline,
       FileTextOutline,
       ImportOutline,
       MinusCircleFill,

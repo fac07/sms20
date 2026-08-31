@@ -92,6 +92,7 @@ export class TiposMovimientoPage {
   readonly form = this.fb.nonNullable.group({
     codigo: ['', Validators.required],
     nombre: ['', Validators.required],
+    prefijo: ['', Validators.required],
     direccion: ['Entrada' as DireccionMovimiento, Validators.required],
     habilitaCalidad: [false],
     habilitaMarchamos: [false],
@@ -125,6 +126,7 @@ export class TiposMovimientoPage {
     this.form.reset({
       codigo: '',
       nombre: '',
+      prefijo: '',
       direccion: 'Entrada',
       habilitaCalidad: false,
       habilitaMarchamos: false,

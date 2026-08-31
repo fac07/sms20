@@ -34,7 +34,7 @@ app.whenReady().then(() => {
   // Abre la base local (crea el archivo si es el primer arranque de esta báscula)
   // y arranca el servidor HTTP local antes de mostrar la ventana.
   getDb()
-  startLocalServer(LOCAL_SERVER_PORT)
+  startLocalServer(LOCAL_SERVER_PORT, !app.isPackaged)
   createWindow()
 
   app.on('activate', () => {

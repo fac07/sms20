@@ -1,0 +1,170 @@
+<div nz-row [nzGutter]="16" class="stats-row">
+  <div nz-col [nzSpan]="6">
+    <nz-card>
+      <div class="stat-card">
+        <div class="stat-icon" style="background: #8c8c8c1a; color: #8c8c8c">
+          <span nz-icon nzType="file-text"></span>
+        </div>
+        <nz-statistic [nzTitle]="'Total'" [nzValue]="stats().total"></nz-statistic>
+      </div>
+    </nz-card>
+  </div>
+  <div nz-col [nzSpan]="6">
+    <nz-card>
+      <div class="stat-card">
+        <div class="stat-icon" style="background: #2F6FED1a; color: #2F6FED">
+          <span nz-icon nzType="swap"></span>
+        </div>
+        <nz-statistic [nzTitle]="'En tránsito'" [nzValue]="stats().enTransito"></nz-statistic>
+      </div>
+    </nz-card>
+  </div>
+  <div nz-col [nzSpan]="6">
+    <nz-card>
+      <div class="stat-card">
+        <div class="stat-icon" style="background: #3F8F6E1a; color: #3F8F6E">
+          <span nz-icon nzType="check-circle" nzTheme="fill"></span>
+        </div>
+        <nz-statistic [nzTitle]="'Cerradas'" [nzValue]="stats().cerradas"></nz-statistic>
+      </div>
+    </nz-card>
+  </div>
+  <div nz-col [nzSpan]="6">
+    <nz-card>
+      <div class="stat-card">
+        <div class="stat-icon" style="background: #D645411a; color: #D64541">
+          <span nz-icon nzType="stop"></span>
+        </div>
+        <nz-statistic [nzTitle]="'Anuladas'" [nzValue]="stats().anuladas"></nz-statistic>
+      </div>
+    </nz-card>
+  </div>
+</div>
+
+<nz-card [nzTitle]="'Boletas'" [nzExtra]="extraTpl" [nzBodyStyle]="{ padding: '0' }">
+  <ng-template #extraTpl>
+    <nz-select
+      style="width: 200px"
+      [ngModel]="filtroEstado()"
+      (ngModelChange)="cambiarFiltro($event)"
+    >
+      <nz-option [nzValue]="null" nzLabel="Todas"></nz-option>
+      <nz-option nzValue="EnTransito" nzLabel="En tránsito"></nz-option>
+      <nz-option nzValue="Cerrada" nzLabel="Cerradas"></nz-option>
+      <nz-option nzValue="Anulada" nzLabel="Anuladas"></nz-option>
+      <nz-option nzValue="Reemitida" nzLabel="Reemitidas"></nz-option>
+    </nz-select>
+  </ng-template>
+
+  <nz-table #tabla [nzData]="boletas()" [nzLoading]="cargando()" [nzPageSize]="10">
+    <thead>
+      <tr>
+        <th>N° Boleta</th>
+        <th>Báscula</th>
+        <th>Tipo movimiento</th>
+        <th>Piloto / Transportista</th>
+        <th nzAlign="right">Peso ingreso</th>
+        <th nzAlign="right">Peso salida</th>
+        <th nzAlign="right">Peso neto</th>
+        <th>Estado</th>
+        <th>Fecha ingreso</th>
+        <th></th>
+      </tr>
+    </thead>
+    <tbody>
+      @for (b of tabla.data; track b.id) {
+        <tr>
+          <td class="codigo">{{ b.numeroBoleta }}</td>
+          <td>{{ b.basculaCodigo }}</td>
+          <td>{{ b.tipoMovimientoNombre }}</td>
+          <td>
+            <div>{{ b.pilotoCodigo }}</div>
+            <div class="dato-secundario">{{ b.transportistaCodigo }}</div>
+          </td>
+          <td class="pesos">{{ b.pesoIngreso | number: '1.2-2' }}</td>
+          <td class="pesos">{{ b.pesoSalida !== null ? (b.pesoSalida | number: '1.2-2') : '—' }}</td>
+          <td class="pesos">{{ b.pesoNeto !== null ? (b.pesoNeto | number: '1.2-2') : '—' }}</td>
+          <td>
+            @switch (b.estado) {
+              @case ('EnTransito') {
+                <nz-tag nzColor="processing">En tránsito</nz-tag>
+              }
+              @case ('Cerrada') {
+                <nz-tag nzColor="success">Cerrada</nz-tag>
+              }
+              @case ('Anulada') {
+                <nz-tag nzColor="error">Anulada</nz-tag>
+              }
+              @default {
+                <nz-tag>Reemitida</nz-tag>
+              }
+            }
+          </td>
+          <td>{{ b.fechaHoraIngreso | date: 'short' }}</td>
+          <td class="acciones">
+            <button
+              nz-button
+              nzType="text"
+              nz-tooltip
+              nzTooltipTitle="Ver detalle"
+              (click)="verDetalle(b)"
+            >
+              <span nz-icon nzType="eye"></span>
+            </button>
+          </td>
+        </tr>
+      }
+    </tbody>
+  </nz-table>
+</nz-card>
+
+<nz-modal
+  [nzTitle]="'Boleta ' + (detalle()?.numeroBoleta ?? '')"
+  [nzVisible]="!!detalle()"
+  nzOkText="Cerrar"
+  [nzCancelText]="null"
+  (nzOnOk)="cerrarDetalle()"
+  (nzOnCancel)="cerrarDetalle()"
+>
+  <ng-container *nzModalContent>
+    @if (detalle(); as d) {
+      <nz-descriptions nzTitle="Movimiento" [nzColumn]="2" nzBordered [nzSize]="'small'">
+        <nz-descriptions-item nzTitle="Báscula">{{ d.basculaCodigo }}</nz-descriptions-item>
+        <nz-descriptions-item nzTitle="Tipo de movimiento">{{ d.tipoMovimientoNombre }}</nz-descriptions-item>
+        <nz-descriptions-item nzTitle="Estado">{{ d.estado }}</nz-descriptions-item>
+        <nz-descriptions-item nzTitle="Estado de sincronización">{{ d.estadoSync }}</nz-descriptions-item>
+      </nz-descriptions>
+
+      <nz-descriptions nzTitle="Actores" [nzColumn]="2" nzBordered [nzSize]="'small'" class="seccion">
+        <nz-descriptions-item nzTitle="Piloto">{{ d.pilotoCodigo }}</nz-descriptions-item>
+        <nz-descriptions-item nzTitle="Transportista">{{ d.transportistaCodigo }}</nz-descriptions-item>
+        <nz-descriptions-item nzTitle="Equipo">{{ d.equipoCodigo }}</nz-descriptions-item>
+        <nz-descriptions-item nzTitle="Tercero">{{ d.terceroCodigo }}</nz-descriptions-item>
+        <nz-descriptions-item nzTitle="Producto">{{ d.productoCodigo }}</nz-descriptions-item>
+      </nz-descriptions>
+
+      <nz-descriptions nzTitle="Pesos" [nzColumn]="2" nzBordered [nzSize]="'small'" class="seccion">
+        <nz-descriptions-item nzTitle="Peso ingreso">{{ d.pesoIngreso | number: '1.2-2' }}</nz-descriptions-item>
+        <nz-descriptions-item nzTitle="Peso salida">{{ d.pesoSalida !== null ? (d.pesoSalida | number: '1.2-2') : '—' }}</nz-descriptions-item>
+        <nz-descriptions-item nzTitle="Peso neto">{{ d.pesoNeto !== null ? (d.pesoNeto | number: '1.2-2') : '—' }}</nz-descriptions-item>
+        <nz-descriptions-item nzTitle="Origen peso ingreso">{{ d.origenPesoIngreso }}</nz-descriptions-item>
+        <nz-descriptions-item nzTitle="Origen peso salida">{{ d.origenPesoSalida ?? '—' }}</nz-descriptions-item>
+      </nz-descriptions>
+
+      <nz-descriptions nzTitle="Auditoría" [nzColumn]="2" nzBordered [nzSize]="'small'" class="seccion">
+        <nz-descriptions-item nzTitle="Usuario ingreso">{{ d.usuarioIngreso }}</nz-descriptions-item>
+        <nz-descriptions-item nzTitle="Usuario salida">{{ d.usuarioSalida ?? '—' }}</nz-descriptions-item>
+        <nz-descriptions-item nzTitle="Fecha ingreso">{{ d.fechaHoraIngreso | date: 'medium' }}</nz-descriptions-item>
+        <nz-descriptions-item nzTitle="Fecha salida">{{ d.fechaHoraSalida ? (d.fechaHoraSalida | date: 'medium') : '—' }}</nz-descriptions-item>
+      </nz-descriptions>
+
+      @if (d.estado === 'Anulada') {
+        <nz-descriptions nzTitle="Anulación" [nzColumn]="2" nzBordered [nzSize]="'small'" class="seccion">
+          <nz-descriptions-item nzTitle="Usuario anula">{{ d.usuarioAnula ?? '—' }}</nz-descriptions-item>
+          <nz-descriptions-item nzTitle="Usuario autoriza">{{ d.usuarioAutoriza ?? '—' }}</nz-descriptions-item>
+          <nz-descriptions-item nzTitle="Motivo" [nzSpan]="2">{{ d.motivoAnulacion ?? '—' }}</nz-descriptions-item>
+        </nz-descriptions>
+      }
+    }
+  </ng-container>
+</nz-modal>

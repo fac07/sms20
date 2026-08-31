@@ -4,6 +4,7 @@ public record TipoMovimientoDto(
     Guid Id,
     string Codigo,
     string Nombre,
+    string Prefijo,
     DireccionMovimiento Direccion,
     bool HabilitaCalidad,
     bool HabilitaMarchamos,
@@ -16,7 +17,7 @@ public record TipoMovimientoDto(
     bool Activo)
 {
     public static TipoMovimientoDto FromEntity(TipoMovimiento t) => new(
-        t.Id, t.Codigo, t.Nombre, t.Direccion,
+        t.Id, t.Codigo, t.Nombre, t.Prefijo, t.Direccion,
         t.HabilitaCalidad, t.HabilitaMarchamos, t.HabilitaQR,
         t.HabilitaDatosFinca, t.HabilitaDetalleFruta, t.HabilitaCompostera,
         t.IntegracionD365, t.FormatoBoletaId, t.Activo);
@@ -25,6 +26,7 @@ public record TipoMovimientoDto(
 public record GuardarTipoMovimientoRequest(
     string Codigo,
     string Nombre,
+    string Prefijo,
     DireccionMovimiento Direccion,
     bool HabilitaCalidad,
     bool HabilitaMarchamos,

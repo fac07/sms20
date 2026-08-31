@@ -47,6 +47,7 @@ public static class TipoMovimientoEndpoints
                 Id = Guid.NewGuid(),
                 Codigo = request.Codigo,
                 Nombre = request.Nombre,
+                Prefijo = request.Prefijo,
                 Direccion = request.Direccion,
                 HabilitaCalidad = request.HabilitaCalidad,
                 HabilitaMarchamos = request.HabilitaMarchamos,
@@ -82,6 +83,7 @@ public static class TipoMovimientoEndpoints
 
             tipo.Codigo = request.Codigo;
             tipo.Nombre = request.Nombre;
+            tipo.Prefijo = request.Prefijo;
             tipo.Direccion = request.Direccion;
             tipo.HabilitaCalidad = request.HabilitaCalidad;
             tipo.HabilitaMarchamos = request.HabilitaMarchamos;

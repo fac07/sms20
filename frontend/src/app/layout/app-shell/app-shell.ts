@@ -5,6 +5,7 @@ import { filter, map, startWith } from 'rxjs';
 import { NzIconModule } from 'ng-zorro-antd/icon';
 import { NzLayoutModule } from 'ng-zorro-antd/layout';
 import { NzMenuModule } from 'ng-zorro-antd/menu';
+import { PesoSimuladoPanel } from '../peso-simulado-panel/peso-simulado-panel';
 
 interface NavItem {
   path: string;
@@ -14,21 +15,31 @@ interface NavItem {
 }
 
 const NAV_ITEMS: NavItem[] = [
+  { path: '/pesaje', icon: 'dashboard', label: 'Pesaje' },
   { path: '/basculas', icon: 'desktop', label: 'Básculas' },
   { path: '/tipos-movimiento', icon: 'appstore', label: 'Tipos de movimiento' },
   { path: '/maestros', icon: 'database', label: 'Maestros' },
-  { path: '/boletas', icon: 'file-text', label: 'Boletas', disabled: true },
+  { path: '/boletas', icon: 'file-text', label: 'Boletas' },
   { path: '/reportes', icon: 'bar-chart', label: 'Reportes', disabled: true },
 ];
 
 const PAGE_TITLES: Record<string, string> = {
+  '/pesaje': 'Pesaje',
   '/basculas': 'Básculas',
   '/tipos-movimiento': 'Tipos de movimiento',
   '/maestros': 'Maestros',
+  '/boletas': 'Boletas',
 };
 
 @Component({
-  imports: [RouterLink, RouterOutlet, NzLayoutModule, NzMenuModule, NzIconModule],
+  imports: [
+    RouterLink,
+    RouterOutlet,
+    NzLayoutModule,
+    NzMenuModule,
+    NzIconModule,
+    PesoSimuladoPanel,
+  ],
   selector: 'app-app-shell',
   styleUrl: './app-shell.css',
   templateUrl: './app-shell.html',

@@ -13,6 +13,7 @@ export interface TipoMovimiento {
   id: string;
   codigo: string;
   nombre: string;
+  prefijo: string;
   direccion: DireccionMovimiento;
   habilitaCalidad: boolean;
   habilitaMarchamos: boolean;

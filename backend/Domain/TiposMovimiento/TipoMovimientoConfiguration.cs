@@ -19,6 +19,10 @@ public class TipoMovimientoConfiguration : IEntityTypeConfiguration<TipoMovimien
             .HasMaxLength(100)
             .IsRequired();
 
+        builder.Property(t => t.Prefijo)
+            .HasMaxLength(10)
+            .IsRequired();
+
         // Persistido como string (no int) para que la fila en SQL Server sea
         // legible sin tener que recordar qué número es cada dirección.
         builder.Property(t => t.Direccion)

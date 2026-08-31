@@ -16,6 +16,9 @@ public class TipoMovimiento
 
     public string Nombre { get; set; } = string.Empty;
 
+    /// <summary>Prefijo corto del correlativo (REC, ENV, TRF, OC, OV) — distinto de Codigo, que es el código de catálogo completo.</summary>
+    public string Prefijo { get; set; } = string.Empty;
+
     public DireccionMovimiento Direccion { get; set; }
 
     public bool HabilitaCalidad { get; set; }

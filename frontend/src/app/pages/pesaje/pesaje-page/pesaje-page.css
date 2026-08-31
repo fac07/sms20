@@ -1,0 +1,81 @@
+.tarjeta {
+  margin-bottom: 20px;
+}
+
+.alerta-bascula {
+  margin-bottom: 16px;
+}
+
+/* Pantalla operativa: el peso es lo único que el operador realmente mira,
+   así que va grande y de alto contraste — a diferencia de las páginas de
+   catálogo, acá no alcanza con un valor más en una tabla. */
+.peso-actual {
+  display: flex;
+  align-items: baseline;
+  gap: 16px;
+  padding: 20px 24px;
+  margin-bottom: 20px;
+  background: #f5f6f8;
+  border: 1px solid #e8e8e8;
+  border-radius: 8px;
+}
+
+.peso-actual--modal {
+  margin-top: 12px;
+  margin-bottom: 0;
+}
+
+.peso-actual__label {
+  font-size: 13px;
+  color: rgba(0, 0, 0, 0.45);
+  align-self: center;
+}
+
+.peso-actual__valor {
+  font-family: monospace;
+  font-size: 44px;
+  font-weight: 700;
+  color: var(--ant-info-color, #0d3b36);
+  line-height: 1;
+}
+
+.peso-actual__unidad {
+  font-size: 18px;
+  font-weight: 400;
+  color: rgba(0, 0, 0, 0.45);
+  margin-left: 4px;
+}
+
+.form-boleta {
+  margin-top: 8px;
+}
+
+.form-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 0 24px;
+}
+
+.boton-crear {
+  margin-top: 8px;
+  width: 100%;
+}
+
+.codigo {
+  font-family: monospace;
+}
+
+.pesos {
+  text-align: right;
+}
+
+.acciones {
+  text-align: right;
+  white-space: nowrap;
+}
+
+.vacio {
+  text-align: center;
+  color: rgba(0, 0, 0, 0.45);
+  padding: 24px 0;
+}

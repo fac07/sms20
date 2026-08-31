@@ -1,0 +1,192 @@
+<nz-card [nzTitle]="'Nueva boleta (ingreso)'" class="tarjeta">
+  @if (basculaSinCodigo()) {
+    <nz-alert
+      nzType="warning"
+      nzShowIcon
+      class="alerta-bascula"
+      nzMessage="Esta báscula no tiene código configurado — usá el simulador de dev (POST /dev/config) o esperá a que exista el aprovisionamiento real."
+    ></nz-alert>
+  }
+
+  <div class="peso-actual">
+    <div class="peso-actual__label">Peso actual</div>
+    <div class="peso-actual__valor">
+      {{ lecturaPeso().peso !== null ? (lecturaPeso().peso | number: '1.0-2') : '—' }}
+      <span class="peso-actual__unidad">kg</span>
+    </div>
+    <nz-tag
+      [nzColor]="lecturaPeso().origen === 'Bascula' ? 'success' : lecturaPeso().origen === 'Manual' ? 'warning' : 'default'"
+    >
+      {{ lecturaPeso().origen ?? 'sin lectura' }}
+    </nz-tag>
+  </div>
+
+  <form nz-form [formGroup]="form" nzLayout="vertical" class="form-boleta">
+    <div class="form-grid">
+      <nz-form-item>
+        <nz-form-label nzRequired>Tipo de movimiento</nz-form-label>
+        <nz-form-control>
+          <nz-select formControlName="tipoMovimientoId" nzPlaceHolder="Elegí el tipo de movimiento">
+            @for (t of tiposMovimiento(); track t.id) {
+              <nz-option [nzValue]="t.id" [nzLabel]="t.nombre"></nz-option>
+            }
+          </nz-select>
+        </nz-form-control>
+      </nz-form-item>
+
+      <nz-form-item>
+        <nz-form-label nzRequired>Equipo</nz-form-label>
+        <nz-form-control>
+          <nz-select formControlName="equipoId" nzPlaceHolder="Elegí el equipo">
+            @for (m of equipos(); track m.id) {
+              <nz-option [nzValue]="m.id" [nzLabel]="m.nombre"></nz-option>
+            }
+          </nz-select>
+        </nz-form-control>
+      </nz-form-item>
+
+      <nz-form-item>
+        <nz-form-label nzRequired>Transportista</nz-form-label>
+        <nz-form-control>
+          <nz-select formControlName="transportistaId" nzPlaceHolder="Elegí el transportista">
+            @for (m of transportistas(); track m.id) {
+              <nz-option [nzValue]="m.id" [nzLabel]="m.nombre"></nz-option>
+            }
+          </nz-select>
+        </nz-form-control>
+      </nz-form-item>
+
+      <nz-form-item>
+        <nz-form-label nzRequired>Piloto</nz-form-label>
+        <nz-form-control>
+          <nz-select formControlName="pilotoId" nzPlaceHolder="Elegí el piloto">
+            @for (m of pilotos(); track m.id) {
+              <nz-option [nzValue]="m.id" [nzLabel]="m.nombre"></nz-option>
+            }
+          </nz-select>
+        </nz-form-control>
+      </nz-form-item>
+
+      <nz-form-item>
+        <nz-form-label nzRequired>Tercero</nz-form-label>
+        <nz-form-control>
+          <nz-select formControlName="terceroId" nzPlaceHolder="Elegí el tercero">
+            @for (m of terceros(); track m.id) {
+              <nz-option [nzValue]="m.id" [nzLabel]="m.nombre"></nz-option>
+            }
+          </nz-select>
+        </nz-form-control>
+      </nz-form-item>
+
+      <nz-form-item>
+        <nz-form-label nzRequired>Producto</nz-form-label>
+        <nz-form-control>
+          <nz-select formControlName="productoId" nzPlaceHolder="Elegí el producto">
+            @for (m of productos(); track m.id) {
+              <nz-option [nzValue]="m.id" [nzLabel]="m.nombre"></nz-option>
+            }
+          </nz-select>
+        </nz-form-control>
+      </nz-form-item>
+
+      <nz-form-item>
+        <nz-form-label>Almacén origen</nz-form-label>
+        <nz-form-control>
+          <nz-select formControlName="almacenOrigenId" nzPlaceHolder="Opcional" nzAllowClear>
+            @for (m of almacenes(); track m.id) {
+              <nz-option [nzValue]="m.id" [nzLabel]="m.nombre"></nz-option>
+            }
+          </nz-select>
+        </nz-form-control>
+      </nz-form-item>
+
+      <nz-form-item>
+        <nz-form-label>Almacén destino</nz-form-label>
+        <nz-form-control>
+          <nz-select formControlName="almacenDestinoId" nzPlaceHolder="Opcional" nzAllowClear>
+            @for (m of almacenes(); track m.id) {
+              <nz-option [nzValue]="m.id" [nzLabel]="m.nombre"></nz-option>
+            }
+          </nz-select>
+        </nz-form-control>
+      </nz-form-item>
+    </div>
+
+    <button
+      nz-button
+      nzType="primary"
+      nzSize="large"
+      class="boton-crear"
+      [disabled]="!puedeCrear()"
+      [nzLoading]="guardando()"
+      (click)="crearBoleta()"
+    >
+      <span nz-icon nzType="plus"></span>
+      Crear boleta
+    </button>
+  </form>
+</nz-card>
+
+<nz-card [nzTitle]="'Boletas en tránsito'" [nzBodyStyle]="{ padding: '0' }" class="tarjeta">
+  <nz-table #tabla [nzData]="boletasEnTransito()" [nzLoading]="cargandoTransito()" [nzPageSize]="10">
+    <thead>
+      <tr>
+        <th>N° Boleta</th>
+        <th>Tipo movimiento</th>
+        <th nzAlign="right">Peso ingreso</th>
+        <th>Fecha ingreso</th>
+        <th></th>
+      </tr>
+    </thead>
+    <tbody>
+      @for (b of tabla.data; track b.id) {
+        <tr>
+          <td class="codigo">{{ b.numeroBoleta }}</td>
+          <td>{{ nombreTipoMovimiento(b.tipoMovimientoId) }}</td>
+          <td class="pesos">{{ b.pesoIngreso | number: '1.2-2' }}</td>
+          <td>{{ b.fechaHoraIngreso | date: 'short' }}</td>
+          <td class="acciones">
+            <button nz-button nzType="default" (click)="abrirCierre(b)">
+              <span nz-icon nzType="stop"></span>
+              Cerrar
+            </button>
+          </td>
+        </tr>
+      } @empty {
+        <tr>
+          <td colspan="5" class="vacio">No hay boletas en tránsito.</td>
+        </tr>
+      }
+    </tbody>
+  </nz-table>
+</nz-card>
+
+<nz-modal
+  [nzTitle]="'Cerrar boleta ' + (boletaCerrando()?.numeroBoleta ?? '')"
+  [nzVisible]="!!boletaCerrando()"
+  nzOkText="Confirmar cierre"
+  nzCancelText="Cancelar"
+  [nzOkLoading]="cerrando()"
+  [nzOkDisabled]="lecturaPeso().peso === null"
+  (nzOnCancel)="cerrarModalCierre()"
+  (nzOnOk)="confirmarCierre()"
+>
+  <ng-container *nzModalContent>
+    @if (boletaCerrando(); as b) {
+      <p>Peso ingreso: <strong>{{ b.pesoIngreso | number: '1.2-2' }} kg</strong></p>
+
+      <div class="peso-actual peso-actual--modal">
+        <div class="peso-actual__label">Peso de salida (lectura actual)</div>
+        <div class="peso-actual__valor">
+          {{ lecturaPeso().peso !== null ? (lecturaPeso().peso | number: '1.0-2') : '—' }}
+          <span class="peso-actual__unidad">kg</span>
+        </div>
+        <nz-tag
+          [nzColor]="lecturaPeso().origen === 'Bascula' ? 'success' : lecturaPeso().origen === 'Manual' ? 'warning' : 'default'"
+        >
+          {{ lecturaPeso().origen ?? 'sin lectura' }}
+        </nz-tag>
+      </div>
+    }
+  </ng-container>
+</nz-modal>
