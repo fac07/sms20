@@ -2,12 +2,19 @@ import { app, BrowserWindow } from 'electron'
 import * as path from 'node:path'
 import { startLocalServer } from './local-server'
 import { getDb } from './db'
+import { despacharOutboxPendiente } from './outbox-dispatcher'
 
 // La UI (renderer) no toca SQLite ni el puerto serial directamente — todo pasa
 // por este servidor HTTP local. Es el mismo contrato que usará el backend
 // central cuando haya conexión, así que el renderer no necesita lógica
 // distinta para offline vs online.
 const LOCAL_SERVER_PORT = 4127
+
+// Loop de sincronización en segundo plano — reenvía el OutboxLocal pendiente
+// al backend central cada 15s. Corre siempre, en dev y en producción por
+// igual (a diferencia del simulador de peso, que solo existe en dev): es la
+// pieza real de sync, no una herramienta de desarrollo.
+const DISPATCH_INTERVAL_MS = 15_000
 
 let mainWindow: BrowserWindow | null = null
 
@@ -35,6 +42,11 @@ app.whenReady().then(() => {
   // y arranca el servidor HTTP local antes de mostrar la ventana.
   getDb()
   startLocalServer(LOCAL_SERVER_PORT, !app.isPackaged)
+
+  setInterval(() => {
+    despacharOutboxPendiente().catch((err) => console.error('Error despachando outbox:', err))
+  }, DISPATCH_INTERVAL_MS)
+
   createWindow()
 
   app.on('activate', () => {

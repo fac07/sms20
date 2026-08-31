@@ -68,3 +68,12 @@ public record AnularBoletaRequest(
     string UsuarioAnula,
     string UsuarioAutoriza,
     string MotivoAnulacion);
+
+/// <summary>
+/// Evento del Outbox local (Electron/SQLite) que el dispatcher reenvía al
+/// backend central. El payload viaja como snapshot JSON crudo — no un DTO
+/// tipado — porque es exactamente lo que ya escribió db.ts al momento del
+/// evento (BoletaLocal), y esto mantiene el endpoint desacoplado de la forma
+/// exacta y evolutiva de esa tabla local.
+/// </summary>
+public record SincronizarEventoRequest(string BasculaCodigo, string Operacion, System.Text.Json.JsonElement Payload);

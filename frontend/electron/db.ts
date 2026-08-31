@@ -467,6 +467,35 @@ export function listarOutboxLocal(estado?: EstadoOutboxLocal): OutboxLocalEvento
 }
 
 /**
+ * Marca el resultado de un intento de despacho — la usa el dispatcher
+ * (outbox-dispatcher.ts), nunca los escritores de Boleta. A diferencia de
+ * registrarEventoOutboxLocal, no corre dentro de una transacción compartida
+ * con ninguna otra escritura: es un solo UPDATE independiente, no hay nada
+ * más con lo que deba comitear o revertirse junto.
+ */
+export function marcarOutboxLocalResultado(
+  id: string,
+  resultado: { estado: 'Enviado' } | { estado: 'Pendiente' | 'Error'; ultimoError: string },
+): void {
+  if (resultado.estado === 'Enviado') {
+    getDb()
+      .prepare(`UPDATE OutboxLocal SET Estado = 'Enviado', FechaEnviado = @fechaEnviado WHERE Id = @id`)
+      .run({ id, fechaEnviado: new Date().toISOString() })
+    return
+  }
+
+  getDb()
+    .prepare(
+      `UPDATE OutboxLocal SET
+        Estado = @estado,
+        Intentos = Intentos + 1,
+        UltimoError = @ultimoError
+      WHERE Id = @id`,
+    )
+    .run({ id, estado: resultado.estado, ultimoError: resultado.ultimoError })
+}
+
+/**
  * Inserta el evento de OutboxLocal — SIEMPRE se llama desde dentro de la
  * misma transacción que la escritura de Boleta (ver
  * crearBoletaLocal/cerrarBoletaLocal/anularBoletaLocal), nunca suelta, para

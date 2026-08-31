@@ -24,6 +24,7 @@ import {
 import type { EstadoOutboxLocal, OrigenPesoLocal } from './db'
 import { crearPesoProvider, PesoProviderSimulado } from './peso-provider'
 import type { OrigenPeso } from './peso-provider'
+import { despacharOutboxPendiente } from './outbox-dispatcher'
 
 let server: Server | null = null
 
@@ -465,6 +466,15 @@ export function startLocalServer(port: number, esDev: boolean): Server {
   app.get('/outbox', (req, res) => {
     const estado = req.query.estado as EstadoOutboxLocal | undefined
     res.json(listarOutboxLocal(estado))
+  })
+
+  // "Sincronizar ahora" — despacha el OutboxLocal pendiente sin esperar al
+  // próximo ciclo del interval en main.ts. No dev-gated: es una función real
+  // (un futuro botón "Sync now" en la UI la llama), no una herramienta de
+  // desarrollo, y también sirve para probar el dispatcher sin esperar 15s.
+  app.post('/outbox/despachar', async (_req, res) => {
+    const resultado = await despacharOutboxPendiente()
+    res.json(resultado)
   })
 
   app.post('/aprovisionamiento', async (req, res) => {
