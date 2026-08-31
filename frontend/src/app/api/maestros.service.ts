@@ -15,7 +15,8 @@ export type TipoCatalogo =
   | 'Centro'
   | 'Cama'
   | 'CicloCompostera'
-  | 'SeccionCompostera';
+  | 'SeccionCompostera'
+  | 'CaracteristicaEquipo';
 
 export const TIPOS_CATALOGO: TipoCatalogo[] = [
   'Piloto',
@@ -29,6 +30,7 @@ export const TIPOS_CATALOGO: TipoCatalogo[] = [
   'Cama',
   'CicloCompostera',
   'SeccionCompostera',
+  'CaracteristicaEquipo',
 ];
 
 export type EstadoMaestro = 'Oficial' | 'Provisional';

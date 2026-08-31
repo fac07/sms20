@@ -86,6 +86,7 @@ export class PesajePage implements OnInit, OnDestroy {
   readonly camas = signal<Maestro[]>([]);
   readonly seccionesCompostera = signal<Maestro[]>([]);
   readonly ciclosCompostera = signal<Maestro[]>([]);
+  readonly caracteristicasCatalogo = signal<Maestro[]>([]);
 
   readonly lecturaPeso = signal<LecturaPeso>({ peso: null, origen: null });
   readonly estadoLocal = signal<EstadoLocal>({
@@ -196,9 +197,8 @@ export class PesajePage implements OnInit, OnDestroy {
   });
 
   readonly formCaracteristicaCreacion = this.fb.nonNullable.group({
-    clave: ['', Validators.required],
-    valor: ['', Validators.required],
-    tipoDato: ['texto', Validators.required],
+    caracteristicaId: ['', Validators.required],
+    cantidad: [0, Validators.required],
   });
 
   readonly detalleFrutaCreacion = signal<AgregarBoletaDetalleFrutaInput[]>([]);
@@ -231,9 +231,8 @@ export class PesajePage implements OnInit, OnDestroy {
   });
 
   readonly formCaracteristica = this.fb.nonNullable.group({
-    clave: ['', Validators.required],
-    valor: ['', Validators.required],
-    tipoDato: ['texto', Validators.required],
+    caracteristicaId: ['', Validators.required],
+    cantidad: [0, Validators.required],
   });
 
   private intervalId: ReturnType<typeof setInterval> | null = null;
@@ -276,6 +275,7 @@ export class PesajePage implements OnInit, OnDestroy {
       camas: this.maestrosService.listar({ tipoCatalogo: 'Cama' }),
       seccionesCompostera: this.maestrosService.listar({ tipoCatalogo: 'SeccionCompostera' }),
       ciclosCompostera: this.maestrosService.listar({ tipoCatalogo: 'CicloCompostera' }),
+      caracteristicasCatalogo: this.maestrosService.listar({ tipoCatalogo: 'CaracteristicaEquipo' }),
     }).subscribe({
       next: ({
         pilotos,
@@ -287,6 +287,7 @@ export class PesajePage implements OnInit, OnDestroy {
         camas,
         seccionesCompostera,
         ciclosCompostera,
+        caracteristicasCatalogo,
       }) => {
         this.pilotos.set(pilotos);
         this.transportistas.set(transportistas);
@@ -297,6 +298,7 @@ export class PesajePage implements OnInit, OnDestroy {
         this.camas.set(camas);
         this.seccionesCompostera.set(seccionesCompostera);
         this.ciclosCompostera.set(ciclosCompostera);
+        this.caracteristicasCatalogo.set(caracteristicasCatalogo);
       },
       error: () => this.message.error('No se pudo cargar Maestros — ¿el backend central está arriba?'),
     });
@@ -345,6 +347,15 @@ export class PesajePage implements OnInit, OnDestroy {
     return this.tiposMovimiento().find((t) => t.id === tipoMovimientoId)?.nombre ?? tipoMovimientoId;
   }
 
+  // El servidor local no denormaliza el nombre (a diferencia del central,
+  // que sí proyecta CaracteristicaNombre vía join) — SQLite acá solo guarda
+  // el id crudo, así que la tabla resuelve el nombre a mano contra el
+  // catálogo ya cargado en memoria. Reusado por la tabla de creación y la
+  // del modal de Detalle.
+  nombreCaracteristica(id: string): string {
+    return this.caracteristicasCatalogo().find((m) => m.id === id)?.nombre ?? id;
+  }
+
   // Tabs de creación — "Agregar" acá solo empuja al array local, no hay
   // boletaId todavía para llamar al servidor local. Mismo mini-form/reset
   // que las contrapartes del modal de Detalle.
@@ -378,7 +389,7 @@ export class PesajePage implements OnInit, OnDestroy {
     }
     const input: AgregarBoletaCaracteristicaInput = this.formCaracteristicaCreacion.getRawValue();
     this.caracteristicasCreacion.update((lista) => [...lista, input]);
-    this.formCaracteristicaCreacion.reset({ clave: '', valor: '', tipoDato: 'texto' });
+    this.formCaracteristicaCreacion.reset({ caracteristicaId: '', cantidad: 0 });
   }
 
   eliminarCaracteristicaCreacion(index: number): void {
@@ -557,7 +568,7 @@ export class PesajePage implements OnInit, OnDestroy {
       jornales: 0,
       hectareas: 0,
     });
-    this.formCaracteristicaCreacion.reset({ clave: '', valor: '', tipoDato: 'texto' });
+    this.formCaracteristicaCreacion.reset({ caracteristicaId: '', cantidad: 0 });
     this.detalleFrutaCreacion.set([]);
     this.caracteristicasCreacion.set([]);
     this.tabActivaCreacion.set(0);
@@ -624,7 +635,7 @@ export class PesajePage implements OnInit, OnDestroy {
       jornales: 0,
       hectareas: 0,
     });
-    this.formCaracteristica.reset({ clave: '', valor: '', tipoDato: 'texto' });
+    this.formCaracteristica.reset({ caracteristicaId: '', cantidad: 0 });
     this.calidad.set(null);
     this.compostera.set(null);
     this.detalleFruta.set([]);
@@ -814,7 +825,7 @@ export class PesajePage implements OnInit, OnDestroy {
         this.message.success('Característica agregada.');
         this.caracteristicas.update((lista) => [...lista, caracteristica]);
         this.agregandoCaracteristica.set(false);
-        this.formCaracteristica.reset({ clave: '', valor: '', tipoDato: 'texto' });
+        this.formCaracteristica.reset({ caracteristicaId: '', cantidad: 0 });
       },
       error: (err) => {
         this.message.error(err?.error?.error ?? 'No se pudo agregar la característica.');

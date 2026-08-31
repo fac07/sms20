@@ -41,14 +41,14 @@ public record GuardarBoletaDetalleFrutaRequest(
 public record BoletaCaracteristicaDto(
     Guid Id,
     Guid BoletaId,
-    string Clave,
-    string Valor,
-    string TipoDato);
+    Guid CaracteristicaId,
+    string? CaracteristicaCodigo,
+    string? CaracteristicaNombre,
+    decimal Cantidad);
 
 public record GuardarBoletaCaracteristicaRequest(
-    string Clave,
-    string Valor,
-    string TipoDato);
+    Guid CaracteristicaId,
+    decimal Cantidad);
 
 public record BoletaComposteraDto(
     Guid Id,

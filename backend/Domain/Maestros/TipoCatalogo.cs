@@ -28,4 +28,7 @@ public enum TipoCatalogo
     /// (columna VARCHAR vía HasConversion&lt;string&gt;()).
     /// </summary>
     SeccionCompostera,
+
+    /// <summary>Catálogo de características de equipo — mismo concepto que mas_Caracteristica_Equipo del legacy (Codigo, Nombre, Activo). El operador elige de acá al cargar Características en una boleta, no tipea libre.</summary>
+    CaracteristicaEquipo,
 }

@@ -125,18 +125,16 @@
               <nz-table [nzData]="caracteristicasCreacion()" [nzShowPagination]="false" nzSize="small">
                 <thead>
                   <tr>
-                    <th>Clave</th>
-                    <th>Valor</th>
-                    <th>Tipo</th>
+                    <th>Característica</th>
+                    <th>Cantidad</th>
                     <th></th>
                   </tr>
                 </thead>
                 <tbody>
                   @for (c of caracteristicasCreacion(); track $index) {
                     <tr>
-                      <td>{{ c.clave }}</td>
-                      <td>{{ c.valor }}</td>
-                      <td>{{ c.tipoDato }}</td>
+                      <td>{{ nombreCaracteristica(c.caracteristicaId) }}</td>
+                      <td>{{ c.cantidad }}</td>
                       <td class="acciones">
                         <button
                           nz-button
@@ -151,7 +149,7 @@
                     </tr>
                   } @empty {
                     <tr>
-                      <td colspan="4" class="vacio">Sin características todavía.</td>
+                      <td colspan="3" class="vacio">Sin características todavía.</td>
                     </tr>
                   }
                 </tbody>
@@ -165,26 +163,19 @@
               >
                 <div class="form-grid">
                   <nz-form-item>
-                    <nz-form-label nzRequired>Clave</nz-form-label>
+                    <nz-form-label nzRequired>Característica</nz-form-label>
                     <nz-form-control>
-                      <input nz-input formControlName="clave" />
-                    </nz-form-control>
-                  </nz-form-item>
-                  <nz-form-item>
-                    <nz-form-label nzRequired>Valor</nz-form-label>
-                    <nz-form-control>
-                      <input nz-input formControlName="valor" />
-                    </nz-form-control>
-                  </nz-form-item>
-                  <nz-form-item>
-                    <nz-form-label nzRequired>Tipo de dato</nz-form-label>
-                    <nz-form-control>
-                      <nz-select formControlName="tipoDato">
-                        <nz-option nzValue="texto" nzLabel="Texto"></nz-option>
-                        <nz-option nzValue="numero" nzLabel="Número"></nz-option>
-                        <nz-option nzValue="fecha" nzLabel="Fecha"></nz-option>
-                        <nz-option nzValue="booleano" nzLabel="Booleano"></nz-option>
+                      <nz-select formControlName="caracteristicaId" nzPlaceHolder="Elegí la característica">
+                        @for (m of caracteristicasCatalogo(); track m.id) {
+                          <nz-option [nzValue]="m.id" [nzLabel]="m.nombre"></nz-option>
+                        }
                       </nz-select>
+                    </nz-form-control>
+                  </nz-form-item>
+                  <nz-form-item>
+                    <nz-form-label nzRequired>Cantidad</nz-form-label>
+                    <nz-form-control>
+                      <nz-input-number formControlName="cantidad" style="width: 100%" [nzMin]="0"></nz-input-number>
                     </nz-form-control>
                   </nz-form-item>
                 </div>
@@ -519,7 +510,7 @@
           nzType="info"
           nzShowIcon
           class="alerta-sin-secciones"
-          nzMessage="Este tipo de movimiento no tiene secciones adicionales habilitadas — solo Características (libre) está siempre disponible."
+          nzMessage="Este tipo de movimiento no tiene secciones adicionales habilitadas — solo Características está siempre disponible."
         ></nz-alert>
       }
 
@@ -530,18 +521,16 @@
               <nz-table [nzData]="caracteristicas()" [nzShowPagination]="false" nzSize="small">
                 <thead>
                   <tr>
-                    <th>Clave</th>
-                    <th>Valor</th>
-                    <th>Tipo</th>
+                    <th>Característica</th>
+                    <th>Cantidad</th>
                     <th></th>
                   </tr>
                 </thead>
                 <tbody>
                   @for (c of caracteristicas(); track c.id) {
                     <tr>
-                      <td>{{ c.clave }}</td>
-                      <td>{{ c.valor }}</td>
-                      <td>{{ c.tipoDato }}</td>
+                      <td>{{ nombreCaracteristica(c.caracteristicaId) }}</td>
+                      <td>{{ c.cantidad }}</td>
                       <td class="acciones">
                         <button
                           nz-button
@@ -557,7 +546,7 @@
                     </tr>
                   } @empty {
                     <tr>
-                      <td colspan="4" class="vacio">Sin características todavía.</td>
+                      <td colspan="3" class="vacio">Sin características todavía.</td>
                     </tr>
                   }
                 </tbody>
@@ -566,26 +555,19 @@
               <form nz-form [formGroup]="formCaracteristica" nzLayout="vertical" class="form-seccion form-inline-agregar">
                 <div class="form-grid">
                   <nz-form-item>
-                    <nz-form-label nzRequired>Clave</nz-form-label>
+                    <nz-form-label nzRequired>Característica</nz-form-label>
                     <nz-form-control>
-                      <input nz-input formControlName="clave" />
-                    </nz-form-control>
-                  </nz-form-item>
-                  <nz-form-item>
-                    <nz-form-label nzRequired>Valor</nz-form-label>
-                    <nz-form-control>
-                      <input nz-input formControlName="valor" />
-                    </nz-form-control>
-                  </nz-form-item>
-                  <nz-form-item>
-                    <nz-form-label nzRequired>Tipo de dato</nz-form-label>
-                    <nz-form-control>
-                      <nz-select formControlName="tipoDato">
-                        <nz-option nzValue="texto" nzLabel="Texto"></nz-option>
-                        <nz-option nzValue="numero" nzLabel="Número"></nz-option>
-                        <nz-option nzValue="fecha" nzLabel="Fecha"></nz-option>
-                        <nz-option nzValue="booleano" nzLabel="Booleano"></nz-option>
+                      <nz-select formControlName="caracteristicaId" nzPlaceHolder="Elegí la característica">
+                        @for (m of caracteristicasCatalogo(); track m.id) {
+                          <nz-option [nzValue]="m.id" [nzLabel]="m.nombre"></nz-option>
+                        }
                       </nz-select>
+                    </nz-form-control>
+                  </nz-form-item>
+                  <nz-form-item>
+                    <nz-form-label nzRequired>Cantidad</nz-form-label>
+                    <nz-form-control>
+                      <nz-input-number formControlName="cantidad" style="width: 100%" [nzMin]="0"></nz-input-number>
                     </nz-form-control>
                   </nz-form-item>
                 </div>

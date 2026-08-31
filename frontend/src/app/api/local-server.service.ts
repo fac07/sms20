@@ -150,9 +150,8 @@ export type AgregarBoletaDetalleFrutaInput = Omit<BoletaDetalleFrutaLocal, 'id' 
 export interface BoletaCaracteristicaLocal {
   id: string;
   boletaId: string;
-  clave: string;
-  valor: string;
-  tipoDato: string;
+  caracteristicaId: string;
+  cantidad: number;
 }
 
 export type AgregarBoletaCaracteristicaInput = Omit<BoletaCaracteristicaLocal, 'id' | 'boletaId'>;

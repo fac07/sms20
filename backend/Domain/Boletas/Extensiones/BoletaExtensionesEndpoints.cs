@@ -1,5 +1,6 @@
 using Microsoft.EntityFrameworkCore;
 using SmsBackend.Data;
+using SmsBackend.Domain.Maestros;
 using SmsBackend.Domain.TiposMovimiento;
 
 namespace SmsBackend.Domain.Boletas.Extensiones;
@@ -174,15 +175,16 @@ public static class BoletaExtensionesEndpoints
                 return Results.NotFound($"No existe la boleta {boletaId}.");
             }
 
-            var filas = await db.BoletaCaracteristicas.AsNoTracking()
-                .Where(c => c.BoletaId == boletaId)
-                .Select(c => ADto(c))
+            var filas = await ProyectarCaracteristicas(
+                db.BoletaCaracteristicas.AsNoTracking().Where(c => c.BoletaId == boletaId), db)
                 .ToListAsync();
             return Results.Ok(filas);
         });
 
         // Ungated — Caracteristica es el escape hatch genérico, no tiene
-        // Habilita* que validar.
+        // Habilita* que validar. Sí valida que CaracteristicaId sea un
+        // Maestro activo de TipoCatalogo=CaracteristicaEquipo — el operador
+        // elige de un catálogo predefinido, no tipea libre.
         group.MapPost("/", async (Guid boletaId, GuardarBoletaCaracteristicaRequest request, SmsDbContext db) =>
         {
             if (!await ExisteBoleta(boletaId, db))
@@ -190,19 +192,32 @@ public static class BoletaExtensionesEndpoints
                 return Results.NotFound($"No existe la boleta {boletaId}.");
             }
 
+            var caracteristica = await db.Maestros.AsNoTracking()
+                .FirstOrDefaultAsync(m => m.Id == request.CaracteristicaId && m.Activo);
+            if (caracteristica is null)
+            {
+                return Results.BadRequest($"No existe la característica {request.CaracteristicaId}, o está inactiva.");
+            }
+            if (caracteristica.TipoCatalogo != TipoCatalogo.CaracteristicaEquipo)
+            {
+                return Results.BadRequest($"El maestro {request.CaracteristicaId} no es de TipoCatalogo=CaracteristicaEquipo.");
+            }
+
             var fila = new BoletaCaracteristica
             {
                 Id = Guid.NewGuid(),
                 BoletaId = boletaId,
-                Clave = request.Clave,
-                Valor = request.Valor,
-                TipoDato = request.TipoDato,
+                CaracteristicaId = request.CaracteristicaId,
+                Cantidad = request.Cantidad,
             };
 
             db.BoletaCaracteristicas.Add(fila);
             await db.SaveChangesAsync();
 
-            return Results.Created($"/api/boletas/{boletaId}/caracteristicas/{fila.Id}", ADto(fila));
+            var dto = await ProyectarCaracteristicas(
+                db.BoletaCaracteristicas.AsNoTracking().Where(c => c.Id == fila.Id), db)
+                .FirstAsync();
+            return Results.Created($"/api/boletas/{boletaId}/caracteristicas/{fila.Id}", dto);
         });
 
         group.MapDelete("/{id:guid}", async (Guid boletaId, Guid id, SmsDbContext db) =>
@@ -252,9 +267,19 @@ public static class BoletaExtensionesEndpoints
         d.Id, d.BoletaId, d.RacimosVerdes, d.RacimosMaduros, d.RacimosSobreMaduros,
         d.RacimosPasados, d.PedunculoLargo, d.Sacos, d.Jornales, d.Hectareas);
 
-    private static BoletaCaracteristicaDto ADto(BoletaCaracteristica c) => new(
-        c.Id, c.BoletaId, c.Clave, c.Valor, c.TipoDato);
-
     private static BoletaComposteraDto ADto(BoletaCompostera c) => new(
         c.Id, c.BoletaId, c.CUI, c.CamaId, c.SeccionId, c.CicloId);
+
+    // DefaultIfEmpty() left join aunque el FK debería garantizar el match —
+    // defensivo, mismo criterio que BasculaEndpoints.ProyectarConCentro y
+    // BoletaEndpoints.Proyectar.
+    private static IQueryable<BoletaCaracteristicaDto> ProyectarCaracteristicas(
+        IQueryable<BoletaCaracteristica> caracteristicas, SmsDbContext db) =>
+        from c in caracteristicas
+        join m in db.Maestros.AsNoTracking() on c.CaracteristicaId equals m.Id into maestros
+        from maestro in maestros.DefaultIfEmpty()
+        select new BoletaCaracteristicaDto(
+            c.Id, c.BoletaId, c.CaracteristicaId,
+            maestro != null ? maestro.Codigo : null, maestro != null ? maestro.Nombre : null,
+            c.Cantidad);
 }

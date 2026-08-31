@@ -113,12 +113,16 @@ export function getDb(): Database.Database {
       CicloId TEXT NOT NULL
     );
 
+    -- CaracteristicaId/Cantidad reemplaza el diseño anterior de
+    -- Clave/Valor/TipoDato (escape hatch libre) por el catálogo predefinido
+    -- que confirmó el cliente contra el legacy (mas_Caracteristica_Equipo) —
+    -- cambio de forma antes de tener datos reales, no hace falta migrar
+    -- filas existentes.
     CREATE TABLE IF NOT EXISTS BoletaCaracteristica (
       Id TEXT PRIMARY KEY,
       BoletaId TEXT NOT NULL,
-      Clave TEXT NOT NULL,
-      Valor TEXT NOT NULL,
-      TipoDato TEXT NOT NULL
+      CaracteristicaId TEXT NOT NULL,
+      Cantidad REAL NOT NULL
     );
 
     -- Outbox local del patrón Outbox (ver diseño, sección #sincronizacion):
@@ -906,26 +910,23 @@ export function eliminarBoletaDetalleFrutaLocal(boletaId: string, id: string): b
 export interface BoletaCaracteristicaLocal {
   id: string
   boletaId: string
-  clave: string
-  valor: string
-  tipoDato: string
+  caracteristicaId: string
+  cantidad: number
 }
 
 interface BoletaCaracteristicaRow {
   Id: string
   BoletaId: string
-  Clave: string
-  Valor: string
-  TipoDato: string
+  CaracteristicaId: string
+  Cantidad: number
 }
 
 function filaABoletaCaracteristicaLocal(row: BoletaCaracteristicaRow): BoletaCaracteristicaLocal {
   return {
     id: row.Id,
     boletaId: row.BoletaId,
-    clave: row.Clave,
-    valor: row.Valor,
-    tipoDato: row.TipoDato,
+    caracteristicaId: row.CaracteristicaId,
+    cantidad: row.Cantidad,
   }
 }
 
@@ -944,8 +945,8 @@ export function agregarBoletaCaracteristicaLocal(
 
   getDb()
     .prepare(
-      `INSERT INTO BoletaCaracteristica (Id, BoletaId, Clave, Valor, TipoDato)
-       VALUES (@id, @boletaId, @clave, @valor, @tipoDato)`,
+      `INSERT INTO BoletaCaracteristica (Id, BoletaId, CaracteristicaId, Cantidad)
+       VALUES (@id, @boletaId, @caracteristicaId, @cantidad)`,
     )
     .run({ id, boletaId, ...input })
 

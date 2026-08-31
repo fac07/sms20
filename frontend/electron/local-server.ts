@@ -434,13 +434,17 @@ export function startLocalServer(port: number, esDev: boolean): Server {
       return
     }
 
-    const { clave, valor, tipoDato } = req.body as { clave?: string; valor?: string; tipoDato?: string }
-    if (!clave || !valor || !tipoDato) {
-      res.status(400).json({ error: 'Faltan clave, valor y/o tipoDato.' })
+    const { caracteristicaId, cantidad } = req.body as { caracteristicaId?: string; cantidad?: number }
+    if (!caracteristicaId || typeof caracteristicaId !== 'string') {
+      res.status(400).json({ error: 'Falta caracteristicaId.' })
+      return
+    }
+    if (typeof cantidad !== 'number' || !Number.isFinite(cantidad)) {
+      res.status(400).json({ error: 'Falta cantidad, o no es un número válido.' })
       return
     }
 
-    const caracteristica = agregarBoletaCaracteristicaLocal(req.params.id, { clave, valor, tipoDato })
+    const caracteristica = agregarBoletaCaracteristicaLocal(req.params.id, { caracteristicaId, cantidad })
     res.status(201).json(caracteristica)
   })
 
