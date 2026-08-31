@@ -50,6 +50,27 @@
   margin-top: 8px;
 }
 
+/* Tabs de creación — reemplazan las nz-card apiladas del modal de Detalle
+   para esta misma sección de extensiones, pero acá los datos todavía no
+   están persistidos (ver tabsCreacion() / crearBoleta() en el .ts). */
+.tabs-creacion {
+  margin-top: 16px;
+  margin-bottom: 8px;
+}
+
+.tab-contenido {
+  padding-top: 4px;
+}
+
+.tabs-creacion__nav {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+  margin-top: 12px;
+  padding-top: 12px;
+  border-top: 1px solid #e8e8e8;
+}
+
 .form-grid {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
@@ -80,18 +101,17 @@
   padding: 24px 0;
 }
 
-/* Modal de Detalle — cada sección es su propia nz-card, separadas por
-   espaciado vertical simple (el borde/padding de la card ya lo pone
-   ng-zorro). */
+/* Modal de Detalle — mismas tabs que la creación (ver .tabs-creacion), sin
+   Anterior/Siguiente: quien abre este modal ya sabe a qué sección viene. */
 .alerta-sin-secciones {
   margin-bottom: 16px;
 }
 
-.seccion-detalle {
+.tabs-detalle {
   margin-bottom: 16px;
 }
 
-.seccion-detalle .form-grid {
+.tab-contenido .form-grid {
   margin-bottom: 8px;
 }
 

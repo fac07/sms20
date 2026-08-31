@@ -15,12 +15,13 @@ import {
   listarBoletaCaracteristicaLocal,
   listarBoletaDetalleFrutaLocal,
   listarBoletasLocal,
+  listarOutboxLocal,
   obtenerBoletaCalidadLocal,
   obtenerBoletaComposteraLocal,
   obtenerBoletaLocal,
   setConfig,
 } from './db'
-import type { OrigenPesoLocal } from './db'
+import type { EstadoOutboxLocal, OrigenPesoLocal } from './db'
 import { crearPesoProvider, PesoProviderSimulado } from './peso-provider'
 import type { OrigenPeso } from './peso-provider'
 
@@ -450,6 +451,16 @@ export function startLocalServer(port: number, esDev: boolean): Server {
       return
     }
     res.status(204).end()
+  })
+
+  // Diagnóstico/lectura del Outbox (Parte 1 del patrón Outbox — ver el
+  // comentario junto al CREATE TABLE OutboxLocal en db.ts): permite observar
+  // los eventos de sync pendientes sin abrir el archivo .sqlite a mano.
+  // Sin gating: es solo lectura, no hay nada que proteger acá. El dispatcher
+  // que efectivamente los envía al backend central es tarea aparte.
+  app.get('/outbox', (req, res) => {
+    const estado = req.query.estado as EstadoOutboxLocal | undefined
+    res.json(listarOutboxLocal(estado))
   })
 
   app.post('/aprovisionamiento', async (req, res) => {

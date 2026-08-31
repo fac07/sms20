@@ -1,5 +1,6 @@
 import { CommonModule } from '@angular/common';
 import { Component, OnDestroy, OnInit, computed, inject, signal } from '@angular/core';
+import { toSignal } from '@angular/core/rxjs-interop';
 import { FormBuilder, ReactiveFormsModule, Validators } from '@angular/forms';
 import { NzAlertModule } from 'ng-zorro-antd/alert';
 import { NzButtonModule } from 'ng-zorro-antd/button';
@@ -13,8 +14,9 @@ import { NzModalModule } from 'ng-zorro-antd/modal';
 import { NzPopconfirmModule } from 'ng-zorro-antd/popconfirm';
 import { NzSelectModule } from 'ng-zorro-antd/select';
 import { NzTableModule } from 'ng-zorro-antd/table';
+import { NzTabsModule } from 'ng-zorro-antd/tabs';
 import { NzTagModule } from 'ng-zorro-antd/tag';
-import { catchError, forkJoin, of } from 'rxjs';
+import { Observable, catchError, forkJoin, of } from 'rxjs';
 import { Maestro, MaestrosService } from '../../../api/maestros.service';
 import { TipoMovimiento, TiposMovimientoService } from '../../../api/tipos-movimiento.service';
 import {
@@ -39,6 +41,12 @@ const USUARIO_PLACEHOLDER = 'operador@naturaceites.com';
 
 const POLL_PESO_MS = 1500;
 
+// Secciones de extensión de Boleta, en el orden fijo que pide el cliente
+// para las tabs (creación y modal de Detalle usan la misma regla): Características
+// siempre primero (no tiene flag Habilita*, es la única sección ungated), después
+// Calidad / DetalleFruta / Compostera solo si el TipoMovimiento las habilita.
+type SeccionBoleta = 'caracteristicas' | 'calidad' | 'detalleFruta' | 'compostera';
+
 @Component({
   imports: [
     CommonModule,
@@ -54,6 +62,7 @@ const POLL_PESO_MS = 1500;
     NzPopconfirmModule,
     NzSelectModule,
     NzTableModule,
+    NzTabsModule,
     NzTagModule,
   ],
   selector: 'app-pesaje-page',
@@ -105,6 +114,20 @@ export class PesajePage implements OnInit, OnDestroy {
   readonly caracteristicas = signal<BoletaCaracteristicaLocal[]>([]);
   readonly agregandoCaracteristica = signal(false);
 
+  // Mismo orden de tabs que tabsCreacion, pero derivado de los flags
+  // denormalizados de la boleta ya persistida en vez del TipoMovimiento
+  // seleccionado en el form. Características siempre está, así que esto
+  // nunca da un array vacío mientras haya boletaDetalle().
+  readonly tabsDetalle = computed<SeccionBoleta[]>(() => {
+    const b = this.boletaDetalle();
+    if (!b) return [];
+    const tabs: SeccionBoleta[] = ['caracteristicas'];
+    if (b.habilitaCalidad) tabs.push('calidad');
+    if (b.habilitaDetalleFruta) tabs.push('detalleFruta');
+    if (b.habilitaCompostera) tabs.push('compostera');
+    return tabs;
+  });
+
   readonly basculaSinCodigo = computed(() => this.estadoLocal().basculaCodigo === null);
 
   readonly form = this.fb.nonNullable.group({
@@ -122,6 +145,64 @@ export class PesajePage implements OnInit, OnDestroy {
     () =>
       !this.basculaSinCodigo() && this.lecturaPeso().peso !== null && this.form.valid && !this.guardando(),
   );
+
+  // Tabs de creación — a diferencia del
+  // modal de Detalle, acá todavía no hay boletaId, así que Calidad/Compostera
+  // son simplemente el valor actual de su propio form reactivo, y
+  // DetalleFruta/Característica se acumulan en un array local hasta que
+  // "Crear boleta" los persista en cascada. Ver crearBoleta().
+  readonly tipoMovimientoSeleccionado = toSignal(this.form.controls.tipoMovimientoId.valueChanges, {
+    initialValue: this.form.controls.tipoMovimientoId.value,
+  });
+  readonly tipoMovimientoActual = computed(
+    () => this.tiposMovimiento().find((t) => t.id === this.tipoMovimientoSeleccionado()) ?? null,
+  );
+  readonly tabsCreacion = computed<SeccionBoleta[]>(() => {
+    const t = this.tipoMovimientoActual();
+    if (!t) return [];
+    const tabs: SeccionBoleta[] = ['caracteristicas'];
+    if (t.habilitaCalidad) tabs.push('calidad');
+    if (t.habilitaDetalleFruta) tabs.push('detalleFruta');
+    if (t.habilitaCompostera) tabs.push('compostera');
+    return tabs;
+  });
+
+  readonly tabActivaCreacion = signal(0);
+
+  readonly formCalidadCreacion = this.fb.nonNullable.group({
+    acidez: [null as number | null],
+    dobi: [null as number | null],
+    humedad: [null as number | null],
+    temperatura: [null as number | null],
+    numeroRevisionQA: [''],
+  });
+
+  readonly formComposteraCreacion = this.fb.nonNullable.group({
+    cui: ['', Validators.required],
+    camaId: ['', Validators.required],
+    seccionId: ['', Validators.required],
+    cicloId: ['', Validators.required],
+  });
+
+  readonly formDetalleFrutaCreacion = this.fb.nonNullable.group({
+    racimosVerdes: [0, Validators.required],
+    racimosMaduros: [0, Validators.required],
+    racimosSobreMaduros: [0, Validators.required],
+    racimosPasados: [0, Validators.required],
+    pedunculoLargo: [0, Validators.required],
+    sacos: [0, Validators.required],
+    jornales: [0, Validators.required],
+    hectareas: [0, Validators.required],
+  });
+
+  readonly formCaracteristicaCreacion = this.fb.nonNullable.group({
+    clave: ['', Validators.required],
+    valor: ['', Validators.required],
+    tipoDato: ['texto', Validators.required],
+  });
+
+  readonly detalleFrutaCreacion = signal<AgregarBoletaDetalleFrutaInput[]>([]);
+  readonly caracteristicasCreacion = signal<AgregarBoletaCaracteristicaInput[]>([]);
 
   readonly formCalidad = this.fb.nonNullable.group({
     acidez: [null as number | null],
@@ -164,6 +245,11 @@ export class PesajePage implements OnInit, OnDestroy {
 
     this.actualizarPeso();
     this.intervalId = setInterval(() => this.actualizarPeso(), POLL_PESO_MS);
+
+    // Cambiar de TipoMovimiento puede cambiar qué tabs existen (y cuántas) —
+    // si el operador estaba en la tab 3 y el nuevo tipo solo tiene 2, un
+    // índice fuera de rango rompe nz-tabs. Volvemos siempre a la primera.
+    this.form.controls.tipoMovimientoId.valueChanges.subscribe(() => this.tabActivaCreacion.set(0));
   }
 
   ngOnDestroy(): void {
@@ -259,9 +345,68 @@ export class PesajePage implements OnInit, OnDestroy {
     return this.tiposMovimiento().find((t) => t.id === tipoMovimientoId)?.nombre ?? tipoMovimientoId;
   }
 
+  // Tabs de creación — "Agregar" acá solo empuja al array local, no hay
+  // boletaId todavía para llamar al servidor local. Mismo mini-form/reset
+  // que las contrapartes del modal de Detalle.
+  agregarDetalleFrutaCreacion(): void {
+    if (this.formDetalleFrutaCreacion.invalid) {
+      this.formDetalleFrutaCreacion.markAllAsTouched();
+      return;
+    }
+    const input: AgregarBoletaDetalleFrutaInput = this.formDetalleFrutaCreacion.getRawValue();
+    this.detalleFrutaCreacion.update((lista) => [...lista, input]);
+    this.formDetalleFrutaCreacion.reset({
+      racimosVerdes: 0,
+      racimosMaduros: 0,
+      racimosSobreMaduros: 0,
+      racimosPasados: 0,
+      pedunculoLargo: 0,
+      sacos: 0,
+      jornales: 0,
+      hectareas: 0,
+    });
+  }
+
+  eliminarDetalleFrutaCreacion(index: number): void {
+    this.detalleFrutaCreacion.update((lista) => lista.filter((_, i) => i !== index));
+  }
+
+  agregarCaracteristicaCreacion(): void {
+    if (this.formCaracteristicaCreacion.invalid) {
+      this.formCaracteristicaCreacion.markAllAsTouched();
+      return;
+    }
+    const input: AgregarBoletaCaracteristicaInput = this.formCaracteristicaCreacion.getRawValue();
+    this.caracteristicasCreacion.update((lista) => [...lista, input]);
+    this.formCaracteristicaCreacion.reset({ clave: '', valor: '', tipoDato: 'texto' });
+  }
+
+  eliminarCaracteristicaCreacion(index: number): void {
+    this.caracteristicasCreacion.update((lista) => lista.filter((_, i) => i !== index));
+  }
+
+  anteriorTabCreacion(): void {
+    this.tabActivaCreacion.update((i) => Math.max(0, i - 1));
+  }
+
+  siguienteTabCreacion(): void {
+    this.tabActivaCreacion.update((i) => Math.min(this.tabsCreacion().length - 1, i + 1));
+  }
+
   crearBoleta(): void {
     if (this.form.invalid || !this.puedeCrear()) {
       this.form.markAllAsTouched();
+      return;
+    }
+
+    // Compostera es la única sección de creación con validators required —
+    // si el operador la tocó (dirty) pero la dejó incompleta, bloqueamos
+    // todo el submit acá, mismo espíritu que el form.markAllAsTouched() de
+    // arriba, en vez de silenciarla en la cascada post-creación.
+    const composteraTocada =
+      this.tabsCreacion().includes('compostera') && this.formComposteraCreacion.dirty;
+    if (composteraTocada && this.formComposteraCreacion.invalid) {
+      this.formComposteraCreacion.markAllAsTouched();
       return;
     }
 
@@ -294,26 +439,128 @@ export class PesajePage implements OnInit, OnDestroy {
 
     this.guardando.set(true);
     this.localServer.crearBoleta(input).subscribe({
-      next: (boleta) => {
-        this.message.success(`Boleta ${boleta.numeroBoleta} creada.`);
-        this.guardando.set(false);
-        this.form.reset({
-          tipoMovimientoId: '',
-          equipoId: '',
-          transportistaId: '',
-          pilotoId: '',
-          terceroId: '',
-          productoId: '',
-          almacenOrigenId: '',
-          almacenDestinoId: '',
-        });
-        this.cargarBoletasEnTransito();
-      },
+      next: (boleta) => this.guardarExtensionesCreacion(boleta),
       error: (err) => {
         this.message.error(err?.error?.error ?? 'No se pudo crear la boleta.');
         this.guardando.set(false);
       },
     });
+  }
+
+  // La boleta ya existe en este punto — no hay forma de "deshacer" el POST
+  // inicial si una extensión falla, así que cada llamada atrapa su propio
+  // error (no deja que forkJoin aborte al primer fallo) y acumulamos qué
+  // secciones fallaron para avisarle al operador con nombre y apellido.
+  private guardarExtensionesCreacion(boleta: BoletaLocal): void {
+    const llamadas: Observable<unknown>[] = [];
+    const fallos: string[] = [];
+
+    if (boleta.habilitaCalidad && this.formCalidadCreacion.dirty) {
+      llamadas.push(
+        this.localServer.guardarCalidad(boleta.id, this.formCalidadCreacion.getRawValue()).pipe(
+          catchError(() => {
+            fallos.push('Calidad');
+            return of(null);
+          }),
+        ),
+      );
+    }
+
+    if (boleta.habilitaCompostera && this.formComposteraCreacion.dirty) {
+      llamadas.push(
+        this.localServer.guardarCompostera(boleta.id, this.formComposteraCreacion.getRawValue()).pipe(
+          catchError(() => {
+            fallos.push('Compostera');
+            return of(null);
+          }),
+        ),
+      );
+    }
+
+    for (const fila of this.detalleFrutaCreacion()) {
+      llamadas.push(
+        this.localServer.agregarDetalleFruta(boleta.id, fila).pipe(
+          catchError(() => {
+            fallos.push('Detalle de fruta');
+            return of(null);
+          }),
+        ),
+      );
+    }
+
+    for (const fila of this.caracteristicasCreacion()) {
+      llamadas.push(
+        this.localServer.agregarCaracteristica(boleta.id, fila).pipe(
+          catchError(() => {
+            fallos.push('Características');
+            return of(null);
+          }),
+        ),
+      );
+    }
+
+    // RxJS forkJoin([]) completa de inmediato con [] (no hace falta
+    // defaultIfEmpty), pero lo hacemos explícito igual: si no había nada
+    // para guardar, no tiene sentido armar un forkJoin solo para eso.
+    const extensiones$ = llamadas.length > 0 ? forkJoin(llamadas) : of([]);
+    extensiones$.subscribe(() => this.finalizarCreacion(boleta, fallos));
+  }
+
+  private finalizarCreacion(boleta: BoletaLocal, fallos: string[]): void {
+    if (fallos.length > 0) {
+      // Únicos duplicados posibles son la misma sección repetida, pero cada
+      // sección solo agrega una vez a `fallos` (Calidad/Compostera son 1
+      // llamada; DetalleFruta/Características pueden agregar varias veces,
+      // una por fila fallida — se muestra tal cual, es información real).
+      this.message.error(`Boleta ${boleta.numeroBoleta} creada, pero no se pudo guardar: ${fallos.join(', ')}.`);
+    } else {
+      const extras: string[] = [];
+      const detalleCount = this.detalleFrutaCreacion().length;
+      const caracteristicasCount = this.caracteristicasCreacion().length;
+      if (detalleCount > 0) extras.push(`${detalleCount} fila(s) de detalle de fruta`);
+      if (caracteristicasCount > 0) extras.push(`${caracteristicasCount} característica(s)`);
+      const sufijo = extras.length > 0 ? ` (${extras.join(', ')})` : '';
+      this.message.success(`Boleta ${boleta.numeroBoleta} creada.${sufijo}`);
+    }
+
+    this.guardando.set(false);
+    this.resetearFormularioCreacion();
+    this.cargarBoletasEnTransito();
+  }
+
+  private resetearFormularioCreacion(): void {
+    this.form.reset({
+      tipoMovimientoId: '',
+      equipoId: '',
+      transportistaId: '',
+      pilotoId: '',
+      terceroId: '',
+      productoId: '',
+      almacenOrigenId: '',
+      almacenDestinoId: '',
+    });
+    this.formCalidadCreacion.reset({
+      acidez: null,
+      dobi: null,
+      humedad: null,
+      temperatura: null,
+      numeroRevisionQA: '',
+    });
+    this.formComposteraCreacion.reset({ cui: '', camaId: '', seccionId: '', cicloId: '' });
+    this.formDetalleFrutaCreacion.reset({
+      racimosVerdes: 0,
+      racimosMaduros: 0,
+      racimosSobreMaduros: 0,
+      racimosPasados: 0,
+      pedunculoLargo: 0,
+      sacos: 0,
+      jornales: 0,
+      hectareas: 0,
+    });
+    this.formCaracteristicaCreacion.reset({ clave: '', valor: '', tipoDato: 'texto' });
+    this.detalleFrutaCreacion.set([]);
+    this.caracteristicasCreacion.set([]);
+    this.tabActivaCreacion.set(0);
   }
 
   abrirCierre(boleta: BoletaLocal): void {

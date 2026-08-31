@@ -120,6 +120,40 @@ export function getDb(): Database.Database {
       Valor TEXT NOT NULL,
       TipoDato TEXT NOT NULL
     );
+
+    -- Outbox local del patrón Outbox (ver diseño, sección #sincronizacion):
+    -- cada mutación de Boleta (crear/cerrar/anular) escribe acá, en la MISMA
+    -- transacción que la escritura de Boleta — así una boleta nunca puede
+    -- existir sin su evento de sync pendiente. Esta tabla es OutboxLocal
+    -- (de esta báscula), no OutboxD365 (esa es central-side, no se toca acá).
+    -- Solo el escritor (crear/cerrar/anularBoletaLocal) y el lector
+    -- (listarOutboxLocal) viven en este archivo — el dispatcher que de verdad
+    -- envía estos eventos al backend central es una tarea aparte, todavía no
+    -- implementada.
+    CREATE TABLE IF NOT EXISTS OutboxLocal (
+      Id TEXT PRIMARY KEY,
+      Secuencia INTEGER NOT NULL,
+      TipoEntidad TEXT NOT NULL,
+      EntidadId TEXT NOT NULL,
+      Operacion TEXT NOT NULL,
+      Payload TEXT NOT NULL,
+      Estado TEXT NOT NULL,
+      Intentos INTEGER NOT NULL DEFAULT 0,
+      UltimoError TEXT,
+      FechaCreacion TEXT NOT NULL,
+      FechaEnviado TEXT
+    );
+
+    CREATE INDEX IF NOT EXISTS IX_OutboxLocal_Estado ON OutboxLocal(Estado);
+
+    -- Contador monotónico global de Secuencia para OutboxLocal — a
+    -- diferencia de Correlativo (una fila por Prefijo), acá solo existe UNA
+    -- secuencia para todo el outbox de esta báscula, así que es una tabla de
+    -- una sola fila, con Id fijado a 1 vía CHECK.
+    CREATE TABLE IF NOT EXISTS OutboxLocalSecuencia (
+      Id INTEGER PRIMARY KEY CHECK (Id = 1),
+      Valor INTEGER NOT NULL DEFAULT 0
+    );
   `)
 
   // CREATE TABLE IF NOT EXISTS no toca una tabla Boleta que ya existía de una
@@ -198,6 +232,31 @@ export function siguienteCorrelativo(prefijo: string): number {
   })
 
   return incrementar(prefijo)
+}
+
+/**
+ * Siguiente valor de Secuencia para OutboxLocal — mismo patrón que
+ * siguienteCorrelativo de arriba (tabla contador + incremento dentro de una
+ * transacción SQLite para cerrar la ventana de carrera), pero más simple:
+ * acá no hay Prefijo, es un único contador global para todo el outbox de
+ * esta báscula. No se exporta — solo la usan crearBoletaLocal,
+ * cerrarBoletaLocal y anularBoletaLocal al escribir su evento de outbox.
+ */
+function siguienteSecuenciaOutbox(): number {
+  const incrementar = getDb().transaction((): number => {
+    getDb()
+      .prepare('INSERT INTO OutboxLocalSecuencia (Id, Valor) VALUES (1, 0) ON CONFLICT(Id) DO NOTHING')
+      .run()
+
+    getDb().prepare('UPDATE OutboxLocalSecuencia SET Valor = Valor + 1 WHERE Id = 1').run()
+
+    const row = getDb().prepare('SELECT Valor FROM OutboxLocalSecuencia WHERE Id = 1').get() as {
+      Valor: number
+    }
+    return row.Valor
+  })
+
+  return incrementar()
 }
 
 export type EstadoBoletaLocal = 'EnTransito' | 'Cerrada' | 'Anulada' | 'Reemitida'
@@ -336,6 +395,107 @@ export function listarBoletasLocal(estado?: string): BoletaLocal[] {
   return rows.map(filaABoletaLocal)
 }
 
+// ---------------------------------------------------------------------------
+// OutboxLocal — ver el CREATE TABLE en getDb() para el porqué de cada
+// columna. Acá solo va el read path (listarOutboxLocal, para un futuro
+// dispatcher y para verificar esto ahora) y el helper privado de escritura
+// que usan crearBoletaLocal/cerrarBoletaLocal/anularBoletaLocal dentro de su
+// propia transacción — marcar Enviado/Error es trabajo del dispatcher,
+// todavía no implementado, así que no hay función de mutación acá.
+// ---------------------------------------------------------------------------
+
+export type TipoEntidadOutboxLocal = 'Boleta' | 'MaestroProvisional'
+export type OperacionOutboxLocal = 'Crear' | 'Cerrar' | 'Anular'
+export type EstadoOutboxLocal = 'Pendiente' | 'Enviado' | 'Error'
+
+export interface OutboxLocalEvento {
+  id: string
+  secuencia: number
+  tipoEntidad: TipoEntidadOutboxLocal
+  entidadId: string
+  operacion: OperacionOutboxLocal
+  payload: string // JSON crudo — el consumidor decide cuándo parsearlo
+  estado: EstadoOutboxLocal
+  intentos: number
+  ultimoError: string | null
+  fechaCreacion: string
+  fechaEnviado: string | null
+}
+
+interface OutboxLocalRow {
+  Id: string
+  Secuencia: number
+  TipoEntidad: TipoEntidadOutboxLocal
+  EntidadId: string
+  Operacion: OperacionOutboxLocal
+  Payload: string
+  Estado: EstadoOutboxLocal
+  Intentos: number
+  UltimoError: string | null
+  FechaCreacion: string
+  FechaEnviado: string | null
+}
+
+function filaAOutboxLocalEvento(row: OutboxLocalRow): OutboxLocalEvento {
+  return {
+    id: row.Id,
+    secuencia: row.Secuencia,
+    tipoEntidad: row.TipoEntidad,
+    entidadId: row.EntidadId,
+    operacion: row.Operacion,
+    payload: row.Payload,
+    estado: row.Estado,
+    intentos: row.Intentos,
+    ultimoError: row.UltimoError,
+    fechaCreacion: row.FechaCreacion,
+    fechaEnviado: row.FechaEnviado,
+  }
+}
+
+/** Orden por Secuencia ASC — el más viejo primero, el orden natural de despacho de un futuro dispatcher. */
+export function listarOutboxLocal(estado?: EstadoOutboxLocal): OutboxLocalEvento[] {
+  const rows = estado
+    ? (getDb()
+        .prepare('SELECT * FROM OutboxLocal WHERE Estado = ? ORDER BY Secuencia ASC')
+        .all(estado) as OutboxLocalRow[])
+    : (getDb().prepare('SELECT * FROM OutboxLocal ORDER BY Secuencia ASC').all() as OutboxLocalRow[])
+  return rows.map(filaAOutboxLocalEvento)
+}
+
+/**
+ * Inserta el evento de OutboxLocal — SIEMPRE se llama desde dentro de la
+ * misma transacción que la escritura de Boleta (ver
+ * crearBoletaLocal/cerrarBoletaLocal/anularBoletaLocal), nunca suelta, para
+ * sostener la garantía central del patrón Outbox: una boleta no puede existir
+ * sin su evento de sync pendiente.
+ */
+function registrarEventoOutboxLocal(
+  tipoEntidad: TipoEntidadOutboxLocal,
+  entidadId: string,
+  operacion: OperacionOutboxLocal,
+  payload: string,
+): void {
+  getDb()
+    .prepare(
+      `INSERT INTO OutboxLocal (
+        Id, Secuencia, TipoEntidad, EntidadId, Operacion, Payload,
+        Estado, Intentos, FechaCreacion
+      ) VALUES (
+        @id, @secuencia, @tipoEntidad, @entidadId, @operacion, @payload,
+        'Pendiente', 0, @fechaCreacion
+      )`,
+    )
+    .run({
+      id: crypto.randomUUID(),
+      secuencia: siguienteSecuenciaOutbox(),
+      tipoEntidad,
+      entidadId,
+      operacion,
+      payload,
+      fechaCreacion: new Date().toISOString(),
+    })
+}
+
 /**
  * Ingreso — abre la boleta con el primer pesaje. Arma NumeroBoleta como
  * `{prefijo}-{codigoBascula}-{secuencial}` (ver Correlativo en el diseño),
@@ -364,51 +524,70 @@ export function crearBoletaLocal(
   > & { prefijo: string; codigoBascula: string },
 ): BoletaLocal {
   const id = crypto.randomUUID()
-  const secuencial = siguienteCorrelativo(input.prefijo)
-  const numeroBoleta = `${input.prefijo}-${input.codigoBascula}-${String(secuencial).padStart(6, '0')}`
   const fechaHoraIngreso = new Date().toISOString()
 
-  getDb()
-    .prepare(
-      `INSERT INTO Boleta (
-        Id, NumeroBoleta, TipoMovimientoId, Estado, EstadoSync,
-        EquipoId, TransportistaId, PilotoId, TerceroId, ProductoId,
-        AlmacenOrigenId, AlmacenDestinoId,
-        PesoIngreso, OrigenPesoIngreso,
-        FechaHoraIngreso, UsuarioIngreso, CreadaOffline,
-        HabilitaCalidad, HabilitaDetalleFruta, HabilitaCompostera
-      ) VALUES (
-        @id, @numeroBoleta, @tipoMovimientoId, @estado, @estadoSync,
-        @equipoId, @transportistaId, @pilotoId, @terceroId, @productoId,
-        @almacenOrigenId, @almacenDestinoId,
-        @pesoIngreso, @origenPesoIngreso,
-        @fechaHoraIngreso, @usuarioIngreso, @creadaOffline,
-        @habilitaCalidad, @habilitaDetalleFruta, @habilitaCompostera
-      )`,
-    )
-    .run({
-      id,
-      numeroBoleta,
-      tipoMovimientoId: input.tipoMovimientoId,
-      estado: 'EnTransito',
-      estadoSync: 'Local',
-      equipoId: input.equipoId,
-      transportistaId: input.transportistaId,
-      pilotoId: input.pilotoId,
-      terceroId: input.terceroId,
-      productoId: input.productoId,
-      almacenOrigenId: input.almacenOrigenId,
-      almacenDestinoId: input.almacenDestinoId,
-      pesoIngreso: input.pesoIngreso,
-      origenPesoIngreso: input.origenPesoIngreso,
-      fechaHoraIngreso,
-      usuarioIngreso: input.usuarioIngreso,
-      creadaOffline: input.creadaOffline ? 1 : 0,
-      habilitaCalidad: input.habilitaCalidad ? 1 : 0,
-      habilitaDetalleFruta: input.habilitaDetalleFruta ? 1 : 0,
-      habilitaCompostera: input.habilitaCompostera ? 1 : 0,
-    })
+  // Todo dentro de una sola transacción SQLite (mismo patrón que
+  // siguienteCorrelativo más arriba): el INSERT de Boleta y el evento de
+  // OutboxLocal comitean o se revierten juntos — así una boleta nunca puede
+  // quedar creada sin su evento 'Crear' pendiente (la garantía central del
+  // patrón Outbox, ver diseño #sincronizacion). siguienteCorrelativo va
+  // adentro también, no antes: si el INSERT de Boleta fallara después de
+  // haber consumido un Secuencial, ese hueco quedaría revertido junto con
+  // todo lo demás en vez de perderse silenciosamente.
+  const ejecutar = getDb().transaction((): void => {
+    const secuencial = siguienteCorrelativo(input.prefijo)
+    const numeroBoleta = `${input.prefijo}-${input.codigoBascula}-${String(secuencial).padStart(6, '0')}`
 
+    getDb()
+      .prepare(
+        `INSERT INTO Boleta (
+          Id, NumeroBoleta, TipoMovimientoId, Estado, EstadoSync,
+          EquipoId, TransportistaId, PilotoId, TerceroId, ProductoId,
+          AlmacenOrigenId, AlmacenDestinoId,
+          PesoIngreso, OrigenPesoIngreso,
+          FechaHoraIngreso, UsuarioIngreso, CreadaOffline,
+          HabilitaCalidad, HabilitaDetalleFruta, HabilitaCompostera
+        ) VALUES (
+          @id, @numeroBoleta, @tipoMovimientoId, @estado, @estadoSync,
+          @equipoId, @transportistaId, @pilotoId, @terceroId, @productoId,
+          @almacenOrigenId, @almacenDestinoId,
+          @pesoIngreso, @origenPesoIngreso,
+          @fechaHoraIngreso, @usuarioIngreso, @creadaOffline,
+          @habilitaCalidad, @habilitaDetalleFruta, @habilitaCompostera
+        )`,
+      )
+      .run({
+        id,
+        numeroBoleta,
+        tipoMovimientoId: input.tipoMovimientoId,
+        estado: 'EnTransito',
+        estadoSync: 'Local',
+        equipoId: input.equipoId,
+        transportistaId: input.transportistaId,
+        pilotoId: input.pilotoId,
+        terceroId: input.terceroId,
+        productoId: input.productoId,
+        almacenOrigenId: input.almacenOrigenId,
+        almacenDestinoId: input.almacenDestinoId,
+        pesoIngreso: input.pesoIngreso,
+        origenPesoIngreso: input.origenPesoIngreso,
+        fechaHoraIngreso,
+        usuarioIngreso: input.usuarioIngreso,
+        creadaOffline: input.creadaOffline ? 1 : 0,
+        habilitaCalidad: input.habilitaCalidad ? 1 : 0,
+        habilitaDetalleFruta: input.habilitaDetalleFruta ? 1 : 0,
+        habilitaCompostera: input.habilitaCompostera ? 1 : 0,
+      })
+
+    // El payload es la Boleta completa tal como queda en ese instante — si en
+    // el futuro esto necesita incluir las extensiones (Calidad/DetalleFruta/
+    // Compostera/Características), ese es un cambio de diseño pendiente, no
+    // resuelto acá; hoy el payload solo cubre lo que Boleta sabe de sí misma.
+    const payload = JSON.stringify(obtenerBoletaLocal(id))
+    registrarEventoOutboxLocal('Boleta', id, 'Crear', payload)
+  })
+
+  ejecutar()
   return obtenerBoletaLocal(id)!
 }
 
@@ -431,28 +610,37 @@ export function cerrarBoletaLocal(
   const pesoNeto = Math.abs(boleta.pesoIngreso - input.pesoSalida)
   const fechaHoraSalida = new Date().toISOString()
 
-  getDb()
-    .prepare(
-      `UPDATE Boleta SET
-        PesoSalida = @pesoSalida,
-        PesoNeto = @pesoNeto,
-        OrigenPesoSalida = @origenPesoSalida,
-        FechaHoraSalida = @fechaHoraSalida,
-        UsuarioSalida = @usuarioSalida,
-        BasculaSalidaId = @basculaSalidaId,
-        Estado = 'Cerrada'
-      WHERE Id = @id`,
-    )
-    .run({
-      id,
-      pesoSalida: input.pesoSalida,
-      pesoNeto,
-      origenPesoSalida: input.origenPesoSalida,
-      fechaHoraSalida,
-      usuarioSalida: input.usuarioSalida,
-      basculaSalidaId: input.basculaSalidaId ?? null,
-    })
+  // Misma razón que en crearBoletaLocal: el UPDATE de Boleta y el evento
+  // OutboxLocal 'Cerrar' van en una sola transacción.
+  const ejecutar = getDb().transaction((): void => {
+    getDb()
+      .prepare(
+        `UPDATE Boleta SET
+          PesoSalida = @pesoSalida,
+          PesoNeto = @pesoNeto,
+          OrigenPesoSalida = @origenPesoSalida,
+          FechaHoraSalida = @fechaHoraSalida,
+          UsuarioSalida = @usuarioSalida,
+          BasculaSalidaId = @basculaSalidaId,
+          Estado = 'Cerrada'
+        WHERE Id = @id`,
+      )
+      .run({
+        id,
+        pesoSalida: input.pesoSalida,
+        pesoNeto,
+        origenPesoSalida: input.origenPesoSalida,
+        fechaHoraSalida,
+        usuarioSalida: input.usuarioSalida,
+        basculaSalidaId: input.basculaSalidaId ?? null,
+      })
 
+    // Ver el comentario en crearBoletaLocal sobre el alcance del payload.
+    const payload = JSON.stringify(obtenerBoletaLocal(id))
+    registrarEventoOutboxLocal('Boleta', id, 'Cerrar', payload)
+  })
+
+  ejecutar()
   return obtenerBoletaLocal(id)
 }
 
@@ -471,17 +659,26 @@ export function anularBoletaLocal(
     throw new Error('Esta boleta ya está anulada.')
   }
 
-  getDb()
-    .prepare(
-      `UPDATE Boleta SET
-        Estado = 'Anulada',
-        UsuarioAnula = @usuarioAnula,
-        UsuarioAutoriza = @usuarioAutoriza,
-        MotivoAnulacion = @motivoAnulacion
-      WHERE Id = @id`,
-    )
-    .run({ id, ...input })
+  // Misma razón que en crearBoletaLocal: el UPDATE de Boleta y el evento
+  // OutboxLocal 'Anular' van en una sola transacción.
+  const ejecutar = getDb().transaction((): void => {
+    getDb()
+      .prepare(
+        `UPDATE Boleta SET
+          Estado = 'Anulada',
+          UsuarioAnula = @usuarioAnula,
+          UsuarioAutoriza = @usuarioAutoriza,
+          MotivoAnulacion = @motivoAnulacion
+        WHERE Id = @id`,
+      )
+      .run({ id, ...input })
 
+    // Ver el comentario en crearBoletaLocal sobre el alcance del payload.
+    const payload = JSON.stringify(obtenerBoletaLocal(id))
+    registrarEventoOutboxLocal('Boleta', id, 'Anular', payload)
+  })
+
+  ejecutar()
   return obtenerBoletaLocal(id)
 }
 
