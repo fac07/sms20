@@ -79,3 +79,32 @@
   color: rgba(0, 0, 0, 0.45);
   padding: 24px 0;
 }
+
+/* Modal de Detalle — cada sección es su propia nz-card, separadas por
+   espaciado vertical simple (el borde/padding de la card ya lo pone
+   ng-zorro). */
+.alerta-sin-secciones {
+  margin-bottom: 16px;
+}
+
+.seccion-detalle {
+  margin-bottom: 16px;
+}
+
+.seccion-detalle .form-grid {
+  margin-bottom: 8px;
+}
+
+.form-grid--4 {
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+}
+
+.form-inline-agregar {
+  margin-top: 12px;
+  padding-top: 12px;
+  border-top: 1px solid #e8e8e8;
+}
+
+.boton-cerrar-detalle {
+  width: 100%;
+}

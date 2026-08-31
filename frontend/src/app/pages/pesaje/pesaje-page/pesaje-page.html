@@ -146,6 +146,10 @@
           <td class="pesos">{{ b.pesoIngreso | number: '1.2-2' }}</td>
           <td>{{ b.fechaHoraIngreso | date: 'short' }}</td>
           <td class="acciones">
+            <button nz-button nzType="default" (click)="abrirDetalle(b)">
+              <span nz-icon nzType="file-text"></span>
+              Detalle
+            </button>
             <button nz-button nzType="default" (click)="abrirCierre(b)">
               <span nz-icon nzType="stop"></span>
               Cerrar
@@ -187,6 +191,306 @@
           {{ lecturaPeso().origen ?? 'sin lectura' }}
         </nz-tag>
       </div>
+    }
+  </ng-container>
+</nz-modal>
+
+<nz-modal
+  [nzTitle]="'Detalle — ' + (boletaDetalle()?.numeroBoleta ?? '')"
+  [nzVisible]="!!boletaDetalle()"
+  [nzWidth]="720"
+  [nzFooter]="null"
+  (nzOnCancel)="cerrarDetalle()"
+>
+  <ng-container *nzModalContent>
+    @if (boletaDetalle(); as b) {
+      @if (!b.habilitaCalidad && !b.habilitaDetalleFruta && !b.habilitaCompostera) {
+        <nz-alert
+          nzType="info"
+          nzShowIcon
+          class="alerta-sin-secciones"
+          nzMessage="Este tipo de movimiento no tiene secciones adicionales habilitadas — solo Características (libre) está siempre disponible."
+        ></nz-alert>
+      }
+
+      @if (b.habilitaCalidad) {
+        <nz-card nzTitle="Calidad" class="seccion-detalle">
+          <form nz-form [formGroup]="formCalidad" nzLayout="vertical" class="form-seccion">
+            <div class="form-grid form-grid--4">
+              <nz-form-item>
+                <nz-form-label>Acidez</nz-form-label>
+                <nz-form-control>
+                  <nz-input-number formControlName="acidez" style="width: 100%"></nz-input-number>
+                </nz-form-control>
+              </nz-form-item>
+              <nz-form-item>
+                <nz-form-label>DOBI</nz-form-label>
+                <nz-form-control>
+                  <nz-input-number formControlName="dobi" style="width: 100%"></nz-input-number>
+                </nz-form-control>
+              </nz-form-item>
+              <nz-form-item>
+                <nz-form-label>Humedad</nz-form-label>
+                <nz-form-control>
+                  <nz-input-number formControlName="humedad" style="width: 100%"></nz-input-number>
+                </nz-form-control>
+              </nz-form-item>
+              <nz-form-item>
+                <nz-form-label>Temperatura</nz-form-label>
+                <nz-form-control>
+                  <nz-input-number formControlName="temperatura" style="width: 100%"></nz-input-number>
+                </nz-form-control>
+              </nz-form-item>
+            </div>
+            <nz-form-item>
+              <nz-form-label>N° revisión QA</nz-form-label>
+              <nz-form-control>
+                <input nz-input formControlName="numeroRevisionQA" placeholder="Opcional" />
+              </nz-form-control>
+            </nz-form-item>
+            <button nz-button nzType="primary" [nzLoading]="guardandoCalidad()" (click)="guardarCalidad()">
+              Guardar
+            </button>
+          </form>
+        </nz-card>
+      }
+
+      @if (b.habilitaDetalleFruta) {
+        <nz-card nzTitle="Detalle de fruta" class="seccion-detalle">
+          <nz-table [nzData]="detalleFruta()" [nzShowPagination]="false" nzSize="small">
+            <thead>
+              <tr>
+                <th>Verdes</th>
+                <th>Maduros</th>
+                <th>SobreMaduros</th>
+                <th>Pasados</th>
+                <th>Pedúnculo largo</th>
+                <th>Sacos</th>
+                <th>Jornales</th>
+                <th>Hectáreas</th>
+                <th></th>
+              </tr>
+            </thead>
+            <tbody>
+              @for (d of detalleFruta(); track d.id) {
+                <tr>
+                  <td>{{ d.racimosVerdes }}</td>
+                  <td>{{ d.racimosMaduros }}</td>
+                  <td>{{ d.racimosSobreMaduros }}</td>
+                  <td>{{ d.racimosPasados }}</td>
+                  <td>{{ d.pedunculoLargo }}</td>
+                  <td>{{ d.sacos }}</td>
+                  <td>{{ d.jornales }}</td>
+                  <td>{{ d.hectareas }}</td>
+                  <td class="acciones">
+                    <button
+                      nz-button
+                      nzType="text"
+                      nzDanger
+                      nz-popconfirm
+                      nzPopconfirmTitle="¿Eliminar esta fila?"
+                      (nzOnConfirm)="eliminarDetalleFruta(d.id)"
+                    >
+                      <span nz-icon nzType="stop"></span>
+                    </button>
+                  </td>
+                </tr>
+              } @empty {
+                <tr>
+                  <td colspan="9" class="vacio">Sin filas todavía.</td>
+                </tr>
+              }
+            </tbody>
+          </nz-table>
+
+          <form nz-form [formGroup]="formDetalleFruta" nzLayout="vertical" class="form-seccion form-inline-agregar">
+            <div class="form-grid form-grid--4">
+              <nz-form-item>
+                <nz-form-label>Verdes</nz-form-label>
+                <nz-form-control>
+                  <nz-input-number formControlName="racimosVerdes" style="width: 100%" [nzMin]="0"></nz-input-number>
+                </nz-form-control>
+              </nz-form-item>
+              <nz-form-item>
+                <nz-form-label>Maduros</nz-form-label>
+                <nz-form-control>
+                  <nz-input-number formControlName="racimosMaduros" style="width: 100%" [nzMin]="0"></nz-input-number>
+                </nz-form-control>
+              </nz-form-item>
+              <nz-form-item>
+                <nz-form-label>SobreMaduros</nz-form-label>
+                <nz-form-control>
+                  <nz-input-number formControlName="racimosSobreMaduros" style="width: 100%" [nzMin]="0"></nz-input-number>
+                </nz-form-control>
+              </nz-form-item>
+              <nz-form-item>
+                <nz-form-label>Pasados</nz-form-label>
+                <nz-form-control>
+                  <nz-input-number formControlName="racimosPasados" style="width: 100%" [nzMin]="0"></nz-input-number>
+                </nz-form-control>
+              </nz-form-item>
+              <nz-form-item>
+                <nz-form-label>Pedúnculo largo</nz-form-label>
+                <nz-form-control>
+                  <nz-input-number formControlName="pedunculoLargo" style="width: 100%" [nzMin]="0"></nz-input-number>
+                </nz-form-control>
+              </nz-form-item>
+              <nz-form-item>
+                <nz-form-label>Sacos</nz-form-label>
+                <nz-form-control>
+                  <nz-input-number formControlName="sacos" style="width: 100%" [nzMin]="0"></nz-input-number>
+                </nz-form-control>
+              </nz-form-item>
+              <nz-form-item>
+                <nz-form-label>Jornales</nz-form-label>
+                <nz-form-control>
+                  <nz-input-number formControlName="jornales" style="width: 100%" [nzMin]="0"></nz-input-number>
+                </nz-form-control>
+              </nz-form-item>
+              <nz-form-item>
+                <nz-form-label>Hectáreas</nz-form-label>
+                <nz-form-control>
+                  <nz-input-number formControlName="hectareas" style="width: 100%" [nzMin]="0"></nz-input-number>
+                </nz-form-control>
+              </nz-form-item>
+            </div>
+            <button
+              nz-button
+              nzType="default"
+              [nzLoading]="agregandoDetalleFruta()"
+              (click)="agregarDetalleFruta()"
+            >
+              <span nz-icon nzType="plus"></span>
+              Agregar
+            </button>
+          </form>
+        </nz-card>
+      }
+
+      @if (b.habilitaCompostera) {
+        <nz-card nzTitle="Compostera" class="seccion-detalle">
+          <form nz-form [formGroup]="formCompostera" nzLayout="vertical" class="form-seccion">
+            <div class="form-grid">
+              <nz-form-item>
+                <nz-form-label nzRequired>CUI</nz-form-label>
+                <nz-form-control>
+                  <input nz-input formControlName="cui" />
+                </nz-form-control>
+              </nz-form-item>
+              <nz-form-item>
+                <nz-form-label nzRequired>Cama</nz-form-label>
+                <nz-form-control>
+                  <nz-select formControlName="camaId" nzPlaceHolder="Elegí la cama">
+                    @for (m of camas(); track m.id) {
+                      <nz-option [nzValue]="m.id" [nzLabel]="m.nombre"></nz-option>
+                    }
+                  </nz-select>
+                </nz-form-control>
+              </nz-form-item>
+              <nz-form-item>
+                <nz-form-label nzRequired>Sección</nz-form-label>
+                <nz-form-control>
+                  <nz-select formControlName="seccionId" nzPlaceHolder="Elegí la sección">
+                    @for (m of seccionesCompostera(); track m.id) {
+                      <nz-option [nzValue]="m.id" [nzLabel]="m.nombre"></nz-option>
+                    }
+                  </nz-select>
+                </nz-form-control>
+              </nz-form-item>
+              <nz-form-item>
+                <nz-form-label nzRequired>Ciclo</nz-form-label>
+                <nz-form-control>
+                  <nz-select formControlName="cicloId" nzPlaceHolder="Elegí el ciclo">
+                    @for (m of ciclosCompostera(); track m.id) {
+                      <nz-option [nzValue]="m.id" [nzLabel]="m.nombre"></nz-option>
+                    }
+                  </nz-select>
+                </nz-form-control>
+              </nz-form-item>
+            </div>
+            <button nz-button nzType="primary" [nzLoading]="guardandoCompostera()" (click)="guardarCompostera()">
+              Guardar
+            </button>
+          </form>
+        </nz-card>
+      }
+
+      <nz-card nzTitle="Características" class="seccion-detalle">
+        <nz-table [nzData]="caracteristicas()" [nzShowPagination]="false" nzSize="small">
+          <thead>
+            <tr>
+              <th>Clave</th>
+              <th>Valor</th>
+              <th>Tipo</th>
+              <th></th>
+            </tr>
+          </thead>
+          <tbody>
+            @for (c of caracteristicas(); track c.id) {
+              <tr>
+                <td>{{ c.clave }}</td>
+                <td>{{ c.valor }}</td>
+                <td>{{ c.tipoDato }}</td>
+                <td class="acciones">
+                  <button
+                    nz-button
+                    nzType="text"
+                    nzDanger
+                    nz-popconfirm
+                    nzPopconfirmTitle="¿Eliminar esta característica?"
+                    (nzOnConfirm)="eliminarCaracteristica(c.id)"
+                  >
+                    <span nz-icon nzType="stop"></span>
+                  </button>
+                </td>
+              </tr>
+            } @empty {
+              <tr>
+                <td colspan="4" class="vacio">Sin características todavía.</td>
+              </tr>
+            }
+          </tbody>
+        </nz-table>
+
+        <form nz-form [formGroup]="formCaracteristica" nzLayout="vertical" class="form-seccion form-inline-agregar">
+          <div class="form-grid">
+            <nz-form-item>
+              <nz-form-label nzRequired>Clave</nz-form-label>
+              <nz-form-control>
+                <input nz-input formControlName="clave" />
+              </nz-form-control>
+            </nz-form-item>
+            <nz-form-item>
+              <nz-form-label nzRequired>Valor</nz-form-label>
+              <nz-form-control>
+                <input nz-input formControlName="valor" />
+              </nz-form-control>
+            </nz-form-item>
+            <nz-form-item>
+              <nz-form-label nzRequired>Tipo de dato</nz-form-label>
+              <nz-form-control>
+                <nz-select formControlName="tipoDato">
+                  <nz-option nzValue="texto" nzLabel="Texto"></nz-option>
+                  <nz-option nzValue="numero" nzLabel="Número"></nz-option>
+                  <nz-option nzValue="fecha" nzLabel="Fecha"></nz-option>
+                  <nz-option nzValue="booleano" nzLabel="Booleano"></nz-option>
+                </nz-select>
+              </nz-form-control>
+            </nz-form-item>
+          </div>
+          <button
+            nz-button
+            nzType="default"
+            [nzLoading]="agregandoCaracteristica()"
+            (click)="agregarCaracteristica()"
+          >
+            <span nz-icon nzType="plus"></span>
+            Agregar
+          </button>
+        </form>
+      </nz-card>
+
+      <button nz-button nzType="default" class="boton-cerrar-detalle" (click)="cerrarDetalle()">Cerrar</button>
     }
   </ng-container>
 </nz-modal>

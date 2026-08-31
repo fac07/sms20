@@ -2,11 +2,21 @@ import cors from 'cors'
 import express from 'express'
 import type { Server } from 'node:http'
 import {
+  agregarBoletaCaracteristicaLocal,
+  agregarBoletaDetalleFrutaLocal,
   anularBoletaLocal,
   cerrarBoletaLocal,
   crearBoletaLocal,
+  eliminarBoletaCaracteristicaLocal,
+  eliminarBoletaDetalleFrutaLocal,
   getConfig,
+  guardarBoletaCalidadLocal,
+  guardarBoletaComposteraLocal,
+  listarBoletaCaracteristicaLocal,
+  listarBoletaDetalleFrutaLocal,
   listarBoletasLocal,
+  obtenerBoletaCalidadLocal,
+  obtenerBoletaComposteraLocal,
   obtenerBoletaLocal,
   setConfig,
 } from './db'
@@ -129,6 +139,9 @@ export function startLocalServer(port: number, esDev: boolean): Server {
       origenPesoIngreso?: OrigenPesoLocal
       usuarioIngreso?: string
       creadaOffline?: boolean
+      habilitaCalidad?: boolean
+      habilitaDetalleFruta?: boolean
+      habilitaCompostera?: boolean
     }
 
     if (typeof body.pesoIngreso !== 'number' || !Number.isFinite(body.pesoIngreso)) {
@@ -155,6 +168,13 @@ export function startLocalServer(port: number, esDev: boolean): Server {
       fechaHoraIngreso: new Date().toISOString(),
       usuarioIngreso: body.usuarioIngreso ?? '',
       creadaOffline: body.creadaOffline ?? false,
+      // Denormalizado desde el TipoMovimiento que la pantalla de Pesaje ya
+      // tiene en memoria al momento de crear la boleta (ver el comentario
+      // junto al ALTER TABLE en db.ts) — default false para no romper
+      // callers viejos que todavía no mandan estos tres campos.
+      habilitaCalidad: body.habilitaCalidad ?? false,
+      habilitaDetalleFruta: body.habilitaDetalleFruta ?? false,
+      habilitaCompostera: body.habilitaCompostera ?? false,
     })
 
     res.status(201).json(boleta)
@@ -212,6 +232,224 @@ export function startLocalServer(port: number, esDev: boolean): Server {
     } catch (err) {
       res.status(409).json({ error: (err as Error).message })
     }
+  })
+
+  // Extensiones de Boleta (Calidad, DetalleFruta, Compostera, Caracteristica)
+  // — mismo shape de rutas que backend/Domain/Boletas/Extensiones
+  // (BoletaExtensionesEndpoints.cs), sin el prefijo /api por el mismo motivo
+  // que el resto de este archivo. El "motor" de gate central resuelve
+  // TipoMovimiento con un lookup en vivo; acá no hay tabla TipoMovimiento
+  // local (solo Boleta y Correlativo), así que el gate lee los 3 flags
+  // Habilita* que crearBoletaLocal ya denormalizó sobre la fila de Boleta —
+  // ver el comentario junto al ALTER TABLE en db.ts.
+  const boletaHabilita = (
+    boletaId: string,
+    campo: 'habilitaCalidad' | 'habilitaDetalleFruta' | 'habilitaCompostera',
+  ): boolean | null => {
+    const boleta = obtenerBoletaLocal(boletaId)
+    return boleta ? boleta[campo] : null
+  }
+
+  const esNumeroONulo = (v: unknown): v is number | null | undefined =>
+    v === null || v === undefined || (typeof v === 'number' && Number.isFinite(v))
+
+  app.get('/boletas/:id/calidad', (req, res) => {
+    if (!obtenerBoletaLocal(req.params.id)) {
+      res.status(404).json({ error: 'No existe esa boleta.' })
+      return
+    }
+
+    const calidad = obtenerBoletaCalidadLocal(req.params.id)
+    if (!calidad) {
+      res.status(404).json({ error: 'Esta boleta no tiene datos de calidad.' })
+      return
+    }
+    res.json(calidad)
+  })
+
+  app.put('/boletas/:id/calidad', (req, res) => {
+    const habilitada = boletaHabilita(req.params.id, 'habilitaCalidad')
+    if (habilitada === null) {
+      res.status(404).json({ error: 'No existe esa boleta.' })
+      return
+    }
+    if (!habilitada) {
+      res.status(400).json({ error: 'Este TipoMovimiento no tiene habilitada la sección Calidad.' })
+      return
+    }
+
+    const { acidez, dobi, humedad, temperatura, numeroRevisionQA } = req.body as {
+      acidez?: number | null
+      dobi?: number | null
+      humedad?: number | null
+      temperatura?: number | null
+      numeroRevisionQA?: string | null
+    }
+
+    if (
+      !esNumeroONulo(acidez) ||
+      !esNumeroONulo(dobi) ||
+      !esNumeroONulo(humedad) ||
+      !esNumeroONulo(temperatura)
+    ) {
+      res.status(400).json({ error: 'Acidez, DOBI, Humedad y Temperatura deben ser números o nulos.' })
+      return
+    }
+
+    const calidad = guardarBoletaCalidadLocal(req.params.id, {
+      acidez: acidez ?? null,
+      dobi: dobi ?? null,
+      humedad: humedad ?? null,
+      temperatura: temperatura ?? null,
+      numeroRevisionQA: numeroRevisionQA ?? null,
+    })
+    res.json(calidad)
+  })
+
+  app.get('/boletas/:id/compostera', (req, res) => {
+    if (!obtenerBoletaLocal(req.params.id)) {
+      res.status(404).json({ error: 'No existe esa boleta.' })
+      return
+    }
+
+    const compostera = obtenerBoletaComposteraLocal(req.params.id)
+    if (!compostera) {
+      res.status(404).json({ error: 'Esta boleta no tiene datos de compostera.' })
+      return
+    }
+    res.json(compostera)
+  })
+
+  app.put('/boletas/:id/compostera', (req, res) => {
+    const habilitada = boletaHabilita(req.params.id, 'habilitaCompostera')
+    if (habilitada === null) {
+      res.status(404).json({ error: 'No existe esa boleta.' })
+      return
+    }
+    if (!habilitada) {
+      res.status(400).json({ error: 'Este TipoMovimiento no tiene habilitada la sección Compostera.' })
+      return
+    }
+
+    const { cui, camaId, seccionId, cicloId } = req.body as {
+      cui?: string
+      camaId?: string
+      seccionId?: string
+      cicloId?: string
+    }
+
+    if (!cui || !camaId || !seccionId || !cicloId) {
+      res.status(400).json({ error: 'Faltan cui, camaId, seccionId y/o cicloId.' })
+      return
+    }
+
+    const compostera = guardarBoletaComposteraLocal(req.params.id, { cui, camaId, seccionId, cicloId })
+    res.json(compostera)
+  })
+
+  app.get('/boletas/:id/detalle-fruta', (req, res) => {
+    if (!obtenerBoletaLocal(req.params.id)) {
+      res.status(404).json({ error: 'No existe esa boleta.' })
+      return
+    }
+    res.json(listarBoletaDetalleFrutaLocal(req.params.id))
+  })
+
+  app.post('/boletas/:id/detalle-fruta', (req, res) => {
+    const habilitada = boletaHabilita(req.params.id, 'habilitaDetalleFruta')
+    if (habilitada === null) {
+      res.status(404).json({ error: 'No existe esa boleta.' })
+      return
+    }
+    if (!habilitada) {
+      res.status(400).json({ error: 'Este TipoMovimiento no tiene habilitada la sección DetalleFruta.' })
+      return
+    }
+
+    const body = req.body as {
+      racimosVerdes?: number
+      racimosMaduros?: number
+      racimosSobreMaduros?: number
+      racimosPasados?: number
+      pedunculoLargo?: number
+      sacos?: number
+      jornales?: number
+      hectareas?: number
+    }
+
+    const campos = [
+      body.racimosVerdes,
+      body.racimosMaduros,
+      body.racimosSobreMaduros,
+      body.racimosPasados,
+      body.pedunculoLargo,
+      body.sacos,
+      body.jornales,
+      body.hectareas,
+    ]
+    if (campos.some((v) => typeof v !== 'number' || !Number.isFinite(v))) {
+      res.status(400).json({
+        error:
+          'racimosVerdes, racimosMaduros, racimosSobreMaduros, racimosPasados, pedunculoLargo, sacos, jornales y hectareas deben ser números.',
+      })
+      return
+    }
+
+    const detalle = agregarBoletaDetalleFrutaLocal(req.params.id, {
+      racimosVerdes: body.racimosVerdes!,
+      racimosMaduros: body.racimosMaduros!,
+      racimosSobreMaduros: body.racimosSobreMaduros!,
+      racimosPasados: body.racimosPasados!,
+      pedunculoLargo: body.pedunculoLargo!,
+      sacos: body.sacos!,
+      jornales: body.jornales!,
+      hectareas: body.hectareas!,
+    })
+    res.status(201).json(detalle)
+  })
+
+  app.delete('/boletas/:id/detalle-fruta/:detalleId', (req, res) => {
+    const borrado = eliminarBoletaDetalleFrutaLocal(req.params.id, req.params.detalleId)
+    if (!borrado) {
+      res.status(404).json({ error: 'No existe ese detalle de fruta.' })
+      return
+    }
+    res.status(204).end()
+  })
+
+  // Ungated — Caracteristica es el escape hatch genérico, igual que en el
+  // backend central: no depende de ningún Habilita*.
+  app.get('/boletas/:id/caracteristicas', (req, res) => {
+    if (!obtenerBoletaLocal(req.params.id)) {
+      res.status(404).json({ error: 'No existe esa boleta.' })
+      return
+    }
+    res.json(listarBoletaCaracteristicaLocal(req.params.id))
+  })
+
+  app.post('/boletas/:id/caracteristicas', (req, res) => {
+    if (!obtenerBoletaLocal(req.params.id)) {
+      res.status(404).json({ error: 'No existe esa boleta.' })
+      return
+    }
+
+    const { clave, valor, tipoDato } = req.body as { clave?: string; valor?: string; tipoDato?: string }
+    if (!clave || !valor || !tipoDato) {
+      res.status(400).json({ error: 'Faltan clave, valor y/o tipoDato.' })
+      return
+    }
+
+    const caracteristica = agregarBoletaCaracteristicaLocal(req.params.id, { clave, valor, tipoDato })
+    res.status(201).json(caracteristica)
+  })
+
+  app.delete('/boletas/:id/caracteristicas/:caracteristicaId', (req, res) => {
+    const borrado = eliminarBoletaCaracteristicaLocal(req.params.id, req.params.caracteristicaId)
+    if (!borrado) {
+      res.status(404).json({ error: 'No existe esa característica.' })
+      return
+    }
+    res.status(204).end()
   })
 
   app.post('/aprovisionamiento', async (req, res) => {

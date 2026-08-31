@@ -51,6 +51,9 @@ export interface BoletaLocal {
   basculaSalidaId: string | null;
   respuestaD365Id: string | null;
   creadaOffline: boolean;
+  habilitaCalidad: boolean;
+  habilitaDetalleFruta: boolean;
+  habilitaCompostera: boolean;
 }
 
 export interface LecturaPeso {
@@ -80,6 +83,9 @@ export interface CrearBoletaInput {
   origenPesoIngreso: OrigenPeso;
   usuarioIngreso: string;
   creadaOffline: boolean;
+  habilitaCalidad: boolean;
+  habilitaDetalleFruta: boolean;
+  habilitaCompostera: boolean;
 }
 
 export interface CerrarBoletaInput {
@@ -88,6 +94,68 @@ export interface CerrarBoletaInput {
   usuarioSalida: string;
   basculaSalidaId?: string | null;
 }
+
+// Extensiones de Boleta (Calidad, DetalleFruta, Compostera, Caracteristica) —
+// mismos campos que BoletaCalidadLocal/BoletaDetalleFrutaLocal/
+// BoletaComposteraLocal/BoletaCaracteristicaLocal en frontend/electron/db.ts.
+export interface BoletaCalidadLocal {
+  id: string;
+  boletaId: string;
+  acidez: number | null;
+  dobi: number | null;
+  humedad: number | null;
+  temperatura: number | null;
+  numeroRevisionQA: string | null;
+}
+
+export interface GuardarBoletaCalidadInput {
+  acidez: number | null;
+  dobi: number | null;
+  humedad: number | null;
+  temperatura: number | null;
+  numeroRevisionQA: string | null;
+}
+
+export interface BoletaComposteraLocal {
+  id: string;
+  boletaId: string;
+  cui: string;
+  camaId: string;
+  seccionId: string;
+  cicloId: string;
+}
+
+export interface GuardarBoletaComposteraInput {
+  cui: string;
+  camaId: string;
+  seccionId: string;
+  cicloId: string;
+}
+
+export interface BoletaDetalleFrutaLocal {
+  id: string;
+  boletaId: string;
+  racimosVerdes: number;
+  racimosMaduros: number;
+  racimosSobreMaduros: number;
+  racimosPasados: number;
+  pedunculoLargo: number;
+  sacos: number;
+  jornales: number;
+  hectareas: number;
+}
+
+export type AgregarBoletaDetalleFrutaInput = Omit<BoletaDetalleFrutaLocal, 'id' | 'boletaId'>;
+
+export interface BoletaCaracteristicaLocal {
+  id: string;
+  boletaId: string;
+  clave: string;
+  valor: string;
+  tipoDato: string;
+}
+
+export type AgregarBoletaCaracteristicaInput = Omit<BoletaCaracteristicaLocal, 'id' | 'boletaId'>;
 
 /**
  * Cliente del servidor local de Electron (127.0.0.1:4127) — contrapartida de
@@ -118,5 +186,69 @@ export class LocalServerService {
 
   cerrarBoleta(id: string, input: CerrarBoletaInput): Observable<BoletaLocal> {
     return this.http.post<BoletaLocal>(`${LOCAL_SERVER_URL}/boletas/${id}/cerrar`, input);
+  }
+
+  // Extensiones — Calidad y Compostera son upsert 1:1 por boleta (PUT),
+  // DetalleFruta y Caracteristica son colecciones 1:N (POST/DELETE por fila).
+  obtenerCalidad(boletaId: string): Observable<BoletaCalidadLocal> {
+    return this.http.get<BoletaCalidadLocal>(`${LOCAL_SERVER_URL}/boletas/${boletaId}/calidad`);
+  }
+
+  guardarCalidad(boletaId: string, input: GuardarBoletaCalidadInput): Observable<BoletaCalidadLocal> {
+    return this.http.put<BoletaCalidadLocal>(`${LOCAL_SERVER_URL}/boletas/${boletaId}/calidad`, input);
+  }
+
+  obtenerCompostera(boletaId: string): Observable<BoletaComposteraLocal> {
+    return this.http.get<BoletaComposteraLocal>(`${LOCAL_SERVER_URL}/boletas/${boletaId}/compostera`);
+  }
+
+  guardarCompostera(
+    boletaId: string,
+    input: GuardarBoletaComposteraInput,
+  ): Observable<BoletaComposteraLocal> {
+    return this.http.put<BoletaComposteraLocal>(
+      `${LOCAL_SERVER_URL}/boletas/${boletaId}/compostera`,
+      input,
+    );
+  }
+
+  listarDetalleFruta(boletaId: string): Observable<BoletaDetalleFrutaLocal[]> {
+    return this.http.get<BoletaDetalleFrutaLocal[]>(
+      `${LOCAL_SERVER_URL}/boletas/${boletaId}/detalle-fruta`,
+    );
+  }
+
+  agregarDetalleFruta(
+    boletaId: string,
+    input: AgregarBoletaDetalleFrutaInput,
+  ): Observable<BoletaDetalleFrutaLocal> {
+    return this.http.post<BoletaDetalleFrutaLocal>(
+      `${LOCAL_SERVER_URL}/boletas/${boletaId}/detalle-fruta`,
+      input,
+    );
+  }
+
+  eliminarDetalleFruta(boletaId: string, id: string): Observable<void> {
+    return this.http.delete<void>(`${LOCAL_SERVER_URL}/boletas/${boletaId}/detalle-fruta/${id}`);
+  }
+
+  listarCaracteristicas(boletaId: string): Observable<BoletaCaracteristicaLocal[]> {
+    return this.http.get<BoletaCaracteristicaLocal[]>(
+      `${LOCAL_SERVER_URL}/boletas/${boletaId}/caracteristicas`,
+    );
+  }
+
+  agregarCaracteristica(
+    boletaId: string,
+    input: AgregarBoletaCaracteristicaInput,
+  ): Observable<BoletaCaracteristicaLocal> {
+    return this.http.post<BoletaCaracteristicaLocal>(
+      `${LOCAL_SERVER_URL}/boletas/${boletaId}/caracteristicas`,
+      input,
+    );
+  }
+
+  eliminarCaracteristica(boletaId: string, id: string): Observable<void> {
+    return this.http.delete<void>(`${LOCAL_SERVER_URL}/boletas/${boletaId}/caracteristicas/${id}`);
   }
 }

@@ -6,8 +6,11 @@ import { NzButtonModule } from 'ng-zorro-antd/button';
 import { NzCardModule } from 'ng-zorro-antd/card';
 import { NzFormModule } from 'ng-zorro-antd/form';
 import { NzIconModule } from 'ng-zorro-antd/icon';
+import { NzInputModule } from 'ng-zorro-antd/input';
+import { NzInputNumberModule } from 'ng-zorro-antd/input-number';
 import { NzMessageService } from 'ng-zorro-antd/message';
 import { NzModalModule } from 'ng-zorro-antd/modal';
+import { NzPopconfirmModule } from 'ng-zorro-antd/popconfirm';
 import { NzSelectModule } from 'ng-zorro-antd/select';
 import { NzTableModule } from 'ng-zorro-antd/table';
 import { NzTagModule } from 'ng-zorro-antd/tag';
@@ -15,6 +18,12 @@ import { catchError, forkJoin, of } from 'rxjs';
 import { Maestro, MaestrosService } from '../../../api/maestros.service';
 import { TipoMovimiento, TiposMovimientoService } from '../../../api/tipos-movimiento.service';
 import {
+  AgregarBoletaCaracteristicaInput,
+  AgregarBoletaDetalleFrutaInput,
+  BoletaCalidadLocal,
+  BoletaCaracteristicaLocal,
+  BoletaComposteraLocal,
+  BoletaDetalleFrutaLocal,
   BoletaLocal,
   CerrarBoletaInput,
   CrearBoletaInput,
@@ -39,7 +48,10 @@ const POLL_PESO_MS = 1500;
     NzCardModule,
     NzFormModule,
     NzIconModule,
+    NzInputModule,
+    NzInputNumberModule,
     NzModalModule,
+    NzPopconfirmModule,
     NzSelectModule,
     NzTableModule,
     NzTagModule,
@@ -62,6 +74,9 @@ export class PesajePage implements OnInit, OnDestroy {
   readonly terceros = signal<Maestro[]>([]);
   readonly productos = signal<Maestro[]>([]);
   readonly almacenes = signal<Maestro[]>([]);
+  readonly camas = signal<Maestro[]>([]);
+  readonly seccionesCompostera = signal<Maestro[]>([]);
+  readonly ciclosCompostera = signal<Maestro[]>([]);
 
   readonly lecturaPeso = signal<LecturaPeso>({ peso: null, origen: null });
   readonly estadoLocal = signal<EstadoLocal>({
@@ -76,6 +91,19 @@ export class PesajePage implements OnInit, OnDestroy {
   readonly boletasEnTransito = signal<BoletaLocal[]>([]);
   readonly boletaCerrando = signal<BoletaLocal | null>(null);
   readonly cerrando = signal(false);
+
+  // Modal de Detalle — extensiones de Boleta (Calidad, DetalleFruta,
+  // Compostera, Caracteristica). Ver abrirDetalle().
+  readonly boletaDetalle = signal<BoletaLocal | null>(null);
+  readonly cargandoDetalle = signal(false);
+  readonly guardandoCalidad = signal(false);
+  readonly calidad = signal<BoletaCalidadLocal | null>(null);
+  readonly guardandoCompostera = signal(false);
+  readonly compostera = signal<BoletaComposteraLocal | null>(null);
+  readonly detalleFruta = signal<BoletaDetalleFrutaLocal[]>([]);
+  readonly agregandoDetalleFruta = signal(false);
+  readonly caracteristicas = signal<BoletaCaracteristicaLocal[]>([]);
+  readonly agregandoCaracteristica = signal(false);
 
   readonly basculaSinCodigo = computed(() => this.estadoLocal().basculaCodigo === null);
 
@@ -94,6 +122,38 @@ export class PesajePage implements OnInit, OnDestroy {
     () =>
       !this.basculaSinCodigo() && this.lecturaPeso().peso !== null && this.form.valid && !this.guardando(),
   );
+
+  readonly formCalidad = this.fb.nonNullable.group({
+    acidez: [null as number | null],
+    dobi: [null as number | null],
+    humedad: [null as number | null],
+    temperatura: [null as number | null],
+    numeroRevisionQA: [''],
+  });
+
+  readonly formCompostera = this.fb.nonNullable.group({
+    cui: ['', Validators.required],
+    camaId: ['', Validators.required],
+    seccionId: ['', Validators.required],
+    cicloId: ['', Validators.required],
+  });
+
+  readonly formDetalleFruta = this.fb.nonNullable.group({
+    racimosVerdes: [0, Validators.required],
+    racimosMaduros: [0, Validators.required],
+    racimosSobreMaduros: [0, Validators.required],
+    racimosPasados: [0, Validators.required],
+    pedunculoLargo: [0, Validators.required],
+    sacos: [0, Validators.required],
+    jornales: [0, Validators.required],
+    hectareas: [0, Validators.required],
+  });
+
+  readonly formCaracteristica = this.fb.nonNullable.group({
+    clave: ['', Validators.required],
+    valor: ['', Validators.required],
+    tipoDato: ['texto', Validators.required],
+  });
 
   private intervalId: ReturnType<typeof setInterval> | null = null;
 
@@ -127,14 +187,30 @@ export class PesajePage implements OnInit, OnDestroy {
       terceros: this.maestrosService.listar({ tipoCatalogo: 'Tercero' }),
       productos: this.maestrosService.listar({ tipoCatalogo: 'Producto' }),
       almacenes: this.maestrosService.listar({ tipoCatalogo: 'Almacen' }),
+      camas: this.maestrosService.listar({ tipoCatalogo: 'Cama' }),
+      seccionesCompostera: this.maestrosService.listar({ tipoCatalogo: 'SeccionCompostera' }),
+      ciclosCompostera: this.maestrosService.listar({ tipoCatalogo: 'CicloCompostera' }),
     }).subscribe({
-      next: ({ pilotos, transportistas, equipos, terceros, productos, almacenes }) => {
+      next: ({
+        pilotos,
+        transportistas,
+        equipos,
+        terceros,
+        productos,
+        almacenes,
+        camas,
+        seccionesCompostera,
+        ciclosCompostera,
+      }) => {
         this.pilotos.set(pilotos);
         this.transportistas.set(transportistas);
         this.equipos.set(equipos);
         this.terceros.set(terceros);
         this.productos.set(productos);
         this.almacenes.set(almacenes);
+        this.camas.set(camas);
+        this.seccionesCompostera.set(seccionesCompostera);
+        this.ciclosCompostera.set(ciclosCompostera);
       },
       error: () => this.message.error('No se pudo cargar Maestros — ¿el backend central está arriba?'),
     });
@@ -211,6 +287,9 @@ export class PesajePage implements OnInit, OnDestroy {
       origenPesoIngreso: lectura.origen ?? 'Bascula',
       usuarioIngreso: USUARIO_PLACEHOLDER,
       creadaOffline: true,
+      habilitaCalidad: tipoMovimiento.habilitaCalidad,
+      habilitaDetalleFruta: tipoMovimiento.habilitaDetalleFruta,
+      habilitaCompostera: tipoMovimiento.habilitaCompostera,
     };
 
     this.guardando.set(true);
@@ -270,6 +349,240 @@ export class PesajePage implements OnInit, OnDestroy {
         this.message.error(err?.error?.error ?? 'No se pudo cerrar la boleta.');
         this.cerrando.set(false);
       },
+    });
+  }
+
+  // Modal de Detalle — extensiones de Boleta. Solo se cargan las secciones
+  // que el TipoMovimiento de esta boleta tiene habilitadas (flags
+  // denormalizados en BoletaLocal); Características es ungated, igual que
+  // en el servidor local. Un 404 en Calidad/Compostera es normal cuando
+  // todavía no se guardó nada — no es error.
+  abrirDetalle(boleta: BoletaLocal): void {
+    this.boletaDetalle.set(boleta);
+    this.formCalidad.reset({
+      acidez: null,
+      dobi: null,
+      humedad: null,
+      temperatura: null,
+      numeroRevisionQA: '',
+    });
+    this.formCompostera.reset({ cui: '', camaId: '', seccionId: '', cicloId: '' });
+    this.formDetalleFruta.reset({
+      racimosVerdes: 0,
+      racimosMaduros: 0,
+      racimosSobreMaduros: 0,
+      racimosPasados: 0,
+      pedunculoLargo: 0,
+      sacos: 0,
+      jornales: 0,
+      hectareas: 0,
+    });
+    this.formCaracteristica.reset({ clave: '', valor: '', tipoDato: 'texto' });
+    this.calidad.set(null);
+    this.compostera.set(null);
+    this.detalleFruta.set([]);
+    this.caracteristicas.set([]);
+
+    this.cargandoDetalle.set(true);
+
+    const calidad$ = boleta.habilitaCalidad
+      ? this.localServer.obtenerCalidad(boleta.id).pipe(
+          catchError((err) => {
+            if (err?.status !== 404) {
+              this.message.error(err?.error?.error ?? 'No se pudo cargar Calidad.');
+            }
+            return of(null);
+          }),
+        )
+      : of(null);
+
+    const compostera$ = boleta.habilitaCompostera
+      ? this.localServer.obtenerCompostera(boleta.id).pipe(
+          catchError((err) => {
+            if (err?.status !== 404) {
+              this.message.error(err?.error?.error ?? 'No se pudo cargar Compostera.');
+            }
+            return of(null);
+          }),
+        )
+      : of(null);
+
+    const detalleFruta$ = boleta.habilitaDetalleFruta
+      ? this.localServer.listarDetalleFruta(boleta.id).pipe(
+          catchError((err) => {
+            this.message.error(err?.error?.error ?? 'No se pudo cargar Detalle de fruta.');
+            return of([] as BoletaDetalleFrutaLocal[]);
+          }),
+        )
+      : of([] as BoletaDetalleFrutaLocal[]);
+
+    const caracteristicas$ = this.localServer.listarCaracteristicas(boleta.id).pipe(
+      catchError((err) => {
+        this.message.error(err?.error?.error ?? 'No se pudo cargar Características.');
+        return of([] as BoletaCaracteristicaLocal[]);
+      }),
+    );
+
+    forkJoin({
+      calidad: calidad$,
+      compostera: compostera$,
+      detalleFruta: detalleFruta$,
+      caracteristicas: caracteristicas$,
+    }).subscribe(({ calidad, compostera, detalleFruta, caracteristicas }) => {
+      this.cargandoDetalle.set(false);
+      this.calidad.set(calidad);
+      this.compostera.set(compostera);
+      this.detalleFruta.set(detalleFruta);
+      this.caracteristicas.set(caracteristicas);
+
+      if (calidad) {
+        this.formCalidad.patchValue({
+          acidez: calidad.acidez,
+          dobi: calidad.dobi,
+          humedad: calidad.humedad,
+          temperatura: calidad.temperatura,
+          numeroRevisionQA: calidad.numeroRevisionQA ?? '',
+        });
+      }
+      if (compostera) {
+        this.formCompostera.patchValue({
+          cui: compostera.cui,
+          camaId: compostera.camaId,
+          seccionId: compostera.seccionId,
+          cicloId: compostera.cicloId,
+        });
+      }
+    });
+  }
+
+  cerrarDetalle(): void {
+    this.boletaDetalle.set(null);
+    this.calidad.set(null);
+    this.compostera.set(null);
+    this.detalleFruta.set([]);
+    this.caracteristicas.set([]);
+  }
+
+  guardarCalidad(): void {
+    if (this.formCalidad.invalid) {
+      this.formCalidad.markAllAsTouched();
+      return;
+    }
+    const boleta = this.boletaDetalle();
+    if (!boleta) return;
+
+    this.guardandoCalidad.set(true);
+    this.localServer.guardarCalidad(boleta.id, this.formCalidad.getRawValue()).subscribe({
+      next: (calidad) => {
+        this.message.success('Calidad guardada.');
+        this.calidad.set(calidad);
+        this.guardandoCalidad.set(false);
+      },
+      error: (err) => {
+        this.message.error(err?.error?.error ?? 'No se pudo guardar Calidad.');
+        this.guardandoCalidad.set(false);
+      },
+    });
+  }
+
+  guardarCompostera(): void {
+    if (this.formCompostera.invalid) {
+      this.formCompostera.markAllAsTouched();
+      return;
+    }
+    const boleta = this.boletaDetalle();
+    if (!boleta) return;
+
+    this.guardandoCompostera.set(true);
+    this.localServer.guardarCompostera(boleta.id, this.formCompostera.getRawValue()).subscribe({
+      next: (compostera) => {
+        this.message.success('Compostera guardada.');
+        this.compostera.set(compostera);
+        this.guardandoCompostera.set(false);
+      },
+      error: (err) => {
+        this.message.error(err?.error?.error ?? 'No se pudo guardar Compostera.');
+        this.guardandoCompostera.set(false);
+      },
+    });
+  }
+
+  agregarDetalleFruta(): void {
+    if (this.formDetalleFruta.invalid) {
+      this.formDetalleFruta.markAllAsTouched();
+      return;
+    }
+    const boleta = this.boletaDetalle();
+    if (!boleta) return;
+
+    const input: AgregarBoletaDetalleFrutaInput = this.formDetalleFruta.getRawValue();
+
+    this.agregandoDetalleFruta.set(true);
+    this.localServer.agregarDetalleFruta(boleta.id, input).subscribe({
+      next: (detalle) => {
+        this.message.success('Detalle de fruta agregado.');
+        this.detalleFruta.update((lista) => [...lista, detalle]);
+        this.agregandoDetalleFruta.set(false);
+        this.formDetalleFruta.reset({
+          racimosVerdes: 0,
+          racimosMaduros: 0,
+          racimosSobreMaduros: 0,
+          racimosPasados: 0,
+          pedunculoLargo: 0,
+          sacos: 0,
+          jornales: 0,
+          hectareas: 0,
+        });
+      },
+      error: (err) => {
+        this.message.error(err?.error?.error ?? 'No se pudo agregar el detalle de fruta.');
+        this.agregandoDetalleFruta.set(false);
+      },
+    });
+  }
+
+  eliminarDetalleFruta(id: string): void {
+    const boleta = this.boletaDetalle();
+    if (!boleta) return;
+
+    this.localServer.eliminarDetalleFruta(boleta.id, id).subscribe({
+      next: () => this.detalleFruta.update((lista) => lista.filter((d) => d.id !== id)),
+      error: (err) => this.message.error(err?.error?.error ?? 'No se pudo eliminar el detalle de fruta.'),
+    });
+  }
+
+  agregarCaracteristica(): void {
+    if (this.formCaracteristica.invalid) {
+      this.formCaracteristica.markAllAsTouched();
+      return;
+    }
+    const boleta = this.boletaDetalle();
+    if (!boleta) return;
+
+    const input: AgregarBoletaCaracteristicaInput = this.formCaracteristica.getRawValue();
+
+    this.agregandoCaracteristica.set(true);
+    this.localServer.agregarCaracteristica(boleta.id, input).subscribe({
+      next: (caracteristica) => {
+        this.message.success('Característica agregada.');
+        this.caracteristicas.update((lista) => [...lista, caracteristica]);
+        this.agregandoCaracteristica.set(false);
+        this.formCaracteristica.reset({ clave: '', valor: '', tipoDato: 'texto' });
+      },
+      error: (err) => {
+        this.message.error(err?.error?.error ?? 'No se pudo agregar la característica.');
+        this.agregandoCaracteristica.set(false);
+      },
+    });
+  }
+
+  eliminarCaracteristica(id: string): void {
+    const boleta = this.boletaDetalle();
+    if (!boleta) return;
+
+    this.localServer.eliminarCaracteristica(boleta.id, id).subscribe({
+      next: () => this.caracteristicas.update((lista) => lista.filter((c) => c.id !== id)),
+      error: (err) => this.message.error(err?.error?.error ?? 'No se pudo eliminar la característica.'),
     });
   }
 }

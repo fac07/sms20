@@ -69,9 +69,85 @@ export function getDb(): Database.Database {
       BoletaOrigenId TEXT,
       BasculaSalidaId TEXT,
       RespuestaD365Id TEXT,
-      CreadaOffline INTEGER NOT NULL
+      CreadaOffline INTEGER NOT NULL,
+      HabilitaCalidad INTEGER NOT NULL DEFAULT 0,
+      HabilitaDetalleFruta INTEGER NOT NULL DEFAULT 0,
+      HabilitaCompostera INTEGER NOT NULL DEFAULT 0
+    );
+
+    -- Extensiones de Boleta (mismo shape que backend/Domain/Boletas/Extensiones):
+    -- BoletaCalidad y BoletaCompostera son 1:1 (UNIQUE en BoletaId, igual que
+    -- el HasIndex(...).IsUnique() del central), BoletaDetalleFruta y
+    -- BoletaCaracteristica son 1:N. Sin FK declarada hacia Boleta a propósito
+    -- — igual que el resto de este archivo, SQLite acá no fuerza integridad
+    -- referencial entre tablas propias; la relación la sostiene el código.
+    CREATE TABLE IF NOT EXISTS BoletaCalidad (
+      Id TEXT PRIMARY KEY,
+      BoletaId TEXT NOT NULL UNIQUE,
+      Acidez REAL,
+      DOBI REAL,
+      Humedad REAL,
+      Temperatura REAL,
+      NumeroRevisionQA TEXT
+    );
+
+    CREATE TABLE IF NOT EXISTS BoletaDetalleFruta (
+      Id TEXT PRIMARY KEY,
+      BoletaId TEXT NOT NULL,
+      RacimosVerdes INTEGER NOT NULL,
+      RacimosMaduros INTEGER NOT NULL,
+      RacimosSobreMaduros INTEGER NOT NULL,
+      RacimosPasados INTEGER NOT NULL,
+      PedunculoLargo INTEGER NOT NULL,
+      Sacos REAL NOT NULL,
+      Jornales REAL NOT NULL,
+      Hectareas REAL NOT NULL
+    );
+
+    CREATE TABLE IF NOT EXISTS BoletaCompostera (
+      Id TEXT PRIMARY KEY,
+      BoletaId TEXT NOT NULL UNIQUE,
+      CUI TEXT NOT NULL,
+      CamaId TEXT NOT NULL,
+      SeccionId TEXT NOT NULL,
+      CicloId TEXT NOT NULL
+    );
+
+    CREATE TABLE IF NOT EXISTS BoletaCaracteristica (
+      Id TEXT PRIMARY KEY,
+      BoletaId TEXT NOT NULL,
+      Clave TEXT NOT NULL,
+      Valor TEXT NOT NULL,
+      TipoDato TEXT NOT NULL
     );
   `)
+
+  // CREATE TABLE IF NOT EXISTS no toca una tabla Boleta que ya existía de una
+  // instalación previa (no cambia su esquema) — así que las 3 columnas nuevas
+  // de arriba necesitan su propio ALTER TABLE para llegar a instalaciones que
+  // ya tenían el archivo .sqlite creado. Son la versión denormalizada de
+  // TipoMovimiento.HabilitaCalidad/HabilitaDetalleFruta/HabilitaCompostera:
+  // la Pesaje screen ya tiene el TipoMovimiento completo en memoria al crear
+  // la boleta (lo necesita para el prefijo del correlativo), así que copia
+  // esos 3 flags acá mismo — la boleta "recuerda" qué secciones tiene
+  // habilitadas sin volver a consultar TipoMovimiento (que ni siquiera existe
+  // como tabla local todavía), y el gate de las rutas de abajo funciona 100%
+  // offline.
+  try {
+    db.exec('ALTER TABLE Boleta ADD COLUMN HabilitaCalidad INTEGER NOT NULL DEFAULT 0')
+  } catch {
+    /* la columna ya existe en instalaciones previas */
+  }
+  try {
+    db.exec('ALTER TABLE Boleta ADD COLUMN HabilitaDetalleFruta INTEGER NOT NULL DEFAULT 0')
+  } catch {
+    /* la columna ya existe en instalaciones previas */
+  }
+  try {
+    db.exec('ALTER TABLE Boleta ADD COLUMN HabilitaCompostera INTEGER NOT NULL DEFAULT 0')
+  } catch {
+    /* la columna ya existe en instalaciones previas */
+  }
 
   return db
 }
@@ -167,6 +243,9 @@ export interface BoletaLocal {
   basculaSalidaId: string | null
   respuestaD365Id: string | null
   creadaOffline: boolean
+  habilitaCalidad: boolean
+  habilitaDetalleFruta: boolean
+  habilitaCompostera: boolean
 }
 
 // Forma cruda de la fila tal como sale de better-sqlite3 (columnas
@@ -201,6 +280,9 @@ interface BoletaRow {
   BasculaSalidaId: string | null
   RespuestaD365Id: string | null
   CreadaOffline: number
+  HabilitaCalidad: number
+  HabilitaDetalleFruta: number
+  HabilitaCompostera: number
 }
 
 function filaABoletaLocal(row: BoletaRow): BoletaLocal {
@@ -234,6 +316,9 @@ function filaABoletaLocal(row: BoletaRow): BoletaLocal {
     basculaSalidaId: row.BasculaSalidaId,
     respuestaD365Id: row.RespuestaD365Id,
     creadaOffline: Boolean(row.CreadaOffline),
+    habilitaCalidad: Boolean(row.HabilitaCalidad),
+    habilitaDetalleFruta: Boolean(row.HabilitaDetalleFruta),
+    habilitaCompostera: Boolean(row.HabilitaCompostera),
   }
 }
 
@@ -290,13 +375,15 @@ export function crearBoletaLocal(
         EquipoId, TransportistaId, PilotoId, TerceroId, ProductoId,
         AlmacenOrigenId, AlmacenDestinoId,
         PesoIngreso, OrigenPesoIngreso,
-        FechaHoraIngreso, UsuarioIngreso, CreadaOffline
+        FechaHoraIngreso, UsuarioIngreso, CreadaOffline,
+        HabilitaCalidad, HabilitaDetalleFruta, HabilitaCompostera
       ) VALUES (
         @id, @numeroBoleta, @tipoMovimientoId, @estado, @estadoSync,
         @equipoId, @transportistaId, @pilotoId, @terceroId, @productoId,
         @almacenOrigenId, @almacenDestinoId,
         @pesoIngreso, @origenPesoIngreso,
-        @fechaHoraIngreso, @usuarioIngreso, @creadaOffline
+        @fechaHoraIngreso, @usuarioIngreso, @creadaOffline,
+        @habilitaCalidad, @habilitaDetalleFruta, @habilitaCompostera
       )`,
     )
     .run({
@@ -317,6 +404,9 @@ export function crearBoletaLocal(
       fechaHoraIngreso,
       usuarioIngreso: input.usuarioIngreso,
       creadaOffline: input.creadaOffline ? 1 : 0,
+      habilitaCalidad: input.habilitaCalidad ? 1 : 0,
+      habilitaDetalleFruta: input.habilitaDetalleFruta ? 1 : 0,
+      habilitaCompostera: input.habilitaCompostera ? 1 : 0,
     })
 
   return obtenerBoletaLocal(id)!
@@ -393,4 +483,285 @@ export function anularBoletaLocal(
     .run({ id, ...input })
 
   return obtenerBoletaLocal(id)
+}
+
+// ---------------------------------------------------------------------------
+// Extensiones de Boleta — Calidad, DetalleFruta, Compostera, Caracteristica.
+// Mismos campos que backend/Domain/Boletas/Extensiones (ver *.cs), en
+// camelCase. El gate de TipoMovimiento.Habilita* vive en local-server.ts
+// (lee Boleta.HabilitaCalidad/HabilitaDetalleFruta/HabilitaCompostera, ya
+// denormalizadas en la fila — ver el comentario junto al ALTER TABLE de
+// arriba), no acá: estas funciones solo leen/escriben, no deciden si el
+// caller tiene permiso.
+// ---------------------------------------------------------------------------
+
+export interface BoletaCalidadLocal {
+  id: string
+  boletaId: string
+  acidez: number | null
+  dobi: number | null
+  humedad: number | null
+  temperatura: number | null
+  numeroRevisionQA: string | null
+}
+
+interface BoletaCalidadRow {
+  Id: string
+  BoletaId: string
+  Acidez: number | null
+  DOBI: number | null
+  Humedad: number | null
+  Temperatura: number | null
+  NumeroRevisionQA: string | null
+}
+
+function filaABoletaCalidadLocal(row: BoletaCalidadRow): BoletaCalidadLocal {
+  return {
+    id: row.Id,
+    boletaId: row.BoletaId,
+    acidez: row.Acidez,
+    dobi: row.DOBI,
+    humedad: row.Humedad,
+    temperatura: row.Temperatura,
+    numeroRevisionQA: row.NumeroRevisionQA,
+  }
+}
+
+export function obtenerBoletaCalidadLocal(boletaId: string): BoletaCalidadLocal | null {
+  const row = getDb()
+    .prepare('SELECT * FROM BoletaCalidad WHERE BoletaId = ?')
+    .get(boletaId) as BoletaCalidadRow | undefined
+  return row ? filaABoletaCalidadLocal(row) : null
+}
+
+/** Upsert — a lo sumo una fila de Calidad por boleta (BoletaId UNIQUE). */
+export function guardarBoletaCalidadLocal(
+  boletaId: string,
+  input: Omit<BoletaCalidadLocal, 'id' | 'boletaId'>,
+): BoletaCalidadLocal {
+  getDb()
+    .prepare(
+      `INSERT INTO BoletaCalidad (Id, BoletaId, Acidez, DOBI, Humedad, Temperatura, NumeroRevisionQA)
+       VALUES (@id, @boletaId, @acidez, @dobi, @humedad, @temperatura, @numeroRevisionQA)
+       ON CONFLICT(BoletaId) DO UPDATE SET
+         Acidez = excluded.Acidez,
+         DOBI = excluded.DOBI,
+         Humedad = excluded.Humedad,
+         Temperatura = excluded.Temperatura,
+         NumeroRevisionQA = excluded.NumeroRevisionQA`,
+    )
+    .run({
+      id: crypto.randomUUID(),
+      boletaId,
+      acidez: input.acidez,
+      dobi: input.dobi,
+      humedad: input.humedad,
+      temperatura: input.temperatura,
+      numeroRevisionQA: input.numeroRevisionQA,
+    })
+
+  return obtenerBoletaCalidadLocal(boletaId)!
+}
+
+export interface BoletaComposteraLocal {
+  id: string
+  boletaId: string
+  cui: string
+  camaId: string
+  seccionId: string
+  cicloId: string
+}
+
+interface BoletaComposteraRow {
+  Id: string
+  BoletaId: string
+  CUI: string
+  CamaId: string
+  SeccionId: string
+  CicloId: string
+}
+
+function filaABoletaComposteraLocal(row: BoletaComposteraRow): BoletaComposteraLocal {
+  return {
+    id: row.Id,
+    boletaId: row.BoletaId,
+    cui: row.CUI,
+    camaId: row.CamaId,
+    seccionId: row.SeccionId,
+    cicloId: row.CicloId,
+  }
+}
+
+export function obtenerBoletaComposteraLocal(boletaId: string): BoletaComposteraLocal | null {
+  const row = getDb()
+    .prepare('SELECT * FROM BoletaCompostera WHERE BoletaId = ?')
+    .get(boletaId) as BoletaComposteraRow | undefined
+  return row ? filaABoletaComposteraLocal(row) : null
+}
+
+/** Upsert — a lo sumo una fila de Compostera por boleta (BoletaId UNIQUE). */
+export function guardarBoletaComposteraLocal(
+  boletaId: string,
+  input: Omit<BoletaComposteraLocal, 'id' | 'boletaId'>,
+): BoletaComposteraLocal {
+  getDb()
+    .prepare(
+      `INSERT INTO BoletaCompostera (Id, BoletaId, CUI, CamaId, SeccionId, CicloId)
+       VALUES (@id, @boletaId, @cui, @camaId, @seccionId, @cicloId)
+       ON CONFLICT(BoletaId) DO UPDATE SET
+         CUI = excluded.CUI,
+         CamaId = excluded.CamaId,
+         SeccionId = excluded.SeccionId,
+         CicloId = excluded.CicloId`,
+    )
+    .run({
+      id: crypto.randomUUID(),
+      boletaId,
+      cui: input.cui,
+      camaId: input.camaId,
+      seccionId: input.seccionId,
+      cicloId: input.cicloId,
+    })
+
+  return obtenerBoletaComposteraLocal(boletaId)!
+}
+
+export interface BoletaDetalleFrutaLocal {
+  id: string
+  boletaId: string
+  racimosVerdes: number
+  racimosMaduros: number
+  racimosSobreMaduros: number
+  racimosPasados: number
+  pedunculoLargo: number
+  sacos: number
+  jornales: number
+  hectareas: number
+}
+
+interface BoletaDetalleFrutaRow {
+  Id: string
+  BoletaId: string
+  RacimosVerdes: number
+  RacimosMaduros: number
+  RacimosSobreMaduros: number
+  RacimosPasados: number
+  PedunculoLargo: number
+  Sacos: number
+  Jornales: number
+  Hectareas: number
+}
+
+function filaABoletaDetalleFrutaLocal(row: BoletaDetalleFrutaRow): BoletaDetalleFrutaLocal {
+  return {
+    id: row.Id,
+    boletaId: row.BoletaId,
+    racimosVerdes: row.RacimosVerdes,
+    racimosMaduros: row.RacimosMaduros,
+    racimosSobreMaduros: row.RacimosSobreMaduros,
+    racimosPasados: row.RacimosPasados,
+    pedunculoLargo: row.PedunculoLargo,
+    sacos: row.Sacos,
+    jornales: row.Jornales,
+    hectareas: row.Hectareas,
+  }
+}
+
+export function listarBoletaDetalleFrutaLocal(boletaId: string): BoletaDetalleFrutaLocal[] {
+  const rows = getDb()
+    .prepare('SELECT * FROM BoletaDetalleFruta WHERE BoletaId = ?')
+    .all(boletaId) as BoletaDetalleFrutaRow[]
+  return rows.map(filaABoletaDetalleFrutaLocal)
+}
+
+export function agregarBoletaDetalleFrutaLocal(
+  boletaId: string,
+  input: Omit<BoletaDetalleFrutaLocal, 'id' | 'boletaId'>,
+): BoletaDetalleFrutaLocal {
+  const id = crypto.randomUUID()
+
+  getDb()
+    .prepare(
+      `INSERT INTO BoletaDetalleFruta (
+        Id, BoletaId, RacimosVerdes, RacimosMaduros, RacimosSobreMaduros,
+        RacimosPasados, PedunculoLargo, Sacos, Jornales, Hectareas
+      ) VALUES (
+        @id, @boletaId, @racimosVerdes, @racimosMaduros, @racimosSobreMaduros,
+        @racimosPasados, @pedunculoLargo, @sacos, @jornales, @hectareas
+      )`,
+    )
+    .run({ id, boletaId, ...input })
+
+  const row = getDb()
+    .prepare('SELECT * FROM BoletaDetalleFruta WHERE Id = ?')
+    .get(id) as BoletaDetalleFrutaRow
+  return filaABoletaDetalleFrutaLocal(row)
+}
+
+/** true si existía y se borró. */
+export function eliminarBoletaDetalleFrutaLocal(boletaId: string, id: string): boolean {
+  const resultado = getDb()
+    .prepare('DELETE FROM BoletaDetalleFruta WHERE Id = ? AND BoletaId = ?')
+    .run(id, boletaId)
+  return resultado.changes > 0
+}
+
+export interface BoletaCaracteristicaLocal {
+  id: string
+  boletaId: string
+  clave: string
+  valor: string
+  tipoDato: string
+}
+
+interface BoletaCaracteristicaRow {
+  Id: string
+  BoletaId: string
+  Clave: string
+  Valor: string
+  TipoDato: string
+}
+
+function filaABoletaCaracteristicaLocal(row: BoletaCaracteristicaRow): BoletaCaracteristicaLocal {
+  return {
+    id: row.Id,
+    boletaId: row.BoletaId,
+    clave: row.Clave,
+    valor: row.Valor,
+    tipoDato: row.TipoDato,
+  }
+}
+
+export function listarBoletaCaracteristicaLocal(boletaId: string): BoletaCaracteristicaLocal[] {
+  const rows = getDb()
+    .prepare('SELECT * FROM BoletaCaracteristica WHERE BoletaId = ?')
+    .all(boletaId) as BoletaCaracteristicaRow[]
+  return rows.map(filaABoletaCaracteristicaLocal)
+}
+
+export function agregarBoletaCaracteristicaLocal(
+  boletaId: string,
+  input: Omit<BoletaCaracteristicaLocal, 'id' | 'boletaId'>,
+): BoletaCaracteristicaLocal {
+  const id = crypto.randomUUID()
+
+  getDb()
+    .prepare(
+      `INSERT INTO BoletaCaracteristica (Id, BoletaId, Clave, Valor, TipoDato)
+       VALUES (@id, @boletaId, @clave, @valor, @tipoDato)`,
+    )
+    .run({ id, boletaId, ...input })
+
+  const row = getDb()
+    .prepare('SELECT * FROM BoletaCaracteristica WHERE Id = ?')
+    .get(id) as BoletaCaracteristicaRow
+  return filaABoletaCaracteristicaLocal(row)
+}
+
+/** true si existía y se borró. */
+export function eliminarBoletaCaracteristicaLocal(boletaId: string, id: string): boolean {
+  const resultado = getDb()
+    .prepare('DELETE FROM BoletaCaracteristica WHERE Id = ? AND BoletaId = ?')
+    .run(id, boletaId)
+  return resultado.changes > 0
 }
