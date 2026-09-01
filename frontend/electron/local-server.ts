@@ -13,6 +13,7 @@ import {
   guardarBoletaDetalleFrutaLocal,
   listarBoletaCaracteristicaLocal,
   listarBoletasLocal,
+  listarMaestrosLocal,
   listarOutboxLocal,
   obtenerBoletaCalidadLocal,
   obtenerBoletaComposteraLocal,
@@ -24,6 +25,12 @@ import type { EstadoOutboxLocal, OrigenPesoLocal } from './db'
 import { crearPesoProvider, PesoProviderSimulado } from './peso-provider'
 import type { OrigenPeso } from './peso-provider'
 import { despacharOutboxPendiente } from './outbox-dispatcher'
+import { sincronizarMaestros } from './maestros-sync'
+
+// Mismo origen hardcodeado que ya usan outbox-dispatcher.ts y los servicios
+// Angular — cada archivo tiene su propia copia a propósito (no hay un módulo
+// de config compartido en este repo todavía, no vale la pena inventarlo acá).
+const CENTRAL_API_URL = 'http://localhost:5094'
 
 let server: Server | null = null
 
@@ -62,6 +69,16 @@ export function startLocalServer(port: number, esDev: boolean): Server {
       aprovisionada: Boolean(basculaId),
       basculaId: basculaId ?? null,
       basculaCodigo: basculaCodigo ?? null,
+      // Campos de hardware guardados por /aprovisionamiento — sin pantalla
+      // que los use todavía, pero acá al lado de basculaCodigo es donde una
+      // futura screen de config de hardware va a esperar encontrarlos.
+      basculaTipoConexion: getConfig('BasculaTipoConexion') ?? null,
+      basculaPuerto: getConfig('BasculaPuerto') || null,
+      basculaIp: getConfig('BasculaIp') || null,
+      basculaPuertoTcp: getConfig('BasculaPuertoTcp') || null,
+      basculaVelocidad: getConfig('BasculaVelocidad') || null,
+      basculaBitsDatos: getConfig('BasculaBitsDatos') || null,
+      basculaModoComunicacion: getConfig('BasculaModoComunicacion') || null,
       dev: esDev,
     })
   })
@@ -469,6 +486,29 @@ export function startLocalServer(port: number, esDev: boolean): Server {
     res.json(resultado)
   })
 
+  // Maestros — read path local de los combos de Pesaje (ver
+  // listarMaestrosLocal en db.ts: siempre Activo=1). Es lo que la pantalla
+  // llama en vez de pegarle directo a Central (MaestrosService), así que
+  // sigue andando con Central caído.
+  app.get('/maestros', (req, res) => {
+    const tipoCatalogo = req.query.tipoCatalogo as string | undefined
+    res.json(listarMaestrosLocal(tipoCatalogo))
+  })
+
+  // "Sincronizar ahora" — mismo patrón que POST /outbox/despachar: no
+  // dev-gated, dispara el delta-sync sin esperar el próximo ciclo del
+  // interval en main.ts. A diferencia del dispatcher, esto es de solo
+  // lectura contra Central, así que un fallo acá no compromete nada local —
+  // 502 y listo, no hay estado que marcar como error.
+  app.post('/maestros/sincronizar', async (_req, res) => {
+    try {
+      const resultado = await sincronizarMaestros()
+      res.json(resultado)
+    } catch (err) {
+      res.status(502).json({ error: (err as Error).message })
+    }
+  })
+
   app.post('/aprovisionamiento', async (req, res) => {
     const { codigo } = req.body as { codigo?: string }
     if (!codigo) {
@@ -476,13 +516,61 @@ export function startLocalServer(port: number, esDev: boolean): Server {
       return
     }
 
-    // TODO: reemplazar por la llamada real al backend central
-    // (POST /api/basculas/aprovisionar con el código) una vez exista el
-    // cliente HTTP hacia sms-central-api. Por ahora deja la app lista para
-    // enchufar esa respuesta sin tocar el resto del flujo.
-    res.status(501).json({
-      error: 'Aprovisionamiento contra el backend central todavía no implementado.',
-    })
+    let response: Response
+    try {
+      response = await fetch(`${CENTRAL_API_URL}/api/basculas/aprovisionar`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ codigo }),
+      })
+    } catch (err) {
+      res.status(502).json({ error: `No se pudo contactar al backend central: ${(err as Error).message}` })
+      return
+    }
+
+    if (!response.ok) {
+      // Reenviamos el status y el cuerpo tal cual — el 404/409/400 de
+      // Central trae el mensaje real (código inválido, ya aprovisionada,
+      // vencido) y el operador necesita verlo, no una versión genérica.
+      let cuerpo: unknown
+      try {
+        cuerpo = await response.json()
+      } catch {
+        cuerpo = { error: `HTTP ${response.status}` }
+      }
+      res.status(response.status).json(cuerpo)
+      return
+    }
+
+    const dto = (await response.json()) as {
+      basculaId: string
+      basculaCodigo: string
+      basculaNombre: string
+      centroId: string
+      tipoConexion: string
+      puerto: string | null
+      ip: string | null
+      puertoTcp: number | null
+      velocidad: number | null
+      bitsDatos: number | null
+      modoComunicacion: string | null
+    }
+
+    setConfig('BasculaId', dto.basculaId)
+    setConfig('BasculaCodigo', dto.basculaCodigo)
+    setConfig('BasculaTipoConexion', dto.tipoConexion)
+    setConfig('BasculaPuerto', dto.puerto ?? '')
+    setConfig('BasculaIp', dto.ip ?? '')
+    setConfig('BasculaPuertoTcp', dto.puertoTcp !== null ? String(dto.puertoTcp) : '')
+    setConfig('BasculaVelocidad', dto.velocidad !== null ? String(dto.velocidad) : '')
+    setConfig('BasculaBitsDatos', dto.bitsDatos !== null ? String(dto.bitsDatos) : '')
+    setConfig('BasculaModoComunicacion', dto.modoComunicacion ?? '')
+
+    // Snapshot inicial completo — a partir de acá el sync incremental
+    // (interval de main.ts, o /maestros/sincronizar a mano) toma la posta.
+    const { descargados } = await sincronizarMaestros()
+
+    res.json({ basculaId: dto.basculaId, basculaCodigo: dto.basculaCodigo, maestrosDescargados: descargados })
   })
 
   server = app.listen(port, '127.0.0.1')

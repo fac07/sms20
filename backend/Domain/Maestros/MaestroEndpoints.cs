@@ -13,7 +13,8 @@ public static class MaestroEndpoints
             SmsDbContext db,
             TipoCatalogo? tipoCatalogo = null,
             EstadoMaestro? estado = null,
-            bool incluirInactivos = false) =>
+            bool incluirInactivos = false,
+            DateTime? modificadoDesde = null) =>
         {
             var query = db.Maestros.AsNoTracking();
 
@@ -25,7 +26,21 @@ public static class MaestroEndpoints
             {
                 query = query.Where(m => m.Estado == estado);
             }
-            if (!incluirInactivos)
+
+            if (modificadoDesde is not null)
+            {
+                // Delta-sync (ver frontend/electron/maestros-sync.ts): el watermark
+                // ya es el último valor visto, así que el filtro es estrictamente
+                // mayor — no re-descargamos la fila que marcó el watermark.
+                //
+                // Acá SIEMPRE se incluyen inactivos, sin importar incluirInactivos:
+                // una fila que se desactivó (Activo=false) después del watermark
+                // tiene que llegar igual al caché local, o el combo offline la
+                // seguiría mostrando para siempre. Una llamada de listado normal
+                // (admin) no tiene ese problema — ahí sí importa el filtro.
+                query = query.Where(m => m.FechaModificacion > modificadoDesde);
+            }
+            else if (!incluirInactivos)
             {
                 query = query.Where(m => m.Activo);
             }

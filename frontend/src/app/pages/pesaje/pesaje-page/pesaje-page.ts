@@ -17,7 +17,6 @@ import { NzTableModule } from 'ng-zorro-antd/table';
 import { NzTabsModule } from 'ng-zorro-antd/tabs';
 import { NzTagModule } from 'ng-zorro-antd/tag';
 import { Observable, catchError, forkJoin, of } from 'rxjs';
-import { Maestro, MaestrosService } from '../../../api/maestros.service';
 import { TipoMovimiento, TiposMovimientoService } from '../../../api/tipos-movimiento.service';
 import {
   AgregarBoletaCaracteristicaInput,
@@ -32,6 +31,7 @@ import {
   GuardarBoletaDetalleFrutaInput,
   LecturaPeso,
   LocalServerService,
+  MaestroLocal,
 } from '../../../api/local-server.service';
 
 // No hay auth real todavía (SSO/Entra ID no implementado) — mismo espíritu
@@ -71,22 +71,21 @@ type SeccionBoleta = 'caracteristicas' | 'calidad' | 'detalleFruta' | 'composter
 })
 export class PesajePage implements OnInit, OnDestroy {
   private readonly localServer = inject(LocalServerService);
-  private readonly maestrosService = inject(MaestrosService);
   private readonly tiposMovimientoService = inject(TiposMovimientoService);
   private readonly message = inject(NzMessageService);
   private readonly fb = inject(FormBuilder);
 
   readonly tiposMovimiento = signal<TipoMovimiento[]>([]);
-  readonly pilotos = signal<Maestro[]>([]);
-  readonly transportistas = signal<Maestro[]>([]);
-  readonly equipos = signal<Maestro[]>([]);
-  readonly terceros = signal<Maestro[]>([]);
-  readonly productos = signal<Maestro[]>([]);
-  readonly almacenes = signal<Maestro[]>([]);
-  readonly camas = signal<Maestro[]>([]);
-  readonly seccionesCompostera = signal<Maestro[]>([]);
-  readonly ciclosCompostera = signal<Maestro[]>([]);
-  readonly caracteristicasCatalogo = signal<Maestro[]>([]);
+  readonly pilotos = signal<MaestroLocal[]>([]);
+  readonly transportistas = signal<MaestroLocal[]>([]);
+  readonly equipos = signal<MaestroLocal[]>([]);
+  readonly terceros = signal<MaestroLocal[]>([]);
+  readonly productos = signal<MaestroLocal[]>([]);
+  readonly almacenes = signal<MaestroLocal[]>([]);
+  readonly camas = signal<MaestroLocal[]>([]);
+  readonly seccionesCompostera = signal<MaestroLocal[]>([]);
+  readonly ciclosCompostera = signal<MaestroLocal[]>([]);
+  readonly caracteristicasCatalogo = signal<MaestroLocal[]>([]);
 
   readonly lecturaPeso = signal<LecturaPeso>({ peso: null, origen: null });
   readonly estadoLocal = signal<EstadoLocal>({
@@ -251,26 +250,30 @@ export class PesajePage implements OnInit, OnDestroy {
   }
 
   private cargarCatalogos(): void {
-    // GAP DOCUMENTADO: todavía no existe el snapshot/caché offline de
-    // catálogos (esa es la feature "Aprovisionamiento", aún sin construir).
-    // Por ahora esta pantalla necesita conectividad con el backend central
-    // para poblar estos combos, aunque la Boleta en sí sea 100% offline.
+    // GAP DOCUMENTADO: los Maestros (Piloto/Transportista/Equipo/Tercero/
+    // Producto/Almacen/Cama/SeccionCompostera/CicloCompostera/
+    // CaracteristicaEquipo) ya son offline-capable — se leen del caché local
+    // (LocalServerService.listarMaestros, SQLite vía servidor local),
+    // alimentado por el aprovisionamiento inicial (descarga completa) y el
+    // sync incremental en segundo plano (frontend/electron/maestros-sync.ts).
+    // TipoMovimiento sigue siendo el gap abierto: todavía pega directo a
+    // Central y necesita conectividad, no se migró a este mismo patrón.
     this.tiposMovimientoService.listar().subscribe({
       next: (tipos) => this.tiposMovimiento.set(tipos),
       error: () => this.message.error('No se pudo cargar Tipos de movimiento — ¿el backend central está arriba?'),
     });
 
     forkJoin({
-      pilotos: this.maestrosService.listar({ tipoCatalogo: 'Piloto' }),
-      transportistas: this.maestrosService.listar({ tipoCatalogo: 'Transportista' }),
-      equipos: this.maestrosService.listar({ tipoCatalogo: 'Equipo' }),
-      terceros: this.maestrosService.listar({ tipoCatalogo: 'Tercero' }),
-      productos: this.maestrosService.listar({ tipoCatalogo: 'Producto' }),
-      almacenes: this.maestrosService.listar({ tipoCatalogo: 'Almacen' }),
-      camas: this.maestrosService.listar({ tipoCatalogo: 'Cama' }),
-      seccionesCompostera: this.maestrosService.listar({ tipoCatalogo: 'SeccionCompostera' }),
-      ciclosCompostera: this.maestrosService.listar({ tipoCatalogo: 'CicloCompostera' }),
-      caracteristicasCatalogo: this.maestrosService.listar({ tipoCatalogo: 'CaracteristicaEquipo' }),
+      pilotos: this.localServer.listarMaestros('Piloto'),
+      transportistas: this.localServer.listarMaestros('Transportista'),
+      equipos: this.localServer.listarMaestros('Equipo'),
+      terceros: this.localServer.listarMaestros('Tercero'),
+      productos: this.localServer.listarMaestros('Producto'),
+      almacenes: this.localServer.listarMaestros('Almacen'),
+      camas: this.localServer.listarMaestros('Cama'),
+      seccionesCompostera: this.localServer.listarMaestros('SeccionCompostera'),
+      ciclosCompostera: this.localServer.listarMaestros('CicloCompostera'),
+      caracteristicasCatalogo: this.localServer.listarMaestros('CaracteristicaEquipo'),
     }).subscribe({
       next: ({
         pilotos,
@@ -295,7 +298,7 @@ export class PesajePage implements OnInit, OnDestroy {
         this.ciclosCompostera.set(ciclosCompostera);
         this.caracteristicasCatalogo.set(caracteristicasCatalogo);
       },
-      error: () => this.message.error('No se pudo cargar Maestros — ¿el backend central está arriba?'),
+      error: () => this.message.error('No se pudo cargar Maestros — no se pudo conectar con el servidor local (127.0.0.1:4127).'),
     });
   }
 

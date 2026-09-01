@@ -126,6 +126,39 @@ public static class BasculaEndpoints
                 bascula.CodigoAprovisionamiento, bascula.CodigoAprovisionamientoExpira.Value));
         });
 
+        // Consume el código corto generado por /generar-codigo — lo llama la
+        // báscula Electron en su primer arranque (frontend/electron/local-server.ts,
+        // POST /aprovisionamiento) para resolver su identidad y configuración
+        // completas contra Central.
+        group.MapPost("/aprovisionar", async (AprovisionarBasculaRequest request, SmsDbContext db) =>
+        {
+            var bascula = await db.Basculas.FirstOrDefaultAsync(b => b.CodigoAprovisionamiento == request.Codigo);
+            if (bascula is null)
+            {
+                return Results.NotFound("Código de aprovisionamiento inválido.");
+            }
+            if (bascula.Aprovisionada)
+            {
+                return Results.Conflict("Esta báscula ya fue aprovisionada.");
+            }
+            if (bascula.CodigoAprovisionamientoExpira is null || bascula.CodigoAprovisionamientoExpira <= DateTime.UtcNow)
+            {
+                return Results.BadRequest("Este código venció, generá uno nuevo desde el panel.");
+            }
+
+            // Un solo uso — mismo espíritu que el comentario de generar-codigo:
+            // el código deja de servir apenas se consume, no solo cuando vence.
+            bascula.Aprovisionada = true;
+            bascula.CodigoAprovisionamiento = null;
+            bascula.CodigoAprovisionamientoExpira = null;
+            await db.SaveChangesAsync();
+
+            return Results.Ok(new AprovisionamientoDto(
+                bascula.Id, bascula.Codigo, bascula.Nombre, bascula.CentroId, bascula.TipoConexion,
+                bascula.Puerto, bascula.Ip, bascula.PuertoTcp, bascula.Velocidad, bascula.BitsDatos,
+                bascula.ModoComunicacion));
+        });
+
         return group;
     }
 

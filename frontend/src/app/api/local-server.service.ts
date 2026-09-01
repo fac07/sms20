@@ -155,6 +155,21 @@ export interface BoletaCaracteristicaLocal {
 
 export type AgregarBoletaCaracteristicaInput = Omit<BoletaCaracteristicaLocal, 'id' | 'boletaId'>;
 
+// Mismos campos que MaestroLocal en frontend/electron/db.ts — snapshot local
+// del catálogo central que alimenta los combos de Pesaje sin depender de
+// conectividad con Central.
+export interface MaestroLocal {
+  id: string;
+  tipoCatalogo: string;
+  codigo: string;
+  nombre: string;
+  datosAdicionales: string | null;
+  estado: string;
+  fusionadoConId: string | null;
+  fechaModificacion: string;
+  activo: boolean;
+}
+
 /**
  * Cliente del servidor local de Electron (127.0.0.1:4127) — contrapartida de
  * los servicios de esta carpeta que hablan con el backend central. Es el
@@ -248,5 +263,24 @@ export class LocalServerService {
 
   eliminarCaracteristica(boletaId: string, id: string): Observable<void> {
     return this.http.delete<void>(`${LOCAL_SERVER_URL}/boletas/${boletaId}/caracteristicas/${id}`);
+  }
+
+  // Maestros — read path local de los combos de Pesaje (ver GET /maestros en
+  // local-server.ts: siempre Activo=1). Contrapartida offline-capable de
+  // MaestrosService.listar(), que pega directo a Central.
+  listarMaestros(tipoCatalogo?: string): Observable<MaestroLocal[]> {
+    const params = tipoCatalogo ? `?tipoCatalogo=${encodeURIComponent(tipoCatalogo)}` : '';
+    return this.http.get<MaestroLocal[]>(`${LOCAL_SERVER_URL}/maestros${params}`);
+  }
+
+  aprovisionar(codigo: string): Observable<{ basculaId: string; basculaCodigo: string; maestrosDescargados: number }> {
+    return this.http.post<{ basculaId: string; basculaCodigo: string; maestrosDescargados: number }>(
+      `${LOCAL_SERVER_URL}/aprovisionamiento`,
+      { codigo },
+    );
+  }
+
+  sincronizarMaestros(): Observable<{ descargados: number }> {
+    return this.http.post<{ descargados: number }>(`${LOCAL_SERVER_URL}/maestros/sincronizar`, {});
   }
 }

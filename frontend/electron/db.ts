@@ -162,6 +162,24 @@ export function getDb(): Database.Database {
       Id INTEGER PRIMARY KEY CHECK (Id = 1),
       Valor INTEGER NOT NULL DEFAULT 0
     );
+
+    -- Snapshot local de Maestro, alimentado por el aprovisionamiento inicial
+    -- (descarga completa) y el sync incremental de ahí en adelante
+    -- (modificadoDesde, ver maestros-sync.ts) — este cache es lo que le
+    -- permite a Pesaje llenar sus combos sin conexión.
+    CREATE TABLE IF NOT EXISTS Maestro (
+      Id TEXT PRIMARY KEY,
+      TipoCatalogo TEXT NOT NULL,
+      Codigo TEXT NOT NULL,
+      Nombre TEXT NOT NULL,
+      DatosAdicionales TEXT,
+      Estado TEXT NOT NULL,
+      FusionadoConId TEXT,
+      FechaModificacion TEXT NOT NULL,
+      Activo INTEGER NOT NULL
+    );
+
+    CREATE INDEX IF NOT EXISTS IX_Maestro_TipoCatalogo ON Maestro(TipoCatalogo);
   `)
 
   // CREATE TABLE IF NOT EXISTS no toca una tabla Boleta que ya existía de una
@@ -985,4 +1003,116 @@ export function eliminarBoletaCaracteristicaLocal(boletaId: string, id: string):
     .prepare('DELETE FROM BoletaCaracteristica WHERE Id = ? AND BoletaId = ?')
     .run(id, boletaId)
   return resultado.changes > 0
+}
+
+// ---------------------------------------------------------------------------
+// Maestro — snapshot local del catálogo central (ver el CREATE TABLE en
+// getDb() para el porqué). El escritor (upsertMaestrosLocal) lo usan el
+// aprovisionamiento inicial y el sync incremental (maestros-sync.ts); el
+// lector (listarMaestrosLocal) es lo que alimenta los combos de Pesaje.
+// ---------------------------------------------------------------------------
+
+export interface MaestroLocal {
+  id: string
+  tipoCatalogo: string
+  codigo: string
+  nombre: string
+  datosAdicionales: string | null
+  estado: string
+  fusionadoConId: string | null
+  fechaModificacion: string
+  activo: boolean
+}
+
+interface MaestroRow {
+  Id: string
+  TipoCatalogo: string
+  Codigo: string
+  Nombre: string
+  DatosAdicionales: string | null
+  Estado: string
+  FusionadoConId: string | null
+  FechaModificacion: string
+  Activo: number
+}
+
+function filaAMaestroLocal(row: MaestroRow): MaestroLocal {
+  return {
+    id: row.Id,
+    tipoCatalogo: row.TipoCatalogo,
+    codigo: row.Codigo,
+    nombre: row.Nombre,
+    datosAdicionales: row.DatosAdicionales,
+    estado: row.Estado,
+    fusionadoConId: row.FusionadoConId,
+    fechaModificacion: row.FechaModificacion,
+    activo: Boolean(row.Activo),
+  }
+}
+
+/**
+ * Upsert en bloque — TODAS las filas comitean juntas o ninguna (mismo
+ * espíritu transaccional que crearBoletaLocal/OutboxLocal, aplicado acá a
+ * una tanda de descarga en vez de a una sola escritura). Sin filas, no vale
+ * la pena ni abrir la transacción.
+ */
+export function upsertMaestrosLocal(maestros: MaestroLocal[]): void {
+  if (maestros.length === 0) return
+
+  const upsert = getDb().prepare(
+    `INSERT INTO Maestro (
+      Id, TipoCatalogo, Codigo, Nombre, DatosAdicionales, Estado, FusionadoConId, FechaModificacion, Activo
+    ) VALUES (
+      @id, @tipoCatalogo, @codigo, @nombre, @datosAdicionales, @estado, @fusionadoConId, @fechaModificacion, @activo
+    )
+    ON CONFLICT(Id) DO UPDATE SET
+      TipoCatalogo = excluded.TipoCatalogo,
+      Codigo = excluded.Codigo,
+      Nombre = excluded.Nombre,
+      DatosAdicionales = excluded.DatosAdicionales,
+      Estado = excluded.Estado,
+      FusionadoConId = excluded.FusionadoConId,
+      FechaModificacion = excluded.FechaModificacion,
+      Activo = excluded.Activo`,
+  )
+
+  const ejecutar = getDb().transaction((filas: MaestroLocal[]): void => {
+    for (const m of filas) {
+      upsert.run({
+        id: m.id,
+        tipoCatalogo: m.tipoCatalogo,
+        codigo: m.codigo,
+        nombre: m.nombre,
+        datosAdicionales: m.datosAdicionales,
+        estado: m.estado,
+        fusionadoConId: m.fusionadoConId,
+        fechaModificacion: m.fechaModificacion,
+        activo: m.activo ? 1 : 0,
+      })
+    }
+  })
+
+  ejecutar(maestros)
+}
+
+/**
+ * Read path de los combos de Pesaje — SIEMPRE filtra Activo=1: un Maestro
+ * desactivado tiene que desaparecer del combo offline exactamente igual que
+ * ya desaparece de los listados centrales.
+ */
+export function listarMaestrosLocal(tipoCatalogo?: string): MaestroLocal[] {
+  const rows = tipoCatalogo
+    ? (getDb()
+        .prepare('SELECT * FROM Maestro WHERE Activo = 1 AND TipoCatalogo = ? ORDER BY Nombre')
+        .all(tipoCatalogo) as MaestroRow[])
+    : (getDb().prepare('SELECT * FROM Maestro WHERE Activo = 1 ORDER BY Nombre').all() as MaestroRow[])
+  return rows.map(filaAMaestroLocal)
+}
+
+/** Watermark del sync incremental — null si esta báscula nunca sincronizó nada todavía. */
+export function obtenerUltimaSincronizacionMaestros(): string | null {
+  const row = getDb().prepare('SELECT MAX(FechaModificacion) as maximo FROM Maestro').get() as {
+    maximo: string | null
+  }
+  return row.maximo
 }

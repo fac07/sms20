@@ -30,3 +30,18 @@ public record GuardarBasculaRequest(
     string? ModoComunicacion);
 
 public record CodigoAprovisionamientoDto(string Codigo, DateTime Expira);
+
+public record AprovisionarBasculaRequest(string Codigo);
+
+public record AprovisionamientoDto(
+    Guid BasculaId,
+    string BasculaCodigo,
+    string BasculaNombre,
+    Guid CentroId,
+    TipoConexion TipoConexion,
+    string? Puerto,
+    string? Ip,
+    int? PuertoTcp,
+    int? Velocidad,
+    int? BitsDatos,
+    string? ModoComunicacion);

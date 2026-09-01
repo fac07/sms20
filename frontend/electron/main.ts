@@ -3,6 +3,7 @@ import * as path from 'node:path'
 import { startLocalServer } from './local-server'
 import { getDb } from './db'
 import { despacharOutboxPendiente } from './outbox-dispatcher'
+import { sincronizarMaestros } from './maestros-sync'
 
 // La UI (renderer) no toca SQLite ni el puerto serial directamente — todo pasa
 // por este servidor HTTP local. Es el mismo contrato que usará el backend
@@ -15,6 +16,12 @@ const LOCAL_SERVER_PORT = 4127
 // igual (a diferencia del simulador de peso, que solo existe en dev): es la
 // pieza real de sync, no una herramienta de desarrollo.
 const DISPATCH_INTERVAL_MS = 15_000
+
+// Sync de Maestros es más espaciado que el dispatcher del Outbox (60s vs
+// 15s) porque es de solo lectura y menos urgente — nada se pierde por
+// tardar un minuto en enterarse de un maestro nuevo, a diferencia de una
+// boleta pendiente de sincronizar.
+const MAESTROS_SYNC_INTERVAL_MS = 60_000
 
 let mainWindow: BrowserWindow | null = null
 
@@ -46,6 +53,10 @@ app.whenReady().then(() => {
   setInterval(() => {
     despacharOutboxPendiente().catch((err) => console.error('Error despachando outbox:', err))
   }, DISPATCH_INTERVAL_MS)
+
+  setInterval(() => {
+    sincronizarMaestros().catch((err) => console.error('Error sincronizando maestros:', err))
+  }, MAESTROS_SYNC_INTERVAL_MS)
 
   createWindow()
 
