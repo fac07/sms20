@@ -1,6 +1,7 @@
 using System.Text.Json.Serialization;
 using Microsoft.EntityFrameworkCore;
 using SmsBackend.Data;
+using SmsBackend.Data.Seeding;
 using SmsBackend.Domain.Basculas;
 using SmsBackend.Domain.Boletas;
 using SmsBackend.Domain.Boletas.Valores;
@@ -55,7 +56,15 @@ if (app.Environment.IsDevelopment())
     // database update` a mano cada vez. Contra el SQL Server central real
     // esto se saca — las migraciones ahí van por un paso de deploy explícito.
     using var scope = app.Services.CreateScope();
-    await scope.ServiceProvider.GetRequiredService<SmsDbContext>().Database.MigrateAsync();
+    var db = scope.ServiceProvider.GetRequiredService<SmsDbContext>();
+    await db.Database.MigrateAsync();
+
+    // Siembra las 8 secciones estándar (design D4). Idempotente e inofensivo si
+    // ya están: inserta si falta, nunca actualiza. Corre justo después de migrar
+    // para que el esquema ya exista.
+    var seederLogger = scope.ServiceProvider.GetRequiredService<ILoggerFactory>()
+        .CreateLogger("SmsBackend.Data.Seeding.ConfiguracionSeeder");
+    await ConfiguracionSeeder.SeedAsync(db, seederLogger);
 }
 
 app.UseHttpsRedirection();
