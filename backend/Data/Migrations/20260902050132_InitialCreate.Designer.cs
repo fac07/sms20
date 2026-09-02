@@ -12,7 +12,7 @@ using SmsBackend.Data;
 namespace SmsBackend.Data.Migrations
 {
     [DbContext(typeof(SmsDbContext))]
-    [Migration("20260902044905_InitialCreate")]
+    [Migration("20260902050132_InitialCreate")]
     partial class InitialCreate
     {
         /// <inheritdoc />
@@ -99,12 +99,6 @@ namespace SmsBackend.Data.Migrations
                         .ValueGeneratedOnAdd()
                         .HasColumnType("uniqueidentifier");
 
-                    b.Property<Guid?>("AlmacenDestinoId")
-                        .HasColumnType("uniqueidentifier");
-
-                    b.Property<Guid?>("AlmacenOrigenId")
-                        .HasColumnType("uniqueidentifier");
-
                     b.Property<Guid>("BasculaId")
                         .HasColumnType("uniqueidentifier");
 
@@ -120,9 +114,6 @@ namespace SmsBackend.Data.Migrations
                     b.Property<bool>("CreadaOffline")
                         .HasColumnType("bit");
 
-                    b.Property<Guid>("EquipoId")
-                        .HasColumnType("uniqueidentifier");
-
                     b.Property<string>("Estado")
                         .IsRequired()
                         .HasMaxLength(20)
@@ -132,6 +123,9 @@ namespace SmsBackend.Data.Migrations
                         .IsRequired()
                         .HasMaxLength(20)
                         .HasColumnType("nvarchar(20)");
+
+                    b.Property<DateTime?>("FechaHoraAnulacion")
+                        .HasColumnType("datetime2");
 
                     b.Property<DateTime>("FechaHoraIngreso")
                         .HasColumnType("datetime2");
@@ -166,10 +160,7 @@ namespace SmsBackend.Data.Migrations
                     b.Property<decimal?>("PesoSalida")
                         .HasColumnType("decimal(12,2)");
 
-                    b.Property<Guid>("PilotoId")
-                        .HasColumnType("uniqueidentifier");
-
-                    b.Property<Guid>("ProductoId")
+                    b.Property<Guid?>("PreIngresoId")
                         .HasColumnType("uniqueidentifier");
 
                     b.Property<string>("RespuestaD365Id")
@@ -181,13 +172,7 @@ namespace SmsBackend.Data.Migrations
                         .ValueGeneratedOnAddOrUpdate()
                         .HasColumnType("rowversion");
 
-                    b.Property<Guid>("TerceroId")
-                        .HasColumnType("uniqueidentifier");
-
                     b.Property<Guid>("TipoMovimientoId")
-                        .HasColumnType("uniqueidentifier");
-
-                    b.Property<Guid>("TransportistaId")
                         .HasColumnType("uniqueidentifier");
 
                     b.Property<string>("UsuarioAnula")
@@ -209,10 +194,6 @@ namespace SmsBackend.Data.Migrations
 
                     b.HasKey("Id");
 
-                    b.HasIndex("AlmacenDestinoId");
-
-                    b.HasIndex("AlmacenOrigenId");
-
                     b.HasIndex("BasculaId");
 
                     b.HasIndex("BasculaSalidaId");
@@ -221,151 +202,12 @@ namespace SmsBackend.Data.Migrations
 
                     b.HasIndex("BoletaReemplazoId");
 
-                    b.HasIndex("EquipoId");
-
                     b.HasIndex("NumeroBoleta")
                         .IsUnique();
 
-                    b.HasIndex("PilotoId");
-
-                    b.HasIndex("ProductoId");
-
-                    b.HasIndex("TerceroId");
-
                     b.HasIndex("TipoMovimientoId");
 
-                    b.HasIndex("TransportistaId");
-
                     b.ToTable("Boleta", (string)null);
-                });
-
-            modelBuilder.Entity("SmsBackend.Domain.Boletas.Extensiones.BoletaCalidad", b =>
-                {
-                    b.Property<Guid>("Id")
-                        .ValueGeneratedOnAdd()
-                        .HasColumnType("uniqueidentifier");
-
-                    b.Property<decimal?>("Acidez")
-                        .HasColumnType("decimal(8,2)");
-
-                    b.Property<Guid>("BoletaId")
-                        .HasColumnType("uniqueidentifier");
-
-                    b.Property<decimal?>("DOBI")
-                        .HasColumnType("decimal(8,2)");
-
-                    b.Property<decimal?>("Humedad")
-                        .HasColumnType("decimal(8,2)");
-
-                    b.Property<decimal?>("Luz")
-                        .HasColumnType("decimal(8,2)");
-
-                    b.Property<string>("NumeroRevisionQA")
-                        .HasMaxLength(50)
-                        .HasColumnType("nvarchar(50)");
-
-                    b.Property<decimal?>("Temperatura")
-                        .HasColumnType("decimal(8,2)");
-
-                    b.HasKey("Id");
-
-                    b.HasIndex("BoletaId")
-                        .IsUnique();
-
-                    b.ToTable("BoletaCalidad", (string)null);
-                });
-
-            modelBuilder.Entity("SmsBackend.Domain.Boletas.Extensiones.BoletaCaracteristica", b =>
-                {
-                    b.Property<Guid>("Id")
-                        .ValueGeneratedOnAdd()
-                        .HasColumnType("uniqueidentifier");
-
-                    b.Property<Guid>("BoletaId")
-                        .HasColumnType("uniqueidentifier");
-
-                    b.Property<decimal>("Cantidad")
-                        .HasColumnType("decimal(10,2)");
-
-                    b.Property<Guid>("CaracteristicaId")
-                        .HasColumnType("uniqueidentifier");
-
-                    b.HasKey("Id");
-
-                    b.HasIndex("BoletaId");
-
-                    b.HasIndex("CaracteristicaId");
-
-                    b.ToTable("BoletaCaracteristica", (string)null);
-                });
-
-            modelBuilder.Entity("SmsBackend.Domain.Boletas.Extensiones.BoletaCompostera", b =>
-                {
-                    b.Property<Guid>("Id")
-                        .ValueGeneratedOnAdd()
-                        .HasColumnType("uniqueidentifier");
-
-                    b.Property<Guid>("BoletaId")
-                        .HasColumnType("uniqueidentifier");
-
-                    b.Property<string>("CUI")
-                        .IsRequired()
-                        .HasMaxLength(50)
-                        .HasColumnType("nvarchar(50)");
-
-                    b.Property<Guid>("CamaId")
-                        .HasColumnType("uniqueidentifier");
-
-                    b.Property<Guid>("CicloId")
-                        .HasColumnType("uniqueidentifier");
-
-                    b.Property<Guid>("SeccionId")
-                        .HasColumnType("uniqueidentifier");
-
-                    b.HasKey("Id");
-
-                    b.HasIndex("BoletaId")
-                        .IsUnique();
-
-                    b.HasIndex("CamaId");
-
-                    b.HasIndex("CicloId");
-
-                    b.HasIndex("SeccionId");
-
-                    b.ToTable("BoletaCompostera", (string)null);
-                });
-
-            modelBuilder.Entity("SmsBackend.Domain.Boletas.Extensiones.BoletaDetalleFruta", b =>
-                {
-                    b.Property<Guid>("Id")
-                        .ValueGeneratedOnAdd()
-                        .HasColumnType("uniqueidentifier");
-
-                    b.Property<Guid>("BoletaId")
-                        .HasColumnType("uniqueidentifier");
-
-                    b.Property<int>("PedunculoLargo")
-                        .HasColumnType("int");
-
-                    b.Property<int>("RacimosMaduros")
-                        .HasColumnType("int");
-
-                    b.Property<int>("RacimosPasados")
-                        .HasColumnType("int");
-
-                    b.Property<int>("RacimosSobreMaduros")
-                        .HasColumnType("int");
-
-                    b.Property<int>("RacimosVerdes")
-                        .HasColumnType("int");
-
-                    b.HasKey("Id");
-
-                    b.HasIndex("BoletaId")
-                        .IsUnique();
-
-                    b.ToTable("BoletaDetalleFruta", (string)null);
                 });
 
             modelBuilder.Entity("SmsBackend.Domain.Boletas.Valores.BoletaValorCampo", b =>
@@ -610,31 +452,17 @@ namespace SmsBackend.Data.Migrations
                     b.Property<Guid?>("FormatoBoletaId")
                         .HasColumnType("uniqueidentifier");
 
-                    b.Property<bool>("HabilitaCalidad")
-                        .HasColumnType("bit");
-
-                    b.Property<bool>("HabilitaCompostera")
-                        .HasColumnType("bit");
-
-                    b.Property<bool>("HabilitaDatosFinca")
-                        .HasColumnType("bit");
-
-                    b.Property<bool>("HabilitaDetalleFruta")
-                        .HasColumnType("bit");
-
-                    b.Property<bool>("HabilitaMarchamos")
-                        .HasColumnType("bit");
-
-                    b.Property<bool>("HabilitaQR")
-                        .HasColumnType("bit");
-
-                    b.Property<bool>("IntegracionD365")
+                    b.Property<bool>("GeneraQR")
                         .HasColumnType("bit");
 
                     b.Property<string>("Nombre")
                         .IsRequired()
                         .HasMaxLength(100)
                         .HasColumnType("nvarchar(100)");
+
+                    b.Property<string>("OperacionD365")
+                        .HasMaxLength(30)
+                        .HasColumnType("nvarchar(30)");
 
                     b.Property<string>("Prefijo")
                         .IsRequired()
@@ -660,16 +488,6 @@ namespace SmsBackend.Data.Migrations
 
             modelBuilder.Entity("SmsBackend.Domain.Boletas.Boleta", b =>
                 {
-                    b.HasOne("SmsBackend.Domain.Maestros.Maestro", null)
-                        .WithMany()
-                        .HasForeignKey("AlmacenDestinoId")
-                        .OnDelete(DeleteBehavior.Restrict);
-
-                    b.HasOne("SmsBackend.Domain.Maestros.Maestro", null)
-                        .WithMany()
-                        .HasForeignKey("AlmacenOrigenId")
-                        .OnDelete(DeleteBehavior.Restrict);
-
                     b.HasOne("SmsBackend.Domain.Basculas.Bascula", null)
                         .WithMany()
                         .HasForeignKey("BasculaId")
@@ -691,99 +509,9 @@ namespace SmsBackend.Data.Migrations
                         .HasForeignKey("BoletaReemplazoId")
                         .OnDelete(DeleteBehavior.Restrict);
 
-                    b.HasOne("SmsBackend.Domain.Maestros.Maestro", null)
-                        .WithMany()
-                        .HasForeignKey("EquipoId")
-                        .OnDelete(DeleteBehavior.Restrict)
-                        .IsRequired();
-
-                    b.HasOne("SmsBackend.Domain.Maestros.Maestro", null)
-                        .WithMany()
-                        .HasForeignKey("PilotoId")
-                        .OnDelete(DeleteBehavior.Restrict)
-                        .IsRequired();
-
-                    b.HasOne("SmsBackend.Domain.Maestros.Maestro", null)
-                        .WithMany()
-                        .HasForeignKey("ProductoId")
-                        .OnDelete(DeleteBehavior.Restrict)
-                        .IsRequired();
-
-                    b.HasOne("SmsBackend.Domain.Maestros.Maestro", null)
-                        .WithMany()
-                        .HasForeignKey("TerceroId")
-                        .OnDelete(DeleteBehavior.Restrict)
-                        .IsRequired();
-
                     b.HasOne("SmsBackend.Domain.TiposMovimiento.TipoMovimiento", null)
                         .WithMany()
                         .HasForeignKey("TipoMovimientoId")
-                        .OnDelete(DeleteBehavior.Restrict)
-                        .IsRequired();
-
-                    b.HasOne("SmsBackend.Domain.Maestros.Maestro", null)
-                        .WithMany()
-                        .HasForeignKey("TransportistaId")
-                        .OnDelete(DeleteBehavior.Restrict)
-                        .IsRequired();
-                });
-
-            modelBuilder.Entity("SmsBackend.Domain.Boletas.Extensiones.BoletaCalidad", b =>
-                {
-                    b.HasOne("SmsBackend.Domain.Boletas.Boleta", null)
-                        .WithMany()
-                        .HasForeignKey("BoletaId")
-                        .OnDelete(DeleteBehavior.Restrict)
-                        .IsRequired();
-                });
-
-            modelBuilder.Entity("SmsBackend.Domain.Boletas.Extensiones.BoletaCaracteristica", b =>
-                {
-                    b.HasOne("SmsBackend.Domain.Boletas.Boleta", null)
-                        .WithMany()
-                        .HasForeignKey("BoletaId")
-                        .OnDelete(DeleteBehavior.Restrict)
-                        .IsRequired();
-
-                    b.HasOne("SmsBackend.Domain.Maestros.Maestro", null)
-                        .WithMany()
-                        .HasForeignKey("CaracteristicaId")
-                        .OnDelete(DeleteBehavior.Restrict)
-                        .IsRequired();
-                });
-
-            modelBuilder.Entity("SmsBackend.Domain.Boletas.Extensiones.BoletaCompostera", b =>
-                {
-                    b.HasOne("SmsBackend.Domain.Boletas.Boleta", null)
-                        .WithMany()
-                        .HasForeignKey("BoletaId")
-                        .OnDelete(DeleteBehavior.Restrict)
-                        .IsRequired();
-
-                    b.HasOne("SmsBackend.Domain.Maestros.Maestro", null)
-                        .WithMany()
-                        .HasForeignKey("CamaId")
-                        .OnDelete(DeleteBehavior.Restrict)
-                        .IsRequired();
-
-                    b.HasOne("SmsBackend.Domain.Maestros.Maestro", null)
-                        .WithMany()
-                        .HasForeignKey("CicloId")
-                        .OnDelete(DeleteBehavior.Restrict)
-                        .IsRequired();
-
-                    b.HasOne("SmsBackend.Domain.Maestros.Maestro", null)
-                        .WithMany()
-                        .HasForeignKey("SeccionId")
-                        .OnDelete(DeleteBehavior.Restrict)
-                        .IsRequired();
-                });
-
-            modelBuilder.Entity("SmsBackend.Domain.Boletas.Extensiones.BoletaDetalleFruta", b =>
-                {
-                    b.HasOne("SmsBackend.Domain.Boletas.Boleta", null)
-                        .WithMany()
-                        .HasForeignKey("BoletaId")
                         .OnDelete(DeleteBehavior.Restrict)
                         .IsRequired();
                 });

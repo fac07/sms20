@@ -2,7 +2,6 @@ using System.Text.Json;
 using Microsoft.EntityFrameworkCore;
 using SmsBackend.Data;
 using SmsBackend.Domain.Basculas;
-using SmsBackend.Domain.Maestros;
 
 namespace SmsBackend.Domain.Boletas;
 
@@ -53,13 +52,6 @@ public static class BoletaEndpoints
                 // SQLite/Outbox — no hay un paso "Local" real que
                 // sincronizar, así que nace ya como sincronizada.
                 EstadoSync = EstadoSyncBoleta.SincronizadoCentral,
-                EquipoId = request.EquipoId,
-                TransportistaId = request.TransportistaId,
-                PilotoId = request.PilotoId,
-                TerceroId = request.TerceroId,
-                ProductoId = request.ProductoId,
-                AlmacenOrigenId = request.AlmacenOrigenId,
-                AlmacenDestinoId = request.AlmacenDestinoId,
                 PesoIngreso = request.PesoIngreso,
                 PesoSalida = null,
                 PesoNeto = null,
@@ -190,13 +182,6 @@ public static class BoletaEndpoints
 
                     var numeroBoleta = request.Payload.GetProperty("numeroBoleta").GetString()!;
                     var tipoMovimientoId = ObtenerGuid(request.Payload, "tipoMovimientoId");
-                    var equipoId = ObtenerGuid(request.Payload, "equipoId");
-                    var transportistaId = ObtenerGuid(request.Payload, "transportistaId");
-                    var pilotoId = ObtenerGuid(request.Payload, "pilotoId");
-                    var terceroId = ObtenerGuid(request.Payload, "terceroId");
-                    var productoId = ObtenerGuid(request.Payload, "productoId");
-                    var almacenOrigenId = ObtenerGuidOpcional(request.Payload, "almacenOrigenId");
-                    var almacenDestinoId = ObtenerGuidOpcional(request.Payload, "almacenDestinoId");
                     var pesoIngreso = request.Payload.GetProperty("pesoIngreso").GetDecimal();
                     var origenPesoIngreso = Enum.Parse<OrigenPeso>(
                         request.Payload.GetProperty("origenPesoIngreso").GetString()!);
@@ -220,16 +205,6 @@ public static class BoletaEndpoints
                         return Results.BadRequest($"No existe el tipo de movimiento {tipoMovimientoId}, o está inactivo.");
                     }
 
-                    var errorMaestro =
-                        await ValidarMaestroActivo(equipoId, "equipoId", db)
-                        ?? await ValidarMaestroActivo(transportistaId, "transportistaId", db)
-                        ?? await ValidarMaestroActivo(pilotoId, "pilotoId", db)
-                        ?? await ValidarMaestroActivo(terceroId, "terceroId", db)
-                        ?? await ValidarMaestroActivo(productoId, "productoId", db)
-                        ?? await ValidarMaestroActivoOpcional(almacenOrigenId, "almacenOrigenId", db)
-                        ?? await ValidarMaestroActivoOpcional(almacenDestinoId, "almacenDestinoId", db);
-                    if (errorMaestro is not null) return errorMaestro;
-
                     var boleta = new Boleta
                     {
                         // Preserva la identidad generada localmente — central
@@ -241,13 +216,6 @@ public static class BoletaEndpoints
                         TipoMovimientoId = tipoMovimientoId,
                         Estado = EstadoBoleta.EnTransito,
                         EstadoSync = EstadoSyncBoleta.SincronizadoCentral,
-                        EquipoId = equipoId,
-                        TransportistaId = transportistaId,
-                        PilotoId = pilotoId,
-                        TerceroId = terceroId,
-                        ProductoId = productoId,
-                        AlmacenOrigenId = almacenOrigenId,
-                        AlmacenDestinoId = almacenDestinoId,
                         PesoIngreso = pesoIngreso,
                         PesoSalida = null,
                         PesoNeto = null,
@@ -336,12 +304,6 @@ public static class BoletaEndpoints
 
     private static Guid ObtenerGuid(JsonElement payload, string campo) => payload.GetProperty(campo).GetGuid();
 
-    private static Guid? ObtenerGuidOpcional(JsonElement payload, string campo)
-    {
-        var prop = payload.GetProperty(campo);
-        return prop.ValueKind == JsonValueKind.Null ? null : prop.GetGuid();
-    }
-
     private static async Task<IResult?> ValidarCreacion(CrearBoletaRequest request, SmsDbContext db)
     {
         var numeroEnUso = await db.Boletas.AnyAsync(b => b.NumeroBoleta == request.NumeroBoleta);
@@ -364,29 +326,10 @@ public static class BoletaEndpoints
             return Results.BadRequest($"No existe el tipo de movimiento {request.TipoMovimientoId}, o está inactivo.");
         }
 
-        var errorMaestro =
-            await ValidarMaestroActivo(request.EquipoId, "EquipoId", db)
-            ?? await ValidarMaestroActivo(request.TransportistaId, "TransportistaId", db)
-            ?? await ValidarMaestroActivo(request.PilotoId, "PilotoId", db)
-            ?? await ValidarMaestroActivo(request.TerceroId, "TerceroId", db)
-            ?? await ValidarMaestroActivo(request.ProductoId, "ProductoId", db)
-            ?? await ValidarMaestroActivoOpcional(request.AlmacenOrigenId, "AlmacenOrigenId", db)
-            ?? await ValidarMaestroActivoOpcional(request.AlmacenDestinoId, "AlmacenDestinoId", db);
-        if (errorMaestro is not null) return errorMaestro;
-
+        // El contexto de negocio (equipo/transportista/piloto/tercero/producto/
+        // almacén) ya no vive en el Encabezado — su validación de referencia se
+        // hará contra los valores de campos configurables en un WU posterior.
         return null;
-    }
-
-    private static async Task<IResult?> ValidarMaestroActivo(Guid id, string campo, SmsDbContext db)
-    {
-        var existe = await db.Maestros.AsNoTracking().AnyAsync(m => m.Id == id && m.Activo);
-        return existe ? null : Results.BadRequest($"No existe el maestro referenciado por {campo} ({id}), o está inactivo.");
-    }
-
-    private static async Task<IResult?> ValidarMaestroActivoOpcional(Guid? id, string campo, SmsDbContext db)
-    {
-        if (id is null) return null;
-        return await ValidarMaestroActivo(id.Value, campo, db);
     }
 
     private static IQueryable<BoletaDto> Proyectar(IQueryable<Boleta> boletas, SmsDbContext db) =>
@@ -395,31 +338,16 @@ public static class BoletaEndpoints
         from bascula in basculas.DefaultIfEmpty()
         join tm in db.TiposMovimiento.AsNoTracking() on b.TipoMovimientoId equals tm.Id into tiposMovimiento
         from tipoMovimiento in tiposMovimiento.DefaultIfEmpty()
-        join eq in db.Maestros.AsNoTracking() on b.EquipoId equals eq.Id into equipos
-        from equipo in equipos.DefaultIfEmpty()
-        join tr in db.Maestros.AsNoTracking() on b.TransportistaId equals tr.Id into transportistas
-        from transportista in transportistas.DefaultIfEmpty()
-        join pi in db.Maestros.AsNoTracking() on b.PilotoId equals pi.Id into pilotos
-        from piloto in pilotos.DefaultIfEmpty()
-        join te in db.Maestros.AsNoTracking() on b.TerceroId equals te.Id into terceros
-        from tercero in terceros.DefaultIfEmpty()
-        join pr in db.Maestros.AsNoTracking() on b.ProductoId equals pr.Id into productos
-        from producto in productos.DefaultIfEmpty()
         select new BoletaDto(
             b.Id, b.NumeroBoleta,
             b.BasculaId, bascula != null ? bascula.Codigo : null,
             b.TipoMovimientoId, tipoMovimiento != null ? tipoMovimiento.Nombre : null,
             b.Estado, b.EstadoSync,
-            b.EquipoId, equipo != null ? equipo.Codigo : null,
-            b.TransportistaId, transportista != null ? transportista.Codigo : null,
-            b.PilotoId, piloto != null ? piloto.Codigo : null,
-            b.TerceroId, tercero != null ? tercero.Codigo : null,
-            b.ProductoId, producto != null ? producto.Codigo : null,
-            b.AlmacenOrigenId, b.AlmacenDestinoId,
             b.PesoIngreso, b.PesoSalida, b.PesoNeto,
             b.OrigenPesoIngreso, b.OrigenPesoSalida,
             b.FechaHoraIngreso, b.FechaHoraSalida,
             b.UsuarioIngreso, b.UsuarioSalida, b.UsuarioAnula, b.UsuarioAutoriza, b.MotivoAnulacion,
-            b.BoletaReemplazoId, b.BoletaOrigenId, b.BasculaSalidaId,
+            b.FechaHoraAnulacion,
+            b.BoletaReemplazoId, b.BoletaOrigenId, b.BasculaSalidaId, b.PreIngresoId,
             b.RespuestaD365Id, b.CreadaOffline);
 }

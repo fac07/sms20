@@ -63,13 +63,8 @@ namespace SmsBackend.Data.Migrations
                     Nombre = table.Column<string>(type: "nvarchar(100)", maxLength: 100, nullable: false),
                     Prefijo = table.Column<string>(type: "nvarchar(10)", maxLength: 10, nullable: false),
                     Direccion = table.Column<string>(type: "nvarchar(20)", maxLength: 20, nullable: false),
-                    HabilitaCalidad = table.Column<bool>(type: "bit", nullable: false),
-                    HabilitaMarchamos = table.Column<bool>(type: "bit", nullable: false),
-                    HabilitaQR = table.Column<bool>(type: "bit", nullable: false),
-                    HabilitaDatosFinca = table.Column<bool>(type: "bit", nullable: false),
-                    HabilitaDetalleFruta = table.Column<bool>(type: "bit", nullable: false),
-                    HabilitaCompostera = table.Column<bool>(type: "bit", nullable: false),
-                    IntegracionD365 = table.Column<bool>(type: "bit", nullable: false),
+                    OperacionD365 = table.Column<string>(type: "nvarchar(30)", maxLength: 30, nullable: true),
+                    GeneraQR = table.Column<bool>(type: "bit", nullable: false),
                     FormatoBoletaId = table.Column<Guid>(type: "uniqueidentifier", nullable: true),
                     Activo = table.Column<bool>(type: "bit", nullable: false)
                 },
@@ -174,13 +169,6 @@ namespace SmsBackend.Data.Migrations
                     TipoMovimientoId = table.Column<Guid>(type: "uniqueidentifier", nullable: false),
                     Estado = table.Column<string>(type: "nvarchar(20)", maxLength: 20, nullable: false),
                     EstadoSync = table.Column<string>(type: "nvarchar(20)", maxLength: 20, nullable: false),
-                    EquipoId = table.Column<Guid>(type: "uniqueidentifier", nullable: false),
-                    TransportistaId = table.Column<Guid>(type: "uniqueidentifier", nullable: false),
-                    PilotoId = table.Column<Guid>(type: "uniqueidentifier", nullable: false),
-                    TerceroId = table.Column<Guid>(type: "uniqueidentifier", nullable: false),
-                    ProductoId = table.Column<Guid>(type: "uniqueidentifier", nullable: false),
-                    AlmacenOrigenId = table.Column<Guid>(type: "uniqueidentifier", nullable: true),
-                    AlmacenDestinoId = table.Column<Guid>(type: "uniqueidentifier", nullable: true),
                     PesoIngreso = table.Column<decimal>(type: "decimal(12,2)", nullable: false),
                     PesoSalida = table.Column<decimal>(type: "decimal(12,2)", nullable: true),
                     PesoNeto = table.Column<decimal>(type: "decimal(12,2)", nullable: true),
@@ -193,6 +181,8 @@ namespace SmsBackend.Data.Migrations
                     UsuarioAnula = table.Column<string>(type: "nvarchar(150)", maxLength: 150, nullable: true),
                     UsuarioAutoriza = table.Column<string>(type: "nvarchar(150)", maxLength: 150, nullable: true),
                     MotivoAnulacion = table.Column<string>(type: "nvarchar(500)", maxLength: 500, nullable: true),
+                    FechaHoraAnulacion = table.Column<DateTime>(type: "datetime2", nullable: true),
+                    PreIngresoId = table.Column<Guid>(type: "uniqueidentifier", nullable: true),
                     BoletaReemplazoId = table.Column<Guid>(type: "uniqueidentifier", nullable: true),
                     BoletaOrigenId = table.Column<Guid>(type: "uniqueidentifier", nullable: true),
                     BasculaSalidaId = table.Column<Guid>(type: "uniqueidentifier", nullable: true),
@@ -228,164 +218,9 @@ namespace SmsBackend.Data.Migrations
                         principalColumn: "Id",
                         onDelete: ReferentialAction.Restrict);
                     table.ForeignKey(
-                        name: "FK_Boleta_Maestro_AlmacenDestinoId",
-                        column: x => x.AlmacenDestinoId,
-                        principalTable: "Maestro",
-                        principalColumn: "Id",
-                        onDelete: ReferentialAction.Restrict);
-                    table.ForeignKey(
-                        name: "FK_Boleta_Maestro_AlmacenOrigenId",
-                        column: x => x.AlmacenOrigenId,
-                        principalTable: "Maestro",
-                        principalColumn: "Id",
-                        onDelete: ReferentialAction.Restrict);
-                    table.ForeignKey(
-                        name: "FK_Boleta_Maestro_EquipoId",
-                        column: x => x.EquipoId,
-                        principalTable: "Maestro",
-                        principalColumn: "Id",
-                        onDelete: ReferentialAction.Restrict);
-                    table.ForeignKey(
-                        name: "FK_Boleta_Maestro_PilotoId",
-                        column: x => x.PilotoId,
-                        principalTable: "Maestro",
-                        principalColumn: "Id",
-                        onDelete: ReferentialAction.Restrict);
-                    table.ForeignKey(
-                        name: "FK_Boleta_Maestro_ProductoId",
-                        column: x => x.ProductoId,
-                        principalTable: "Maestro",
-                        principalColumn: "Id",
-                        onDelete: ReferentialAction.Restrict);
-                    table.ForeignKey(
-                        name: "FK_Boleta_Maestro_TerceroId",
-                        column: x => x.TerceroId,
-                        principalTable: "Maestro",
-                        principalColumn: "Id",
-                        onDelete: ReferentialAction.Restrict);
-                    table.ForeignKey(
-                        name: "FK_Boleta_Maestro_TransportistaId",
-                        column: x => x.TransportistaId,
-                        principalTable: "Maestro",
-                        principalColumn: "Id",
-                        onDelete: ReferentialAction.Restrict);
-                    table.ForeignKey(
                         name: "FK_Boleta_TipoMovimiento_TipoMovimientoId",
                         column: x => x.TipoMovimientoId,
                         principalTable: "TipoMovimiento",
-                        principalColumn: "Id",
-                        onDelete: ReferentialAction.Restrict);
-                });
-
-            migrationBuilder.CreateTable(
-                name: "BoletaCalidad",
-                columns: table => new
-                {
-                    Id = table.Column<Guid>(type: "uniqueidentifier", nullable: false),
-                    BoletaId = table.Column<Guid>(type: "uniqueidentifier", nullable: false),
-                    Acidez = table.Column<decimal>(type: "decimal(8,2)", nullable: true),
-                    Luz = table.Column<decimal>(type: "decimal(8,2)", nullable: true),
-                    DOBI = table.Column<decimal>(type: "decimal(8,2)", nullable: true),
-                    Humedad = table.Column<decimal>(type: "decimal(8,2)", nullable: true),
-                    Temperatura = table.Column<decimal>(type: "decimal(8,2)", nullable: true),
-                    NumeroRevisionQA = table.Column<string>(type: "nvarchar(50)", maxLength: 50, nullable: true)
-                },
-                constraints: table =>
-                {
-                    table.PrimaryKey("PK_BoletaCalidad", x => x.Id);
-                    table.ForeignKey(
-                        name: "FK_BoletaCalidad_Boleta_BoletaId",
-                        column: x => x.BoletaId,
-                        principalTable: "Boleta",
-                        principalColumn: "Id",
-                        onDelete: ReferentialAction.Restrict);
-                });
-
-            migrationBuilder.CreateTable(
-                name: "BoletaCaracteristica",
-                columns: table => new
-                {
-                    Id = table.Column<Guid>(type: "uniqueidentifier", nullable: false),
-                    BoletaId = table.Column<Guid>(type: "uniqueidentifier", nullable: false),
-                    CaracteristicaId = table.Column<Guid>(type: "uniqueidentifier", nullable: false),
-                    Cantidad = table.Column<decimal>(type: "decimal(10,2)", nullable: false)
-                },
-                constraints: table =>
-                {
-                    table.PrimaryKey("PK_BoletaCaracteristica", x => x.Id);
-                    table.ForeignKey(
-                        name: "FK_BoletaCaracteristica_Boleta_BoletaId",
-                        column: x => x.BoletaId,
-                        principalTable: "Boleta",
-                        principalColumn: "Id",
-                        onDelete: ReferentialAction.Restrict);
-                    table.ForeignKey(
-                        name: "FK_BoletaCaracteristica_Maestro_CaracteristicaId",
-                        column: x => x.CaracteristicaId,
-                        principalTable: "Maestro",
-                        principalColumn: "Id",
-                        onDelete: ReferentialAction.Restrict);
-                });
-
-            migrationBuilder.CreateTable(
-                name: "BoletaCompostera",
-                columns: table => new
-                {
-                    Id = table.Column<Guid>(type: "uniqueidentifier", nullable: false),
-                    BoletaId = table.Column<Guid>(type: "uniqueidentifier", nullable: false),
-                    CUI = table.Column<string>(type: "nvarchar(50)", maxLength: 50, nullable: false),
-                    CamaId = table.Column<Guid>(type: "uniqueidentifier", nullable: false),
-                    SeccionId = table.Column<Guid>(type: "uniqueidentifier", nullable: false),
-                    CicloId = table.Column<Guid>(type: "uniqueidentifier", nullable: false)
-                },
-                constraints: table =>
-                {
-                    table.PrimaryKey("PK_BoletaCompostera", x => x.Id);
-                    table.ForeignKey(
-                        name: "FK_BoletaCompostera_Boleta_BoletaId",
-                        column: x => x.BoletaId,
-                        principalTable: "Boleta",
-                        principalColumn: "Id",
-                        onDelete: ReferentialAction.Restrict);
-                    table.ForeignKey(
-                        name: "FK_BoletaCompostera_Maestro_CamaId",
-                        column: x => x.CamaId,
-                        principalTable: "Maestro",
-                        principalColumn: "Id",
-                        onDelete: ReferentialAction.Restrict);
-                    table.ForeignKey(
-                        name: "FK_BoletaCompostera_Maestro_CicloId",
-                        column: x => x.CicloId,
-                        principalTable: "Maestro",
-                        principalColumn: "Id",
-                        onDelete: ReferentialAction.Restrict);
-                    table.ForeignKey(
-                        name: "FK_BoletaCompostera_Maestro_SeccionId",
-                        column: x => x.SeccionId,
-                        principalTable: "Maestro",
-                        principalColumn: "Id",
-                        onDelete: ReferentialAction.Restrict);
-                });
-
-            migrationBuilder.CreateTable(
-                name: "BoletaDetalleFruta",
-                columns: table => new
-                {
-                    Id = table.Column<Guid>(type: "uniqueidentifier", nullable: false),
-                    BoletaId = table.Column<Guid>(type: "uniqueidentifier", nullable: false),
-                    RacimosVerdes = table.Column<int>(type: "int", nullable: false),
-                    RacimosMaduros = table.Column<int>(type: "int", nullable: false),
-                    RacimosSobreMaduros = table.Column<int>(type: "int", nullable: false),
-                    RacimosPasados = table.Column<int>(type: "int", nullable: false),
-                    PedunculoLargo = table.Column<int>(type: "int", nullable: false)
-                },
-                constraints: table =>
-                {
-                    table.PrimaryKey("PK_BoletaDetalleFruta", x => x.Id);
-                    table.ForeignKey(
-                        name: "FK_BoletaDetalleFruta_Boleta_BoletaId",
-                        column: x => x.BoletaId,
-                        principalTable: "Boleta",
                         principalColumn: "Id",
                         onDelete: ReferentialAction.Restrict);
                 });
@@ -446,16 +281,6 @@ namespace SmsBackend.Data.Migrations
                 unique: true);
 
             migrationBuilder.CreateIndex(
-                name: "IX_Boleta_AlmacenDestinoId",
-                table: "Boleta",
-                column: "AlmacenDestinoId");
-
-            migrationBuilder.CreateIndex(
-                name: "IX_Boleta_AlmacenOrigenId",
-                table: "Boleta",
-                column: "AlmacenOrigenId");
-
-            migrationBuilder.CreateIndex(
                 name: "IX_Boleta_BasculaId",
                 table: "Boleta",
                 column: "BasculaId");
@@ -476,83 +301,15 @@ namespace SmsBackend.Data.Migrations
                 column: "BoletaReemplazoId");
 
             migrationBuilder.CreateIndex(
-                name: "IX_Boleta_EquipoId",
-                table: "Boleta",
-                column: "EquipoId");
-
-            migrationBuilder.CreateIndex(
                 name: "IX_Boleta_NumeroBoleta",
                 table: "Boleta",
                 column: "NumeroBoleta",
                 unique: true);
 
             migrationBuilder.CreateIndex(
-                name: "IX_Boleta_PilotoId",
-                table: "Boleta",
-                column: "PilotoId");
-
-            migrationBuilder.CreateIndex(
-                name: "IX_Boleta_ProductoId",
-                table: "Boleta",
-                column: "ProductoId");
-
-            migrationBuilder.CreateIndex(
-                name: "IX_Boleta_TerceroId",
-                table: "Boleta",
-                column: "TerceroId");
-
-            migrationBuilder.CreateIndex(
                 name: "IX_Boleta_TipoMovimientoId",
                 table: "Boleta",
                 column: "TipoMovimientoId");
-
-            migrationBuilder.CreateIndex(
-                name: "IX_Boleta_TransportistaId",
-                table: "Boleta",
-                column: "TransportistaId");
-
-            migrationBuilder.CreateIndex(
-                name: "IX_BoletaCalidad_BoletaId",
-                table: "BoletaCalidad",
-                column: "BoletaId",
-                unique: true);
-
-            migrationBuilder.CreateIndex(
-                name: "IX_BoletaCaracteristica_BoletaId",
-                table: "BoletaCaracteristica",
-                column: "BoletaId");
-
-            migrationBuilder.CreateIndex(
-                name: "IX_BoletaCaracteristica_CaracteristicaId",
-                table: "BoletaCaracteristica",
-                column: "CaracteristicaId");
-
-            migrationBuilder.CreateIndex(
-                name: "IX_BoletaCompostera_BoletaId",
-                table: "BoletaCompostera",
-                column: "BoletaId",
-                unique: true);
-
-            migrationBuilder.CreateIndex(
-                name: "IX_BoletaCompostera_CamaId",
-                table: "BoletaCompostera",
-                column: "CamaId");
-
-            migrationBuilder.CreateIndex(
-                name: "IX_BoletaCompostera_CicloId",
-                table: "BoletaCompostera",
-                column: "CicloId");
-
-            migrationBuilder.CreateIndex(
-                name: "IX_BoletaCompostera_SeccionId",
-                table: "BoletaCompostera",
-                column: "SeccionId");
-
-            migrationBuilder.CreateIndex(
-                name: "IX_BoletaDetalleFruta_BoletaId",
-                table: "BoletaDetalleFruta",
-                column: "BoletaId",
-                unique: true);
 
             migrationBuilder.CreateIndex(
                 name: "IX_BoletaValorCampo_BoletaId_SeccionId",
@@ -625,18 +382,6 @@ namespace SmsBackend.Data.Migrations
         /// <inheritdoc />
         protected override void Down(MigrationBuilder migrationBuilder)
         {
-            migrationBuilder.DropTable(
-                name: "BoletaCalidad");
-
-            migrationBuilder.DropTable(
-                name: "BoletaCaracteristica");
-
-            migrationBuilder.DropTable(
-                name: "BoletaCompostera");
-
-            migrationBuilder.DropTable(
-                name: "BoletaDetalleFruta");
-
             migrationBuilder.DropTable(
                 name: "BoletaValorCampo");
 
