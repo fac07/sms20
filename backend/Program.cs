@@ -4,6 +4,7 @@ using SmsBackend.Data;
 using SmsBackend.Domain.Basculas;
 using SmsBackend.Domain.Boletas;
 using SmsBackend.Domain.Boletas.Valores;
+using SmsBackend.Domain.Configuracion;
 using SmsBackend.Domain.Maestros;
 using SmsBackend.Domain.TiposMovimiento;
 
@@ -70,5 +71,7 @@ app.MapTiposMovimiento();
 app.MapMaestros();
 app.MapBasculas();
 app.MapBoletas();
+app.MapSecciones();
+app.MapCampos();
 
 app.Run();
