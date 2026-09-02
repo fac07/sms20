@@ -84,3 +84,8 @@ app.MapSecciones();
 app.MapCampos();
 
 app.Run();
+
+// Marcador para que WebApplicationFactory<Program> (SmsBackend.Tests) pueda
+// referenciar el host de la app. Los top-level statements generan una clase
+// Program interna; esta parte parcial la hace pública sin cambiar nada más.
+public partial class Program { }
