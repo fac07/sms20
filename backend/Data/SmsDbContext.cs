@@ -1,7 +1,6 @@
 using Microsoft.EntityFrameworkCore;
 using SmsBackend.Domain.Basculas;
 using SmsBackend.Domain.Boletas;
-using SmsBackend.Domain.Boletas.Extensiones;
 using SmsBackend.Domain.Boletas.Valores;
 using SmsBackend.Domain.Configuracion;
 using SmsBackend.Domain.Maestros;
@@ -26,14 +25,6 @@ public class SmsDbContext(DbContextOptions<SmsDbContext> options) : DbContext(op
     public DbSet<TipoMovimientoSeccion> TipoMovimientoSecciones => Set<TipoMovimientoSeccion>();
 
     public DbSet<BoletaValorCampo> BoletaValores => Set<BoletaValorCampo>();
-
-    public DbSet<BoletaCalidad> BoletaCalidades => Set<BoletaCalidad>();
-
-    public DbSet<BoletaDetalleFruta> BoletaDetalleFrutas => Set<BoletaDetalleFruta>();
-
-    public DbSet<BoletaCaracteristica> BoletaCaracteristicas => Set<BoletaCaracteristica>();
-
-    public DbSet<BoletaCompostera> BoletaComposteras => Set<BoletaCompostera>();
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
