@@ -4,6 +4,7 @@ using SmsBackend.Data;
 using SmsBackend.Domain.Basculas;
 using SmsBackend.Domain.Boletas;
 using SmsBackend.Domain.Boletas.Extensiones;
+using SmsBackend.Domain.Boletas.Valores;
 using SmsBackend.Domain.Maestros;
 using SmsBackend.Domain.TiposMovimiento;
 
@@ -31,6 +32,12 @@ builder.Services.AddCors(options =>
 
 builder.Services.AddDbContext<SmsDbContext>(options =>
     options.UseSqlServer(builder.Configuration.GetConnectionString("SmsCentral")));
+
+// Motor de campos configurables: único resolver/validador del conjunto EAV,
+// compartido por el crear tipado, el cierre y la rama de sync. Scoped porque
+// depende del SmsDbContext (scoped). Nadie lo consume todavía — los endpoints
+// llegan en un WU posterior.
+builder.Services.AddScoped<MotorCampos>();
 
 // /health hace un SELECT 1 real contra SmsCentral — así sirve para probar
 // conectividad de verdad, no solo "el proceso está vivo".

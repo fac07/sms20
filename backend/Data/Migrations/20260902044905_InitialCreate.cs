@@ -390,6 +390,50 @@ namespace SmsBackend.Data.Migrations
                         onDelete: ReferentialAction.Restrict);
                 });
 
+            migrationBuilder.CreateTable(
+                name: "BoletaValorCampo",
+                columns: table => new
+                {
+                    BoletaId = table.Column<Guid>(type: "uniqueidentifier", nullable: false),
+                    CampoId = table.Column<Guid>(type: "uniqueidentifier", nullable: false),
+                    Ocurrencia = table.Column<int>(type: "int", nullable: false),
+                    SeccionId = table.Column<Guid>(type: "uniqueidentifier", nullable: false),
+                    ValorTexto = table.Column<string>(type: "nvarchar(500)", maxLength: 500, nullable: true),
+                    ValorNumero = table.Column<decimal>(type: "decimal(18,4)", nullable: true),
+                    ValorFecha = table.Column<DateTime>(type: "datetime2", nullable: true),
+                    ValorBooleano = table.Column<bool>(type: "bit", nullable: true),
+                    ValorMaestroId = table.Column<Guid>(type: "uniqueidentifier", nullable: true)
+                },
+                constraints: table =>
+                {
+                    table.PrimaryKey("PK_BoletaValorCampo", x => new { x.BoletaId, x.CampoId, x.Ocurrencia });
+                    table.CheckConstraint("CK_BoletaValorCampo_UnSoloValor", "(CASE WHEN ValorTexto IS NULL THEN 0 ELSE 1 END + CASE WHEN ValorNumero IS NULL THEN 0 ELSE 1 END + CASE WHEN ValorFecha IS NULL THEN 0 ELSE 1 END + CASE WHEN ValorBooleano IS NULL THEN 0 ELSE 1 END + CASE WHEN ValorMaestroId IS NULL THEN 0 ELSE 1 END) = 1");
+                    table.ForeignKey(
+                        name: "FK_BoletaValorCampo_Boleta_BoletaId",
+                        column: x => x.BoletaId,
+                        principalTable: "Boleta",
+                        principalColumn: "Id",
+                        onDelete: ReferentialAction.Cascade);
+                    table.ForeignKey(
+                        name: "FK_BoletaValorCampo_Campo_CampoId",
+                        column: x => x.CampoId,
+                        principalTable: "Campo",
+                        principalColumn: "Id",
+                        onDelete: ReferentialAction.Restrict);
+                    table.ForeignKey(
+                        name: "FK_BoletaValorCampo_Maestro_ValorMaestroId",
+                        column: x => x.ValorMaestroId,
+                        principalTable: "Maestro",
+                        principalColumn: "Id",
+                        onDelete: ReferentialAction.Restrict);
+                    table.ForeignKey(
+                        name: "FK_BoletaValorCampo_Seccion_SeccionId",
+                        column: x => x.SeccionId,
+                        principalTable: "Seccion",
+                        principalColumn: "Id",
+                        onDelete: ReferentialAction.Restrict);
+                });
+
             migrationBuilder.CreateIndex(
                 name: "IX_Bascula_CentroId",
                 table: "Bascula",
@@ -511,6 +555,26 @@ namespace SmsBackend.Data.Migrations
                 unique: true);
 
             migrationBuilder.CreateIndex(
+                name: "IX_BoletaValorCampo_BoletaId_SeccionId",
+                table: "BoletaValorCampo",
+                columns: new[] { "BoletaId", "SeccionId" });
+
+            migrationBuilder.CreateIndex(
+                name: "IX_BoletaValorCampo_CampoId_ValorNumero",
+                table: "BoletaValorCampo",
+                columns: new[] { "CampoId", "ValorNumero" });
+
+            migrationBuilder.CreateIndex(
+                name: "IX_BoletaValorCampo_SeccionId",
+                table: "BoletaValorCampo",
+                column: "SeccionId");
+
+            migrationBuilder.CreateIndex(
+                name: "IX_BoletaValorCampo_ValorMaestroId",
+                table: "BoletaValorCampo",
+                column: "ValorMaestroId");
+
+            migrationBuilder.CreateIndex(
                 name: "IX_Campo_SeccionId_Clave",
                 table: "Campo",
                 columns: new[] { "SeccionId", "Clave" },
@@ -574,7 +638,7 @@ namespace SmsBackend.Data.Migrations
                 name: "BoletaDetalleFruta");
 
             migrationBuilder.DropTable(
-                name: "Campo");
+                name: "BoletaValorCampo");
 
             migrationBuilder.DropTable(
                 name: "TipoMovimientoSeccion");
@@ -583,13 +647,16 @@ namespace SmsBackend.Data.Migrations
                 name: "Boleta");
 
             migrationBuilder.DropTable(
-                name: "Seccion");
+                name: "Campo");
 
             migrationBuilder.DropTable(
                 name: "Bascula");
 
             migrationBuilder.DropTable(
                 name: "TipoMovimiento");
+
+            migrationBuilder.DropTable(
+                name: "Seccion");
 
             migrationBuilder.DropTable(
                 name: "Maestro");
