@@ -21,20 +21,16 @@ public class TipoMovimiento
 
     public DireccionMovimiento Direccion { get; set; }
 
-    public bool HabilitaCalidad { get; set; }
+    /// <summary>
+    /// Operación de Dynamics 365 que produce este tipo de movimiento al
+    /// integrar. <c>null</c> significa que la boleta nunca entra al OutboxD365
+    /// (reemplaza al bool legacy IntegracionD365, que equivale a
+    /// <c>OperacionD365 != null</c>).
+    /// </summary>
+    public OperacionD365? OperacionD365 { get; set; }
 
-    public bool HabilitaMarchamos { get; set; }
-
-    public bool HabilitaQR { get; set; }
-
-    public bool HabilitaDatosFinca { get; set; }
-
-    public bool HabilitaDetalleFruta { get; set; }
-
-    public bool HabilitaCompostera { get; set; }
-
-    /// <summary>Si está apagado, la boleta nunca entra al OutboxD365.</summary>
-    public bool IntegracionD365 { get; set; }
+    /// <summary>Si está encendido, el cierre de la boleta genera un código QR.</summary>
+    public bool GeneraQR { get; set; }
 
     /// <summary>
     /// FK lógica hacia PlantillaImpresion — esa tabla todavía no existe en el

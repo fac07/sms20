@@ -9,18 +9,6 @@ public record BoletaDto(
     string? TipoMovimientoNombre,
     EstadoBoleta Estado,
     EstadoSyncBoleta EstadoSync,
-    Guid EquipoId,
-    string? EquipoCodigo,
-    Guid TransportistaId,
-    string? TransportistaCodigo,
-    Guid PilotoId,
-    string? PilotoCodigo,
-    Guid TerceroId,
-    string? TerceroCodigo,
-    Guid ProductoId,
-    string? ProductoCodigo,
-    Guid? AlmacenOrigenId,
-    Guid? AlmacenDestinoId,
     decimal PesoIngreso,
     decimal? PesoSalida,
     decimal? PesoNeto,
@@ -33,24 +21,24 @@ public record BoletaDto(
     string? UsuarioAnula,
     string? UsuarioAutoriza,
     string? MotivoAnulacion,
+    DateTime? FechaHoraAnulacion,
     Guid? BoletaReemplazoId,
     Guid? BoletaOrigenId,
     Guid? BasculaSalidaId,
+    Guid? PreIngresoId,
     string? RespuestaD365Id,
     bool CreadaOffline);
 
-/// <summary>Datos del primer pesaje — abre la boleta.</summary>
+/// <summary>
+/// Datos del primer pesaje — abre la boleta. El contexto de negocio
+/// (transporte, producto, ubicación, calidad, ...) viaja como valores de
+/// secciones/campos configurables y se incorpora a este contrato en un WU
+/// posterior; entre tanto el ingreso es solo el Encabezado.
+/// </summary>
 public record CrearBoletaRequest(
     string NumeroBoleta,
     Guid BasculaId,
     Guid TipoMovimientoId,
-    Guid EquipoId,
-    Guid TransportistaId,
-    Guid PilotoId,
-    Guid TerceroId,
-    Guid ProductoId,
-    Guid? AlmacenOrigenId,
-    Guid? AlmacenDestinoId,
     decimal PesoIngreso,
     OrigenPeso OrigenPesoIngreso,
     string UsuarioIngreso,

@@ -6,21 +6,14 @@ public record TipoMovimientoDto(
     string Nombre,
     string Prefijo,
     DireccionMovimiento Direccion,
-    bool HabilitaCalidad,
-    bool HabilitaMarchamos,
-    bool HabilitaQR,
-    bool HabilitaDatosFinca,
-    bool HabilitaDetalleFruta,
-    bool HabilitaCompostera,
-    bool IntegracionD365,
+    OperacionD365? OperacionD365,
+    bool GeneraQR,
     Guid? FormatoBoletaId,
     bool Activo)
 {
     public static TipoMovimientoDto FromEntity(TipoMovimiento t) => new(
         t.Id, t.Codigo, t.Nombre, t.Prefijo, t.Direccion,
-        t.HabilitaCalidad, t.HabilitaMarchamos, t.HabilitaQR,
-        t.HabilitaDatosFinca, t.HabilitaDetalleFruta, t.HabilitaCompostera,
-        t.IntegracionD365, t.FormatoBoletaId, t.Activo);
+        t.OperacionD365, t.GeneraQR, t.FormatoBoletaId, t.Activo);
 }
 
 public record GuardarTipoMovimientoRequest(
@@ -28,11 +21,6 @@ public record GuardarTipoMovimientoRequest(
     string Nombre,
     string Prefijo,
     DireccionMovimiento Direccion,
-    bool HabilitaCalidad,
-    bool HabilitaMarchamos,
-    bool HabilitaQR,
-    bool HabilitaDatosFinca,
-    bool HabilitaDetalleFruta,
-    bool HabilitaCompostera,
-    bool IntegracionD365,
+    OperacionD365? OperacionD365,
+    bool GeneraQR,
     Guid? FormatoBoletaId);

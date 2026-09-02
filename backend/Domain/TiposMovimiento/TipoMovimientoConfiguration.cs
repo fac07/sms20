@@ -30,6 +30,13 @@ public class TipoMovimientoConfiguration : IEntityTypeConfiguration<TipoMovimien
             .HasMaxLength(20)
             .IsRequired();
 
+        // Persistido como string, igual que Direccion. MaxLength(30) y no el
+        // 20 estándar del resto del esquema: el miembro más largo,
+        // TransferenciaRecepcion, mide 23 caracteres.
+        builder.Property(t => t.OperacionD365)
+            .HasConversion<string>()
+            .HasMaxLength(30);
+
         builder.HasIndex(t => t.Codigo).IsUnique();
     }
 }

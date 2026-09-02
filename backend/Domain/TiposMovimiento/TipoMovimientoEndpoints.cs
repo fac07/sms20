@@ -49,13 +49,8 @@ public static class TipoMovimientoEndpoints
                 Nombre = request.Nombre,
                 Prefijo = request.Prefijo,
                 Direccion = request.Direccion,
-                HabilitaCalidad = request.HabilitaCalidad,
-                HabilitaMarchamos = request.HabilitaMarchamos,
-                HabilitaQR = request.HabilitaQR,
-                HabilitaDatosFinca = request.HabilitaDatosFinca,
-                HabilitaDetalleFruta = request.HabilitaDetalleFruta,
-                HabilitaCompostera = request.HabilitaCompostera,
-                IntegracionD365 = request.IntegracionD365,
+                OperacionD365 = request.OperacionD365,
+                GeneraQR = request.GeneraQR,
                 FormatoBoletaId = request.FormatoBoletaId,
                 Activo = true,
             };
@@ -85,13 +80,8 @@ public static class TipoMovimientoEndpoints
             tipo.Nombre = request.Nombre;
             tipo.Prefijo = request.Prefijo;
             tipo.Direccion = request.Direccion;
-            tipo.HabilitaCalidad = request.HabilitaCalidad;
-            tipo.HabilitaMarchamos = request.HabilitaMarchamos;
-            tipo.HabilitaQR = request.HabilitaQR;
-            tipo.HabilitaDatosFinca = request.HabilitaDatosFinca;
-            tipo.HabilitaDetalleFruta = request.HabilitaDetalleFruta;
-            tipo.HabilitaCompostera = request.HabilitaCompostera;
-            tipo.IntegracionD365 = request.IntegracionD365;
+            tipo.OperacionD365 = request.OperacionD365;
+            tipo.GeneraQR = request.GeneraQR;
             tipo.FormatoBoletaId = request.FormatoBoletaId;
 
             await db.SaveChangesAsync();
