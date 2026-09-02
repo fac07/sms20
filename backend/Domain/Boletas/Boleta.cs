@@ -30,27 +30,6 @@ public class Boleta
 
     public EstadoSyncBoleta EstadoSync { get; set; }
 
-    /// <summary>FK -> Maestro (TipoCatalogo=Equipo).</summary>
-    public Guid EquipoId { get; set; }
-
-    /// <summary>FK -> Maestro (TipoCatalogo=Transportista).</summary>
-    public Guid TransportistaId { get; set; }
-
-    /// <summary>FK -> Maestro (TipoCatalogo=Piloto).</summary>
-    public Guid PilotoId { get; set; }
-
-    /// <summary>FK -> Maestro — proveedor o cliente, según Direccion del TipoMovimiento.</summary>
-    public Guid TerceroId { get; set; }
-
-    /// <summary>FK -> Maestro (TipoCatalogo=Producto).</summary>
-    public Guid ProductoId { get; set; }
-
-    /// <summary>FK -> Maestro (TipoCatalogo=Almacen), solo aplica en algunas direcciones.</summary>
-    public Guid? AlmacenOrigenId { get; set; }
-
-    /// <summary>FK -> Maestro (TipoCatalogo=Almacen), solo aplica en algunas direcciones.</summary>
-    public Guid? AlmacenDestinoId { get; set; }
-
     /// <summary>Peso real, sin el escalado x10000 que usa el legacy.</summary>
     public decimal PesoIngreso { get; set; }
 
@@ -86,6 +65,16 @@ public class Boleta
     public string? UsuarioAutoriza { get; set; }
 
     public string? MotivoAnulacion { get; set; }
+
+    /// <summary>Instante de la anulación — null mientras la boleta no está anulada.</summary>
+    public DateTime? FechaHoraAnulacion { get; set; }
+
+    /// <summary>
+    /// Guid suelto, sin FK ni navigation property — la tabla PreIngreso no
+    /// existe en este esquema. Enlaza la boleta con el pre-ingreso que la
+    /// originó cuando ese flujo exista.
+    /// </summary>
+    public Guid? PreIngresoId { get; set; }
 
     /// <summary>Self-FK, sin navigation property. Apunta a la boleta que reemplaza a esta.</summary>
     public Guid? BoletaReemplazoId { get; set; }

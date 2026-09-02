@@ -1,9 +1,11 @@
 using System.Text.Json.Serialization;
 using Microsoft.EntityFrameworkCore;
 using SmsBackend.Data;
+using SmsBackend.Data.Seeding;
 using SmsBackend.Domain.Basculas;
 using SmsBackend.Domain.Boletas;
-using SmsBackend.Domain.Boletas.Extensiones;
+using SmsBackend.Domain.Boletas.Valores;
+using SmsBackend.Domain.Configuracion;
 using SmsBackend.Domain.Maestros;
 using SmsBackend.Domain.TiposMovimiento;
 
@@ -32,6 +34,12 @@ builder.Services.AddCors(options =>
 builder.Services.AddDbContext<SmsDbContext>(options =>
     options.UseSqlServer(builder.Configuration.GetConnectionString("SmsCentral")));
 
+// Motor de campos configurables: único resolver/validador del conjunto EAV,
+// compartido por el crear tipado, el cierre y la rama de sync. Scoped porque
+// depende del SmsDbContext (scoped). Nadie lo consume todavía — los endpoints
+// llegan en un WU posterior.
+builder.Services.AddScoped<MotorCampos>();
+
 // /health hace un SELECT 1 real contra SmsCentral — así sirve para probar
 // conectividad de verdad, no solo "el proceso está vivo".
 builder.Services.AddHealthChecks().AddDbContextCheck<SmsDbContext>("database");
@@ -48,7 +56,15 @@ if (app.Environment.IsDevelopment())
     // database update` a mano cada vez. Contra el SQL Server central real
     // esto se saca — las migraciones ahí van por un paso de deploy explícito.
     using var scope = app.Services.CreateScope();
-    await scope.ServiceProvider.GetRequiredService<SmsDbContext>().Database.MigrateAsync();
+    var db = scope.ServiceProvider.GetRequiredService<SmsDbContext>();
+    await db.Database.MigrateAsync();
+
+    // Siembra las 8 secciones estándar (design D4). Idempotente e inofensivo si
+    // ya están: inserta si falta, nunca actualiza. Corre justo después de migrar
+    // para que el esquema ya exista.
+    var seederLogger = scope.ServiceProvider.GetRequiredService<ILoggerFactory>()
+        .CreateLogger("SmsBackend.Data.Seeding.ConfiguracionSeeder");
+    await ConfiguracionSeeder.SeedAsync(db, seederLogger);
 }
 
 app.UseHttpsRedirection();
@@ -64,6 +80,12 @@ app.MapTiposMovimiento();
 app.MapMaestros();
 app.MapBasculas();
 app.MapBoletas();
-app.MapBoletaExtensiones();
+app.MapSecciones();
+app.MapCampos();
 
 app.Run();
+
+// Marcador para que WebApplicationFactory<Program> (SmsBackend.Tests) pueda
+// referenciar el host de la app. Los top-level statements generan una clase
+// Program interna; esta parte parcial la hace pública sin cambiar nada más.
+public partial class Program { }

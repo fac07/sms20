@@ -1,3 +1,5 @@
+using SmsBackend.Domain.Boletas.Valores;
+
 namespace SmsBackend.Domain.Boletas;
 
 public record BoletaDto(
@@ -9,18 +11,6 @@ public record BoletaDto(
     string? TipoMovimientoNombre,
     EstadoBoleta Estado,
     EstadoSyncBoleta EstadoSync,
-    Guid EquipoId,
-    string? EquipoCodigo,
-    Guid TransportistaId,
-    string? TransportistaCodigo,
-    Guid PilotoId,
-    string? PilotoCodigo,
-    Guid TerceroId,
-    string? TerceroCodigo,
-    Guid ProductoId,
-    string? ProductoCodigo,
-    Guid? AlmacenOrigenId,
-    Guid? AlmacenDestinoId,
     decimal PesoIngreso,
     decimal? PesoSalida,
     decimal? PesoNeto,
@@ -33,28 +23,31 @@ public record BoletaDto(
     string? UsuarioAnula,
     string? UsuarioAutoriza,
     string? MotivoAnulacion,
+    DateTime? FechaHoraAnulacion,
     Guid? BoletaReemplazoId,
     Guid? BoletaOrigenId,
     Guid? BasculaSalidaId,
+    Guid? PreIngresoId,
     string? RespuestaD365Id,
-    bool CreadaOffline);
+    bool CreadaOffline,
+    IReadOnlyList<ValorCampoLeidoDto> Valores);
 
-/// <summary>Datos del primer pesaje — abre la boleta.</summary>
+/// <summary>
+/// Datos del primer pesaje — abre la boleta. El contexto de negocio
+/// (transporte, producto, ubicación, calidad, ...) viaja en <see cref="Valores"/>
+/// como una lista de valores de campos configurables keyed por
+/// (<c>CampoId</c>, <c>Ocurrencia</c>) — la misma representación que consume la
+/// rama "Crear" de <c>/api/boletas/sync</c>.
+/// </summary>
 public record CrearBoletaRequest(
     string NumeroBoleta,
     Guid BasculaId,
     Guid TipoMovimientoId,
-    Guid EquipoId,
-    Guid TransportistaId,
-    Guid PilotoId,
-    Guid TerceroId,
-    Guid ProductoId,
-    Guid? AlmacenOrigenId,
-    Guid? AlmacenDestinoId,
     decimal PesoIngreso,
     OrigenPeso OrigenPesoIngreso,
     string UsuarioIngreso,
-    bool CreadaOffline);
+    bool CreadaOffline,
+    IReadOnlyList<ValorCampoDto>? Valores = null);
 
 /// <summary>Datos del segundo pesaje — cierra la boleta.</summary>
 public record CerrarBoletaRequest(

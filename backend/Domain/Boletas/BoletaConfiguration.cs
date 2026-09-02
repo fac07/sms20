@@ -1,7 +1,6 @@
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Metadata.Builders;
 using SmsBackend.Domain.Basculas;
-using SmsBackend.Domain.Maestros;
 using SmsBackend.Domain.TiposMovimiento;
 
 namespace SmsBackend.Domain.Boletas;
@@ -73,44 +72,10 @@ public class BoletaConfiguration : IEntityTypeConfiguration<Boleta>
             .HasForeignKey(b => b.TipoMovimientoId)
             .OnDelete(DeleteBehavior.Restrict);
 
-        // Siete FKs distintas hacia Maestro, sin navigation property
-        // compartida — cada una representa un rol distinto dentro de la
-        // misma boleta (equipo, transportista, piloto, tercero, producto,
-        // almacén origen/destino).
-        builder.HasOne<Maestro>()
-            .WithMany()
-            .HasForeignKey(b => b.EquipoId)
-            .OnDelete(DeleteBehavior.Restrict);
-
-        builder.HasOne<Maestro>()
-            .WithMany()
-            .HasForeignKey(b => b.TransportistaId)
-            .OnDelete(DeleteBehavior.Restrict);
-
-        builder.HasOne<Maestro>()
-            .WithMany()
-            .HasForeignKey(b => b.PilotoId)
-            .OnDelete(DeleteBehavior.Restrict);
-
-        builder.HasOne<Maestro>()
-            .WithMany()
-            .HasForeignKey(b => b.TerceroId)
-            .OnDelete(DeleteBehavior.Restrict);
-
-        builder.HasOne<Maestro>()
-            .WithMany()
-            .HasForeignKey(b => b.ProductoId)
-            .OnDelete(DeleteBehavior.Restrict);
-
-        builder.HasOne<Maestro>()
-            .WithMany()
-            .HasForeignKey(b => b.AlmacenOrigenId)
-            .OnDelete(DeleteBehavior.Restrict);
-
-        builder.HasOne<Maestro>()
-            .WithMany()
-            .HasForeignKey(b => b.AlmacenDestinoId)
-            .OnDelete(DeleteBehavior.Restrict);
+        // Las FKs de rol hacia Maestro (equipo, transportista, piloto,
+        // tercero, producto, almacén origen/destino) salieron del Encabezado:
+        // ese contexto de negocio ahora vive como valores EAV
+        // (BoletaValorCampo) resueltos por sección/campo configurable.
 
         // Self-FKs, sin navigation property — mismo patrón que
         // Maestro.FusionadoConId.

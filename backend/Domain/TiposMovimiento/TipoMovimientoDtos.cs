@@ -6,21 +6,14 @@ public record TipoMovimientoDto(
     string Nombre,
     string Prefijo,
     DireccionMovimiento Direccion,
-    bool HabilitaCalidad,
-    bool HabilitaMarchamos,
-    bool HabilitaQR,
-    bool HabilitaDatosFinca,
-    bool HabilitaDetalleFruta,
-    bool HabilitaCompostera,
-    bool IntegracionD365,
+    OperacionD365? OperacionD365,
+    bool GeneraQR,
     Guid? FormatoBoletaId,
     bool Activo)
 {
     public static TipoMovimientoDto FromEntity(TipoMovimiento t) => new(
         t.Id, t.Codigo, t.Nombre, t.Prefijo, t.Direccion,
-        t.HabilitaCalidad, t.HabilitaMarchamos, t.HabilitaQR,
-        t.HabilitaDatosFinca, t.HabilitaDetalleFruta, t.HabilitaCompostera,
-        t.IntegracionD365, t.FormatoBoletaId, t.Activo);
+        t.OperacionD365, t.GeneraQR, t.FormatoBoletaId, t.Activo);
 }
 
 public record GuardarTipoMovimientoRequest(
@@ -28,11 +21,27 @@ public record GuardarTipoMovimientoRequest(
     string Nombre,
     string Prefijo,
     DireccionMovimiento Direccion,
-    bool HabilitaCalidad,
-    bool HabilitaMarchamos,
-    bool HabilitaQR,
-    bool HabilitaDatosFinca,
-    bool HabilitaDetalleFruta,
-    bool HabilitaCompostera,
-    bool IntegracionD365,
+    OperacionD365? OperacionD365,
+    bool GeneraQR,
     Guid? FormatoBoletaId);
+
+/// <summary>Una asignación sección→tipo de movimiento, vigente o histórica.</summary>
+public record TipoMovimientoSeccionDto(
+    Guid SeccionId,
+    string SeccionClave,
+    string SeccionNombre,
+    bool Requerida,
+    int Orden,
+    DateTime VigenteDesde,
+    DateTime? VigenteHasta);
+
+/// <summary>
+/// Entrada del set deseado de secciones para un tipo de movimiento. El PUT es
+/// declarativo: las que no aparecen se desasignan poniendo <c>VigenteHasta</c>
+/// (nunca borrado físico), y los cambios de <c>Requerida</c>/<c>Orden</c> abren
+/// una versión nueva para no alterar retroactivamente boletas ya creadas.
+/// </summary>
+public record AsignacionSeccionRequest(
+    Guid SeccionId,
+    bool Requerida,
+    int Orden);

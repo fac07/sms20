@@ -54,6 +54,18 @@ Levanta SQL Server en `localhost:1433` (usuario `sa`, password de desarrollo en 
 
 No hace falta correr `dotnet ef database update` a mano: el backend aplica las migraciones pendientes solo al arrancar en modo Development (ver `Program.cs`) — contra el SQL Server central real ese paso se saca y las migraciones van por un deploy explícito.
 
+### Reset local tras el rediseño del esquema (boleta configurable)
+
+El historial de migraciones se colapsó a un único `InitialCreate` con el esquema v7 (EAV de secciones/campos + valores). El volumen viejo todavía tiene el `__EFMigrationsHistory` anterior, así que hay que recrearlo desde cero — no hay datos de producción, esto es solo la base local de dev:
+
+```bash
+git pull && cd Codigo/sms20
+docker compose down -v && docker compose up -d
+cd backend && dotnet run
+```
+
+Al arrancar en Development, `MigrateAsync()` reconstruye el esquema desde el `InitialCreate` único y el seeder siembra las 8 secciones estándar.
+
 ## Correr cada parte
 
 ```bash
@@ -71,6 +83,17 @@ cd backend && dotnet run
 `dotnet ef migrations add` / `dotnet ef database update` necesitan el **runtime de .NET 8** instalado, además del SDK que uses para todo lo demás (si tenés un SDK más nuevo como .NET 10, `dotnet-ef` igual falla en tiempo de ejecución sin el runtime 8 físicamente presente). En macOS: `brew install dotnet@8` y anteponer `/opt/homebrew/opt/dotnet@8/bin` al `PATH` para esos comandos puntuales.
 
 Con `dotnet@8` en el `PATH`, buildear/correr **`backend/SmsBackend.csproj` directo**, no `SMS20.slnx` — el MSBuild que trae el SDK 8 no reconoce el formato `.slnx` (es más nuevo). `dotnet build`/`dotnet run` contra la carpeta `backend/` funcionan igual.
+
+### Tests del backend
+
+`tests/SmsBackend.Tests/` (xUnit + `WebApplicationFactory`) corre contra una base descartable `Sms20_Test_{guid}` en la misma instancia del docker-compose — con el contenedor levantado:
+
+```bash
+cd Codigo/sms20
+dotnet test tests/SmsBackend.Tests/SmsBackend.Tests.csproj
+```
+
+Igual que el backend, se apunta al `.csproj` directo (el SDK 8 no lee `.slnx`). La conexión sale de `SMS20_TEST_CONNECTION` o, por defecto, de las credenciales del compose.
 
 `GET /health` hace un chequeo real contra la base (no solo "el proceso está vivo") — devuelve 503 si `SmsCentral` no responde.
 

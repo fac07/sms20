@@ -2,4 +2,7 @@
   <Folder Name="/backend/">
     <Project Path="backend/SmsBackend.csproj" />
   </Folder>
+  <Folder Name="/tests/">
+    <Project Path="tests/SmsBackend.Tests/SmsBackend.Tests.csproj" />
+  </Folder>
 </Solution>

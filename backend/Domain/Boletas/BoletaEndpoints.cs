@@ -2,7 +2,7 @@ using System.Text.Json;
 using Microsoft.EntityFrameworkCore;
 using SmsBackend.Data;
 using SmsBackend.Domain.Basculas;
-using SmsBackend.Domain.Maestros;
+using SmsBackend.Domain.Boletas.Valores;
 
 namespace SmsBackend.Domain.Boletas;
 
@@ -36,7 +36,7 @@ public static class BoletaEndpoints
         });
 
         // Ingreso — abre la boleta con el primer pesaje.
-        group.MapPost("/", async (CrearBoletaRequest request, SmsDbContext db) =>
+        group.MapPost("/", async (CrearBoletaRequest request, MotorCampos motor, SmsDbContext db, CancellationToken ct) =>
         {
             var error = await ValidarCreacion(request, db);
             if (error is not null) return error;
@@ -53,13 +53,6 @@ public static class BoletaEndpoints
                 // SQLite/Outbox — no hay un paso "Local" real que
                 // sincronizar, así que nace ya como sincronizada.
                 EstadoSync = EstadoSyncBoleta.SincronizadoCentral,
-                EquipoId = request.EquipoId,
-                TransportistaId = request.TransportistaId,
-                PilotoId = request.PilotoId,
-                TerceroId = request.TerceroId,
-                ProductoId = request.ProductoId,
-                AlmacenOrigenId = request.AlmacenOrigenId,
-                AlmacenDestinoId = request.AlmacenDestinoId,
                 PesoIngreso = request.PesoIngreso,
                 PesoSalida = null,
                 PesoNeto = null,
@@ -72,22 +65,46 @@ public static class BoletaEndpoints
                 CreadaOffline = request.CreadaOffline,
             };
 
+            var valores = request.Valores ?? Array.Empty<ValorCampoDto>();
+
+            // El conjunto de campos aplicable se resuelve as-of FechaHoraIngreso;
+            // un CampoId fuera de ese conjunto o un valor que viola su tipo/config
+            // aborta la creación con la lista de errores por campo.
+            var errores = await motor.ValidarValoresAsync(
+                boleta.TipoMovimientoId, boleta.FechaHoraIngreso, valores, ct);
+            if (errores.Count > 0)
+            {
+                return Results.BadRequest(errores);
+            }
+
             db.Boletas.Add(boleta);
-            await db.SaveChangesAsync();
+            await AgregarValoresAsync(db, boleta.Id, valores, ct);
+            // Encabezado + filas BoletaValorCampo en un solo SaveChanges.
+            await db.SaveChangesAsync(ct);
 
             var dto = await Proyectar(db.Boletas.AsNoTracking().Where(b => b.Id == boleta.Id), db)
-                .FirstAsync();
+                .FirstAsync(ct);
             return Results.Created($"/api/boletas/{boleta.Id}", dto);
         });
 
         // Salida — segundo pesaje, cierra la boleta y calcula el neto.
-        group.MapPost("/{id:guid}/cerrar", async (Guid id, CerrarBoletaRequest request, SmsDbContext db) =>
+        group.MapPost("/{id:guid}/cerrar", async (
+            Guid id, CerrarBoletaRequest request, MotorCampos motor, SmsDbContext db, CancellationToken ct) =>
         {
-            var boleta = await db.Boletas.FirstOrDefaultAsync(b => b.Id == id);
+            var boleta = await db.Boletas.FirstOrDefaultAsync(b => b.Id == id, ct);
             if (boleta is null) return Results.NotFound();
             if (boleta.Estado != EstadoBoleta.EnTransito)
             {
                 return Results.Conflict("Solo se puede cerrar una boleta en estado EnTransito.");
+            }
+
+            // Bloqueo duro (sin bypass): el motor valida contra el conjunto de
+            // campos resuelto a asOf = FechaHoraIngreso. Si hay errores la boleta
+            // se queda EnTransito.
+            var errores = await motor.ValidarCierreAsync(boleta, ct);
+            if (errores.Count > 0)
+            {
+                return Results.UnprocessableEntity(errores);
             }
 
             boleta.PesoSalida = request.PesoSalida;
@@ -98,9 +115,9 @@ public static class BoletaEndpoints
             boleta.PesoNeto = Math.Abs(boleta.PesoIngreso - request.PesoSalida);
             boleta.Estado = EstadoBoleta.Cerrada;
 
-            await db.SaveChangesAsync();
+            await db.SaveChangesAsync(ct);
 
-            var dto = await Proyectar(db.Boletas.AsNoTracking().Where(b => b.Id == id), db).FirstAsync();
+            var dto = await Proyectar(db.Boletas.AsNoTracking().Where(b => b.Id == id), db).FirstAsync(ct);
             return Results.Ok(dto);
         });
 
@@ -122,6 +139,7 @@ public static class BoletaEndpoints
             boleta.UsuarioAnula = request.UsuarioAnula;
             boleta.UsuarioAutoriza = request.UsuarioAutoriza;
             boleta.MotivoAnulacion = request.MotivoAnulacion;
+            boleta.FechaHoraAnulacion = DateTime.UtcNow;
 
             await db.SaveChangesAsync();
 
@@ -141,10 +159,11 @@ public static class BoletaEndpoints
         //      realidad ya se aplicó pero cuya respuesta se perdió (blip de
         //      red) — aplicar el mismo evento dos veces no debe fallar ni
         //      duplicar datos.
-        group.MapPost("/sync", async (SincronizarEventoRequest request, SmsDbContext db) =>
+        group.MapPost("/sync", async (
+            SincronizarEventoRequest request, MotorCampos motor, SmsDbContext db, CancellationToken ct) =>
         {
             var bascula = await db.Basculas.AsNoTracking()
-                .FirstOrDefaultAsync(b => b.Codigo == request.BasculaCodigo && b.Activa);
+                .FirstOrDefaultAsync(b => b.Codigo == request.BasculaCodigo && b.Activa, ct);
             if (bascula is null)
             {
                 return Results.BadRequest(
@@ -153,7 +172,7 @@ public static class BoletaEndpoints
 
             try
             {
-                return await AplicarEventoSync(request, bascula, db);
+                return await AplicarEventoSync(request, bascula, motor, db, ct);
             }
             catch (Exception ex) when (ex is KeyNotFoundException or FormatException or InvalidOperationException)
             {
@@ -170,7 +189,7 @@ public static class BoletaEndpoints
     }
 
     private static async Task<IResult> AplicarEventoSync(
-        SincronizarEventoRequest request, Bascula bascula, SmsDbContext db)
+        SincronizarEventoRequest request, Bascula bascula, MotorCampos motor, SmsDbContext db, CancellationToken ct)
     {
             switch (request.Operacion)
             {
@@ -181,22 +200,15 @@ public static class BoletaEndpoints
                     // Idempotencia: si ya existe, este evento 'Crear' ya se
                     // aplicó antes (reintento tras una respuesta perdida) —
                     // no-op, se devuelve la boleta tal cual está.
-                    if (await db.Boletas.AnyAsync(b => b.Id == id))
+                    if (await db.Boletas.AnyAsync(b => b.Id == id, ct))
                     {
                         var existente = await Proyectar(db.Boletas.AsNoTracking().Where(b => b.Id == id), db)
-                            .FirstAsync();
+                            .FirstAsync(ct);
                         return Results.Ok(existente);
                     }
 
                     var numeroBoleta = request.Payload.GetProperty("numeroBoleta").GetString()!;
                     var tipoMovimientoId = ObtenerGuid(request.Payload, "tipoMovimientoId");
-                    var equipoId = ObtenerGuid(request.Payload, "equipoId");
-                    var transportistaId = ObtenerGuid(request.Payload, "transportistaId");
-                    var pilotoId = ObtenerGuid(request.Payload, "pilotoId");
-                    var terceroId = ObtenerGuid(request.Payload, "terceroId");
-                    var productoId = ObtenerGuid(request.Payload, "productoId");
-                    var almacenOrigenId = ObtenerGuidOpcional(request.Payload, "almacenOrigenId");
-                    var almacenDestinoId = ObtenerGuidOpcional(request.Payload, "almacenDestinoId");
                     var pesoIngreso = request.Payload.GetProperty("pesoIngreso").GetDecimal();
                     var origenPesoIngreso = Enum.Parse<OrigenPeso>(
                         request.Payload.GetProperty("origenPesoIngreso").GetString()!);
@@ -207,28 +219,29 @@ public static class BoletaEndpoints
                     // Defensivo: no debería pasar (el correlativo es único por
                     // báscula), pero no nos salteamos el chequeo solo porque
                     // el evento venga de un dispatcher de confianza.
-                    var numeroEnUso = await db.Boletas.AnyAsync(b => b.NumeroBoleta == numeroBoleta && b.Id != id);
+                    var numeroEnUso = await db.Boletas.AnyAsync(b => b.NumeroBoleta == numeroBoleta && b.Id != id, ct);
                     if (numeroEnUso)
                     {
                         return Results.Conflict($"Ya existe una boleta con NumeroBoleta '{numeroBoleta}'.");
                     }
 
                     var tipoMovimiento = await db.TiposMovimiento.AsNoTracking()
-                        .FirstOrDefaultAsync(t => t.Id == tipoMovimientoId && t.Activo);
+                        .FirstOrDefaultAsync(t => t.Id == tipoMovimientoId && t.Activo, ct);
                     if (tipoMovimiento is null)
                     {
                         return Results.BadRequest($"No existe el tipo de movimiento {tipoMovimientoId}, o está inactivo.");
                     }
 
-                    var errorMaestro =
-                        await ValidarMaestroActivo(equipoId, "equipoId", db)
-                        ?? await ValidarMaestroActivo(transportistaId, "transportistaId", db)
-                        ?? await ValidarMaestroActivo(pilotoId, "pilotoId", db)
-                        ?? await ValidarMaestroActivo(terceroId, "terceroId", db)
-                        ?? await ValidarMaestroActivo(productoId, "productoId", db)
-                        ?? await ValidarMaestroActivoOpcional(almacenOrigenId, "almacenOrigenId", db)
-                        ?? await ValidarMaestroActivoOpcional(almacenDestinoId, "almacenDestinoId", db);
-                    if (errorMaestro is not null) return errorMaestro;
+                    // Los valores llegan keyed por campoId — NO se re-resuelve la
+                    // clave: un cache de báscula viejo conserva su CampoId
+                    // original y así debe quedar almacenado (candado
+                    // as-of-creation).
+                    var valores = LeerValores(request.Payload);
+                    var errores = await motor.ValidarValoresAsync(tipoMovimientoId, fechaHoraIngreso, valores, ct);
+                    if (errores.Count > 0)
+                    {
+                        return Results.UnprocessableEntity(errores);
+                    }
 
                     var boleta = new Boleta
                     {
@@ -241,13 +254,6 @@ public static class BoletaEndpoints
                         TipoMovimientoId = tipoMovimientoId,
                         Estado = EstadoBoleta.EnTransito,
                         EstadoSync = EstadoSyncBoleta.SincronizadoCentral,
-                        EquipoId = equipoId,
-                        TransportistaId = transportistaId,
-                        PilotoId = pilotoId,
-                        TerceroId = terceroId,
-                        ProductoId = productoId,
-                        AlmacenOrigenId = almacenOrigenId,
-                        AlmacenDestinoId = almacenDestinoId,
                         PesoIngreso = pesoIngreso,
                         PesoSalida = null,
                         PesoNeto = null,
@@ -261,16 +267,17 @@ public static class BoletaEndpoints
                     };
 
                     db.Boletas.Add(boleta);
-                    await db.SaveChangesAsync();
+                    await AgregarValoresAsync(db, boleta.Id, valores, ct);
+                    await db.SaveChangesAsync(ct);
 
-                    var dto = await Proyectar(db.Boletas.AsNoTracking().Where(b => b.Id == id), db).FirstAsync();
+                    var dto = await Proyectar(db.Boletas.AsNoTracking().Where(b => b.Id == id), db).FirstAsync(ct);
                     return Results.Ok(dto);
                 }
 
                 case "Cerrar":
                 {
                     var id = ObtenerGuid(request.Payload, "id");
-                    var boleta = await db.Boletas.FirstOrDefaultAsync(b => b.Id == id);
+                    var boleta = await db.Boletas.FirstOrDefaultAsync(b => b.Id == id, ct);
                     if (boleta is null)
                     {
                         // No debería pasar (el dispatcher procesa en orden
@@ -279,6 +286,21 @@ public static class BoletaEndpoints
                         // sincronizado es un error real que hay que
                         // reportar, no tragarse en silencio.
                         return Results.NotFound($"No existe la boleta {id} — ¿llegó el evento 'Crear' antes?");
+                    }
+
+                    // El grupo /sync se saltea la máquina de estados, pero la
+                    // integridad de campos requeridos es una invariante de
+                    // datos, no de orden de flujo: se corre el motor igual. Si
+                    // falla -> 422 y EstadoSync = ErrorCentral para que el
+                    // dispatcher marque el evento fallido y un admin vea el
+                    // drift del cache, en vez de reintentar para siempre o
+                    // aceptar en silencio una boleta cerrada inválida.
+                    var errores = await motor.ValidarCierreAsync(boleta, ct);
+                    if (errores.Count > 0)
+                    {
+                        boleta.EstadoSync = EstadoSyncBoleta.ErrorCentral;
+                        await db.SaveChangesAsync(ct);
+                        return Results.UnprocessableEntity(errores);
                     }
 
                     // Sin chequeo de máquina de estados (ver comentario del
@@ -302,16 +324,16 @@ public static class BoletaEndpoints
                     boleta.PesoNeto = request.Payload.GetProperty("pesoNeto").GetDecimal();
                     boleta.Estado = EstadoBoleta.Cerrada;
 
-                    await db.SaveChangesAsync();
+                    await db.SaveChangesAsync(ct);
 
-                    var dto = await Proyectar(db.Boletas.AsNoTracking().Where(b => b.Id == id), db).FirstAsync();
+                    var dto = await Proyectar(db.Boletas.AsNoTracking().Where(b => b.Id == id), db).FirstAsync(ct);
                     return Results.Ok(dto);
                 }
 
                 case "Anular":
                 {
                     var id = ObtenerGuid(request.Payload, "id");
-                    var boleta = await db.Boletas.FirstOrDefaultAsync(b => b.Id == id);
+                    var boleta = await db.Boletas.FirstOrDefaultAsync(b => b.Id == id, ct);
                     if (boleta is null)
                     {
                         return Results.NotFound($"No existe la boleta {id} — ¿llegó el evento 'Crear' antes?");
@@ -322,10 +344,12 @@ public static class BoletaEndpoints
                     boleta.UsuarioAnula = request.Payload.GetProperty("usuarioAnula").GetString();
                     boleta.UsuarioAutoriza = request.Payload.GetProperty("usuarioAutoriza").GetString();
                     boleta.MotivoAnulacion = request.Payload.GetProperty("motivoAnulacion").GetString();
+                    boleta.FechaHoraAnulacion =
+                        LeerFechaHora(request.Payload, "fechaHoraAnulacion") ?? DateTime.UtcNow;
 
-                    await db.SaveChangesAsync();
+                    await db.SaveChangesAsync(ct);
 
-                    var dto = await Proyectar(db.Boletas.AsNoTracking().Where(b => b.Id == id), db).FirstAsync();
+                    var dto = await Proyectar(db.Boletas.AsNoTracking().Where(b => b.Id == id), db).FirstAsync(ct);
                     return Results.Ok(dto);
                 }
 
@@ -336,10 +360,86 @@ public static class BoletaEndpoints
 
     private static Guid ObtenerGuid(JsonElement payload, string campo) => payload.GetProperty(campo).GetGuid();
 
-    private static Guid? ObtenerGuidOpcional(JsonElement payload, string campo)
+    /// <summary>
+    /// Convierte el arreglo <c>valores</c> del payload crudo de sync en la
+    /// representación única <see cref="ValorCampoDto"/> keyed por
+    /// (<c>campoId</c>, <c>ocurrencia</c>). Un payload sin <c>valores</c> o con
+    /// un <c>valores</c> vacío produce una lista vacía.
+    /// </summary>
+    private static IReadOnlyList<ValorCampoDto> LeerValores(JsonElement payload)
     {
-        var prop = payload.GetProperty(campo);
-        return prop.ValueKind == JsonValueKind.Null ? null : prop.GetGuid();
+        if (!payload.TryGetProperty("valores", out var arreglo) || arreglo.ValueKind != JsonValueKind.Array)
+        {
+            return Array.Empty<ValorCampoDto>();
+        }
+
+        var lista = new List<ValorCampoDto>();
+        foreach (var elemento in arreglo.EnumerateArray())
+        {
+            lista.Add(new ValorCampoDto(
+                elemento.GetProperty("campoId").GetGuid(),
+                elemento.GetProperty("ocurrencia").GetInt32(),
+                LeerTexto(elemento, "valorTexto"),
+                LeerDecimal(elemento, "valorNumero"),
+                LeerFechaHora(elemento, "valorFecha"),
+                LeerBooleano(elemento, "valorBooleano"),
+                LeerGuidNullable(elemento, "valorMaestroId")));
+        }
+
+        return lista;
+    }
+
+    private static string? LeerTexto(JsonElement el, string prop) =>
+        el.TryGetProperty(prop, out var v) && v.ValueKind == JsonValueKind.String ? v.GetString() : null;
+
+    private static decimal? LeerDecimal(JsonElement el, string prop) =>
+        el.TryGetProperty(prop, out var v) && v.ValueKind == JsonValueKind.Number ? v.GetDecimal() : null;
+
+    private static DateTime? LeerFechaHora(JsonElement el, string prop) =>
+        el.TryGetProperty(prop, out var v) && v.ValueKind == JsonValueKind.String ? v.GetDateTime() : null;
+
+    private static bool? LeerBooleano(JsonElement el, string prop) =>
+        el.TryGetProperty(prop, out var v) && v.ValueKind is JsonValueKind.True or JsonValueKind.False
+            ? v.GetBoolean()
+            : null;
+
+    private static Guid? LeerGuidNullable(JsonElement el, string prop) =>
+        el.TryGetProperty(prop, out var v) && v.ValueKind == JsonValueKind.String ? v.GetGuid() : null;
+
+    /// <summary>
+    /// Agrega las filas <see cref="BoletaValorCampo"/> al ChangeTracker (sin
+    /// SaveChanges). <c>SeccionId</c> se resuelve server-side desde
+    /// <see cref="SmsBackend.Domain.Configuracion.Campo.SeccionId"/> — nunca se
+    /// acepta del cliente. Se asume que los valores ya pasaron
+    /// <see cref="MotorCampos.ValidarValoresAsync"/>, así que cada CampoId
+    /// existe en el conjunto vigente.
+    /// </summary>
+    private static async Task AgregarValoresAsync(
+        SmsDbContext db, Guid boletaId, IReadOnlyList<ValorCampoDto> valores, CancellationToken ct)
+    {
+        if (valores.Count == 0) return;
+
+        var campoIds = valores.Select(v => v.CampoId).Distinct().ToList();
+        var seccionPorCampo = await db.Campos
+            .Where(c => campoIds.Contains(c.Id))
+            .Select(c => new { c.Id, c.SeccionId })
+            .ToDictionaryAsync(c => c.Id, c => c.SeccionId, ct);
+
+        foreach (var v in valores)
+        {
+            db.BoletaValores.Add(new BoletaValorCampo
+            {
+                BoletaId = boletaId,
+                CampoId = v.CampoId,
+                Ocurrencia = v.Ocurrencia,
+                SeccionId = seccionPorCampo[v.CampoId],
+                ValorTexto = v.ValorTexto,
+                ValorNumero = v.ValorNumero,
+                ValorFecha = v.ValorFecha,
+                ValorBooleano = v.ValorBooleano,
+                ValorMaestroId = v.ValorMaestroId,
+            });
+        }
     }
 
     private static async Task<IResult?> ValidarCreacion(CrearBoletaRequest request, SmsDbContext db)
@@ -364,29 +464,10 @@ public static class BoletaEndpoints
             return Results.BadRequest($"No existe el tipo de movimiento {request.TipoMovimientoId}, o está inactivo.");
         }
 
-        var errorMaestro =
-            await ValidarMaestroActivo(request.EquipoId, "EquipoId", db)
-            ?? await ValidarMaestroActivo(request.TransportistaId, "TransportistaId", db)
-            ?? await ValidarMaestroActivo(request.PilotoId, "PilotoId", db)
-            ?? await ValidarMaestroActivo(request.TerceroId, "TerceroId", db)
-            ?? await ValidarMaestroActivo(request.ProductoId, "ProductoId", db)
-            ?? await ValidarMaestroActivoOpcional(request.AlmacenOrigenId, "AlmacenOrigenId", db)
-            ?? await ValidarMaestroActivoOpcional(request.AlmacenDestinoId, "AlmacenDestinoId", db);
-        if (errorMaestro is not null) return errorMaestro;
-
+        // El contexto de negocio (equipo/transportista/piloto/tercero/producto/
+        // almacén) viaja en request.Valores y lo valida MotorCampos contra el
+        // conjunto de campos vigente al crear la boleta.
         return null;
-    }
-
-    private static async Task<IResult?> ValidarMaestroActivo(Guid id, string campo, SmsDbContext db)
-    {
-        var existe = await db.Maestros.AsNoTracking().AnyAsync(m => m.Id == id && m.Activo);
-        return existe ? null : Results.BadRequest($"No existe el maestro referenciado por {campo} ({id}), o está inactivo.");
-    }
-
-    private static async Task<IResult?> ValidarMaestroActivoOpcional(Guid? id, string campo, SmsDbContext db)
-    {
-        if (id is null) return null;
-        return await ValidarMaestroActivo(id.Value, campo, db);
     }
 
     private static IQueryable<BoletaDto> Proyectar(IQueryable<Boleta> boletas, SmsDbContext db) =>
@@ -395,31 +476,39 @@ public static class BoletaEndpoints
         from bascula in basculas.DefaultIfEmpty()
         join tm in db.TiposMovimiento.AsNoTracking() on b.TipoMovimientoId equals tm.Id into tiposMovimiento
         from tipoMovimiento in tiposMovimiento.DefaultIfEmpty()
-        join eq in db.Maestros.AsNoTracking() on b.EquipoId equals eq.Id into equipos
-        from equipo in equipos.DefaultIfEmpty()
-        join tr in db.Maestros.AsNoTracking() on b.TransportistaId equals tr.Id into transportistas
-        from transportista in transportistas.DefaultIfEmpty()
-        join pi in db.Maestros.AsNoTracking() on b.PilotoId equals pi.Id into pilotos
-        from piloto in pilotos.DefaultIfEmpty()
-        join te in db.Maestros.AsNoTracking() on b.TerceroId equals te.Id into terceros
-        from tercero in terceros.DefaultIfEmpty()
-        join pr in db.Maestros.AsNoTracking() on b.ProductoId equals pr.Id into productos
-        from producto in productos.DefaultIfEmpty()
         select new BoletaDto(
             b.Id, b.NumeroBoleta,
             b.BasculaId, bascula != null ? bascula.Codigo : null,
             b.TipoMovimientoId, tipoMovimiento != null ? tipoMovimiento.Nombre : null,
             b.Estado, b.EstadoSync,
-            b.EquipoId, equipo != null ? equipo.Codigo : null,
-            b.TransportistaId, transportista != null ? transportista.Codigo : null,
-            b.PilotoId, piloto != null ? piloto.Codigo : null,
-            b.TerceroId, tercero != null ? tercero.Codigo : null,
-            b.ProductoId, producto != null ? producto.Codigo : null,
-            b.AlmacenOrigenId, b.AlmacenDestinoId,
             b.PesoIngreso, b.PesoSalida, b.PesoNeto,
             b.OrigenPesoIngreso, b.OrigenPesoSalida,
             b.FechaHoraIngreso, b.FechaHoraSalida,
             b.UsuarioIngreso, b.UsuarioSalida, b.UsuarioAnula, b.UsuarioAutoriza, b.MotivoAnulacion,
-            b.BoletaReemplazoId, b.BoletaOrigenId, b.BasculaSalidaId,
-            b.RespuestaD365Id, b.CreadaOffline);
+            b.FechaHoraAnulacion,
+            b.BoletaReemplazoId, b.BoletaOrigenId, b.BasculaSalidaId, b.PreIngresoId,
+            b.RespuestaD365Id, b.CreadaOffline,
+            // Valores capturados: se unen por el CampoId ALMACENADO (sin filtro
+            // VigenteHasta) para que un Campo retirado siga resolviendo. El join
+            // a Maestro es un subquery escalar por columna (ReferenciaMaestro).
+            (from v in db.BoletaValores.AsNoTracking()
+             where v.BoletaId == b.Id
+             join c in db.Campos.AsNoTracking() on v.CampoId equals c.Id
+             join s in db.Secciones.AsNoTracking() on c.SeccionId equals s.Id
+             orderby s.Orden, c.Orden, v.Ocurrencia
+             select new ValorCampoLeidoDto(
+                 v.CampoId,
+                 s.Clave,
+                 c.Clave,
+                 c.Etiqueta,
+                 c.TipoCampo,
+                 v.Ocurrencia,
+                 v.ValorTexto,
+                 v.ValorNumero,
+                 v.ValorFecha,
+                 v.ValorBooleano,
+                 v.ValorMaestroId,
+                 db.Maestros.Where(m => m.Id == v.ValorMaestroId).Select(m => m.Codigo).FirstOrDefault(),
+                 db.Maestros.Where(m => m.Id == v.ValorMaestroId).Select(m => m.Nombre).FirstOrDefault()))
+            .ToList());
 }
