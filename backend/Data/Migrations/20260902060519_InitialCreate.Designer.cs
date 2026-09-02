@@ -12,7 +12,7 @@ using SmsBackend.Data;
 namespace SmsBackend.Data.Migrations
 {
     [DbContext(typeof(SmsDbContext))]
-    [Migration("20260902050132_InitialCreate")]
+    [Migration("20260902060519_InitialCreate")]
     partial class InitialCreate
     {
         /// <inheritdoc />
