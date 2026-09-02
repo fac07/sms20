@@ -1,3 +1,5 @@
+using SmsBackend.Domain.Boletas.Valores;
+
 namespace SmsBackend.Domain.Boletas;
 
 public record BoletaDto(
@@ -27,13 +29,15 @@ public record BoletaDto(
     Guid? BasculaSalidaId,
     Guid? PreIngresoId,
     string? RespuestaD365Id,
-    bool CreadaOffline);
+    bool CreadaOffline,
+    IReadOnlyList<ValorCampoLeidoDto> Valores);
 
 /// <summary>
 /// Datos del primer pesaje — abre la boleta. El contexto de negocio
-/// (transporte, producto, ubicación, calidad, ...) viaja como valores de
-/// secciones/campos configurables y se incorpora a este contrato en un WU
-/// posterior; entre tanto el ingreso es solo el Encabezado.
+/// (transporte, producto, ubicación, calidad, ...) viaja en <see cref="Valores"/>
+/// como una lista de valores de campos configurables keyed por
+/// (<c>CampoId</c>, <c>Ocurrencia</c>) — la misma representación que consume la
+/// rama "Crear" de <c>/api/boletas/sync</c>.
 /// </summary>
 public record CrearBoletaRequest(
     string NumeroBoleta,
@@ -42,7 +46,8 @@ public record CrearBoletaRequest(
     decimal PesoIngreso,
     OrigenPeso OrigenPesoIngreso,
     string UsuarioIngreso,
-    bool CreadaOffline);
+    bool CreadaOffline,
+    IReadOnlyList<ValorCampoDto>? Valores = null);
 
 /// <summary>Datos del segundo pesaje — cierra la boleta.</summary>
 public record CerrarBoletaRequest(
