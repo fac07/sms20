@@ -17,6 +17,17 @@ import {
 
 let db: Database.Database | null = null
 
+/**
+ * Semilla de pruebas — los specs de Node (`vitest.electron`) no tienen el
+ * runtime de Electron, así que `getDb()` (que llama `app.getPath`) no puede
+ * abrir el archivo. Esto deja inyectar una base `:memory:` ya inicializada con
+ * `inicializarEsquemaLocal` para ejercitar el flujo real de crear/cerrar/Outbox
+ * sin tocar disco. Pasar `null` la desconecta. No se usa en producción.
+ */
+export function _inyectarDbParaPruebas(database: Database.Database | null): void {
+  db = database
+}
+
 // Forma "Encabezado" de la Boleta local — espejo del Encabezado EAV del central
 // (backend/Domain/Boletas/Boleta.cs). Ya NO trae las 7 FKs de rol a Maestro
 // (equipo/transportista/piloto/tercero/producto/almacén origen/destino) ni los 3
@@ -647,10 +658,14 @@ export function crearBoletaLocal(
     | 'boletaOrigenId'
     | 'basculaSalidaId'
     | 'respuestaD365Id'
-  > & { prefijo: string; codigoBascula: string },
+  > & { prefijo: string; codigoBascula: string; valores?: readonly ValorCampo[] },
 ): BoletaLocal {
   const id = crypto.randomUUID()
-  const fechaHoraIngreso = new Date().toISOString()
+  // asOf de la boleta: se respeta el instante que pasa el llamador (así la
+  // validación de `valores` en la ruta y la persistencia usan exactamente el
+  // mismo asOf). Fallback al ahora solo por robustez.
+  const fechaHoraIngreso = input.fechaHoraIngreso || new Date().toISOString()
+  const valores = input.valores ?? []
 
   // Todo dentro de una sola transacción SQLite (mismo patrón que
   // siguienteCorrelativo más arriba): el INSERT de Boleta y el evento de
@@ -689,11 +704,20 @@ export function crearBoletaLocal(
         creadaOffline: input.creadaOffline ? 1 : 0,
       })
 
-    // El payload es la Boleta completa tal como queda en ese instante — si en
-    // el futuro esto necesita incluir las extensiones (Calidad/DetalleFruta/
-    // Compostera/Características), ese es un cambio de diseño pendiente, no
-    // resuelto acá; hoy el payload solo cubre lo que Boleta sabe de sí misma.
-    const payload = JSON.stringify(obtenerBoletaLocal(id))
+    // Filas BoletaValorCampo (EAV tipado) en la MISMA transacción que el
+    // Encabezado — igual que central, que hace Encabezado + valores en un solo
+    // SaveChanges. `SeccionId` se deriva server-side desde `Campo.SeccionId`,
+    // nunca se acepta del cliente. Se asume que `valores` ya pasó
+    // `validarValoresLocal` en la ruta, así que cada `campoId` existe en el
+    // conjunto vigente.
+    persistirValoresBoleta(id, valores)
+
+    // El payload lleva la Boleta completa más el arreglo `valores` keyed por
+    // campoId + ocurrencia — así el evento 'Crear' que consume
+    // `POST /api/boletas/sync` en central puede re-validar y persistir los
+    // valores capturados. Sin esto, una boleta cuyo tipo tiene una sección
+    // requerida asignada fallaba para siempre como ErrorCentral.
+    const payload = JSON.stringify({ ...obtenerBoletaLocal(id), valores: listarValoresLocal(id) })
     registrarEventoOutboxLocal('Boleta', id, 'Crear', payload)
   })
 
@@ -745,8 +769,11 @@ export function cerrarBoletaLocal(
         basculaSalidaId: input.basculaSalidaId ?? null,
       })
 
-    // Ver el comentario en crearBoletaLocal sobre el alcance del payload.
-    const payload = JSON.stringify(obtenerBoletaLocal(id))
+    // Ver el comentario en crearBoletaLocal sobre el alcance del payload: el
+    // evento 'Cerrar' también lleva `valores` (los mismos que se capturaron al
+    // crear; el cierre no agrega valores) para que central pueda correr
+    // `ValidarCierreAsync` contra el conjunto completo.
+    const payload = JSON.stringify({ ...obtenerBoletaLocal(id), valores: listarValoresLocal(id) })
     registrarEventoOutboxLocal('Boleta', id, 'Cerrar', payload)
   })
 
@@ -968,6 +995,97 @@ export function leerFilasValorLocal(boletaId: string): FilaValor[] {
     .prepare('SELECT * FROM BoletaValorCampo WHERE BoletaId = ?')
     .all(boletaId) as BoletaValorCampoRow[]
   return rows.map(filaAFilaValor)
+}
+
+/**
+ * Valor capturado tal como viaja en el payload del Outbox (`Crear` / `Cerrar`),
+ * keyed por `campoId` + `ocurrencia`. Espejo camelCase de `ValorCampoDto` (C#):
+ * `POST /api/boletas/sync` lo lee con `LeerValores`, que espera `valorNumero`
+ * como número JSON (no string).
+ */
+export interface ValorCampoLocal {
+  campoId: string
+  ocurrencia: number
+  valorTexto: string | null
+  valorNumero: number | null
+  valorFecha: string | null
+  valorBooleano: boolean | null
+  valorMaestroId: string | null
+}
+
+/**
+ * Valores capturados de una boleta, listos para el payload del Outbox. Ordena
+ * de forma estable (sección, ocurrencia, campo) para que el payload sea
+ * determinista. `ValorNumero` (TEXT en SQLite, para no perder precisión) se
+ * devuelve como número.
+ */
+export function listarValoresLocal(boletaId: string): ValorCampoLocal[] {
+  const rows = getDb()
+    .prepare(
+      'SELECT * FROM BoletaValorCampo WHERE BoletaId = ? ORDER BY SeccionId, Ocurrencia, CampoId',
+    )
+    .all(boletaId) as BoletaValorCampoRow[]
+
+  return rows.map((row) => ({
+    campoId: row.CampoId,
+    ocurrencia: row.Ocurrencia,
+    valorTexto: row.ValorTexto,
+    valorNumero: row.ValorNumero === null ? null : Number(row.ValorNumero),
+    valorFecha: row.ValorFecha,
+    valorBooleano: row.ValorBooleano === null ? null : row.ValorBooleano !== 0,
+    valorMaestroId: row.ValorMaestroId,
+  }))
+}
+
+/** `Campo.SeccionId` de una versión de campo puntual — para denormalizar `BoletaValorCampo.SeccionId` server-side. */
+function seccionIdDeCampo(campoId: string): string | undefined {
+  const row = getDb().prepare('SELECT SeccionId FROM Campo WHERE Id = ?').get(campoId) as
+    | { SeccionId: string }
+    | undefined
+  return row?.SeccionId
+}
+
+/**
+ * Inserta las filas `BoletaValorCampo` de una boleta — SIEMPRE dentro de la
+ * misma transacción que el INSERT del Encabezado (ver `crearBoletaLocal`). El
+ * check constraint `CK_BoletaValorCampo_UnSoloValor` exige exactamente una
+ * columna `Valor*` no nula por fila; se confía en que `validarValoresLocal` ya
+ * garantizó esa forma. `ValorNumero` se guarda como TEXT (precisión decimal);
+ * `ValorBooleano` como 0/1.
+ */
+function persistirValoresBoleta(boletaId: string, valores: readonly ValorCampo[]): void {
+  if (valores.length === 0) return
+
+  const insertar = getDb().prepare(
+    `INSERT INTO BoletaValorCampo (
+      BoletaId, CampoId, Ocurrencia, SeccionId,
+      ValorTexto, ValorNumero, ValorFecha, ValorBooleano, ValorMaestroId
+    ) VALUES (
+      @boletaId, @campoId, @ocurrencia, @seccionId,
+      @valorTexto, @valorNumero, @valorFecha, @valorBooleano, @valorMaestroId
+    )`,
+  )
+
+  for (const v of valores) {
+    const seccionId = seccionIdDeCampo(v.campoId)
+    if (seccionId === undefined) {
+      throw new Error(`El campo ${v.campoId} no existe en el espejo de configuración local.`)
+    }
+
+    insertar.run({
+      boletaId,
+      campoId: v.campoId,
+      ocurrencia: v.ocurrencia,
+      seccionId,
+      valorTexto: v.valorTexto ?? null,
+      valorNumero:
+        v.valorNumero === undefined || v.valorNumero === null ? null : String(v.valorNumero),
+      valorFecha: v.valorFecha ?? null,
+      valorBooleano:
+        v.valorBooleano === undefined || v.valorBooleano === null ? null : v.valorBooleano ? 1 : 0,
+      valorMaestroId: v.valorMaestroId ?? null,
+    })
+  }
 }
 
 /**
