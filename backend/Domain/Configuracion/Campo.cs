@@ -9,7 +9,7 @@ namespace SmsBackend.Domain.Configuracion;
 /// Nunca se muta TipoCampo/Clave/TipoCatalogoRef en su lugar, por eso el par
 /// (clave de sección, clave de campo) NO identifica un Campo — solo el Id.
 /// </summary>
-public class Campo
+public class Campo : IFechaModificable
 {
     /// <summary>Generado en central, se replica verbatim al cache SQLite de la báscula.</summary>
     public Guid Id { get; set; }
@@ -41,4 +41,7 @@ public class Campo
 
     /// <summary><c>null</c> = versión vigente.</summary>
     public DateTime? VigenteHasta { get; set; }
+
+    /// <summary>Marca de agua para el sync incremental hacia las básculas.</summary>
+    public DateTime FechaModificacion { get; set; } = DateTime.UtcNow;
 }

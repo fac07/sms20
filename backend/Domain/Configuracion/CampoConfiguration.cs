@@ -53,5 +53,11 @@ public class CampoConfiguration : IEntityTypeConfiguration<Campo>
             .HasFilter("[VigenteHasta] IS NULL");
 
         builder.HasIndex(c => new { c.SeccionId, c.Orden });
+
+        // Marca de agua del sync incremental (ver SeccionConfiguration).
+        builder.Property(c => c.FechaModificacion)
+            .HasColumnType("datetime2")
+            .HasDefaultValueSql("SYSUTCDATETIME()")
+            .IsRequired();
     }
 }
