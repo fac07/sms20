@@ -21,105 +21,111 @@
     </nz-tag>
   </div>
 
-  <form nz-form [formGroup]="form" nzLayout="vertical" class="form-boleta">
-    <div class="form-grid">
-      <nz-form-item>
-        <nz-form-label nzRequired>Tipo de movimiento</nz-form-label>
-        <nz-form-control>
-          <nz-select formControlName="tipoMovimientoId" nzPlaceHolder="Elegí el tipo de movimiento">
-            @for (t of tiposMovimiento(); track t.id) {
-              <nz-option [nzValue]="t.id" [nzLabel]="t.nombre"></nz-option>
-            }
-          </nz-select>
-        </nz-form-control>
-      </nz-form-item>
+  <form nz-form nzLayout="vertical" class="form-boleta">
+    <nz-form-item>
+      <nz-form-label nzRequired>Tipo de movimiento</nz-form-label>
+      <nz-form-control>
+        <nz-select
+          [formControl]="tipoMovimientoCtrl"
+          nzPlaceHolder="Elegí el tipo de movimiento"
+          nzShowSearch
+        >
+          @for (t of tiposMovimiento(); track t.id) {
+            <nz-option [nzValue]="t.id" [nzLabel]="t.nombre"></nz-option>
+          }
+        </nz-select>
+      </nz-form-control>
+    </nz-form-item>
 
-      <nz-form-item>
-        <nz-form-label nzRequired>Equipo</nz-form-label>
-        <nz-form-control>
-          <nz-select formControlName="equipoId" nzPlaceHolder="Elegí el equipo">
-            @for (m of equipos(); track m.id) {
-              <nz-option [nzValue]="m.id" [nzLabel]="m.nombre"></nz-option>
-            }
-          </nz-select>
-        </nz-form-control>
-      </nz-form-item>
+    @if (cargandoFormulario()) {
+      <nz-alert nzType="info" nzMessage="Cargando campos del tipo de movimiento…"></nz-alert>
+    }
 
-      <nz-form-item>
-        <nz-form-label nzRequired>Transportista</nz-form-label>
-        <nz-form-control>
-          <nz-select formControlName="transportistaId" nzPlaceHolder="Elegí el transportista">
-            @for (m of transportistas(); track m.id) {
-              <nz-option [nzValue]="m.id" [nzLabel]="m.nombre"></nz-option>
-            }
-          </nz-select>
-        </nz-form-control>
-      </nz-form-item>
+    @if (sinSecciones()) {
+      <nz-alert
+        nzType="info"
+        nzShowIcon
+        class="alerta-sin-secciones"
+        nzMessage="Este tipo de movimiento no tiene secciones configuradas"
+        nzDescription="La boleta se puede crear igual; no hay campos configurables que capturar."
+      ></nz-alert>
+    }
 
-      <nz-form-item>
-        <nz-form-label nzRequired>Piloto</nz-form-label>
-        <nz-form-control>
-          <nz-select formControlName="pilotoId" nzPlaceHolder="Elegí el piloto">
-            @for (m of pilotos(); track m.id) {
-              <nz-option [nzValue]="m.id" [nzLabel]="m.nombre"></nz-option>
-            }
-          </nz-select>
-        </nz-form-control>
-      </nz-form-item>
+    @if (camposAplicables().length > 0) {
+      <div [formGroup]="formSecciones()" class="secciones">
+        @for (seccion of secciones(); track seccion.clave) {
+          <section class="seccion" [formGroupName]="seccion.clave">
+            <header class="seccion__header">
+              <h3 class="seccion__titulo">{{ seccion.titulo }}</h3>
+              @if (seccion.requerida) {
+                <nz-tag nzColor="blue">Requerida</nz-tag>
+              }
+              @if (seccion.cardinalidad === 'Repetible') {
+                <nz-tag nzColor="default">Repetible</nz-tag>
+              }
+            </header>
 
-      <nz-form-item>
-        <nz-form-label nzRequired>Tercero</nz-form-label>
-        <nz-form-control>
-          <nz-select formControlName="terceroId" nzPlaceHolder="Elegí el tercero">
-            @for (m of terceros(); track m.id) {
-              <nz-option [nzValue]="m.id" [nzLabel]="m.nombre"></nz-option>
-            }
-          </nz-select>
-        </nz-form-control>
-      </nz-form-item>
-
-      <nz-form-item>
-        <nz-form-label nzRequired>Producto</nz-form-label>
-        <nz-form-control>
-          <nz-select formControlName="productoId" nzPlaceHolder="Elegí el producto">
-            @for (m of productos(); track m.id) {
-              <nz-option [nzValue]="m.id" [nzLabel]="m.nombre"></nz-option>
-            }
-          </nz-select>
-        </nz-form-control>
-      </nz-form-item>
-
-      <nz-form-item>
-        <nz-form-label>Almacén origen</nz-form-label>
-        <nz-form-control>
-          <nz-select formControlName="almacenOrigenId" nzPlaceHolder="Opcional" nzAllowClear>
-            @for (m of almacenes(); track m.id) {
-              <nz-option [nzValue]="m.id" [nzLabel]="m.nombre"></nz-option>
-            }
-          </nz-select>
-        </nz-form-control>
-      </nz-form-item>
-
-      <nz-form-item>
-        <nz-form-label>Almacén destino</nz-form-label>
-        <nz-form-control>
-          <nz-select formControlName="almacenDestinoId" nzPlaceHolder="Opcional" nzAllowClear>
-            @for (m of almacenes(); track m.id) {
-              <nz-option [nzValue]="m.id" [nzLabel]="m.nombre"></nz-option>
-            }
-          </nz-select>
-        </nz-form-control>
-      </nz-form-item>
-    </div>
+            <div class="form-grid">
+              @for (campo of seccion.campos; track campo.campoId) {
+                <nz-form-item>
+                  <nz-form-label [nzRequired]="campo.requerido">{{ campo.etiqueta }}</nz-form-label>
+                  <nz-form-control>
+                    @switch (campo.tipoCampo) {
+                      @case ('Texto') {
+                        <input nz-input [formControlName]="campo.campoId" [placeholder]="campo.etiqueta" />
+                      }
+                      @case ('Entero') {
+                        <nz-input-number
+                          [formControlName]="campo.campoId"
+                          [nzPrecision]="0"
+                          class="control-full"
+                        ></nz-input-number>
+                      }
+                      @case ('Decimal') {
+                        <nz-input-number [formControlName]="campo.campoId" class="control-full"></nz-input-number>
+                      }
+                      @case ('Fecha') {
+                        <nz-date-picker [formControlName]="campo.campoId" class="control-full"></nz-date-picker>
+                      }
+                      @case ('FechaHora') {
+                        <nz-date-picker
+                          [formControlName]="campo.campoId"
+                          [nzShowTime]="true"
+                          class="control-full"
+                        ></nz-date-picker>
+                      }
+                      @case ('Booleano') {
+                        <label nz-checkbox [formControlName]="campo.campoId">{{ campo.etiqueta }}</label>
+                      }
+                      @case ('Lista') {
+                        <nz-select
+                          [formControlName]="campo.campoId"
+                          nzPlaceHolder="Elegí una opción"
+                          nzAllowClear
+                        >
+                          @for (opcion of opciones(campo); track opcion) {
+                            <nz-option [nzValue]="opcion" [nzLabel]="opcion"></nz-option>
+                          }
+                        </nz-select>
+                      }
+                      @case ('ReferenciaMaestro') {
+                        <nz-select
+                          [formControlName]="campo.campoId"
+                          nzPlaceHolder="Catálogo (carga en la próxima iteración)"
+                          nzAllowClear
+                          nzDisabled
+                        ></nz-select>
+                      }
+                    }
+                  </nz-form-control>
+                </nz-form-item>
+              }
+            </div>
+          </section>
+        }
+      </div>
+    }
   </form>
-
-  <nz-alert
-    nzType="info"
-    nzShowIcon
-    class="alerta-sin-secciones"
-    nzMessage="En construcción — motor configurable pendiente"
-    nzDescription="La captura de secciones y campos configurables (Calidad, Detalle de fruta, Compostera, Características) llega en la próxima iteración (slice C)."
-  ></nz-alert>
 
   <button
     nz-button

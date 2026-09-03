@@ -1,17 +1,28 @@
 import { CommonModule } from '@angular/common';
 import { Component, OnDestroy, OnInit, computed, inject, signal } from '@angular/core';
-import { FormBuilder, ReactiveFormsModule, Validators } from '@angular/forms';
+import {
+  FormBuilder,
+  FormControl,
+  FormGroup,
+  ReactiveFormsModule,
+  Validators,
+} from '@angular/forms';
 import { NzAlertModule } from 'ng-zorro-antd/alert';
 import { NzButtonModule } from 'ng-zorro-antd/button';
 import { NzCardModule } from 'ng-zorro-antd/card';
+import { NzCheckboxModule } from 'ng-zorro-antd/checkbox';
+import { NzDatePickerModule } from 'ng-zorro-antd/date-picker';
 import { NzFormModule } from 'ng-zorro-antd/form';
 import { NzIconModule } from 'ng-zorro-antd/icon';
+import { NzInputModule } from 'ng-zorro-antd/input';
+import { NzInputNumberModule } from 'ng-zorro-antd/input-number';
 import { NzMessageService } from 'ng-zorro-antd/message';
 import { NzModalModule } from 'ng-zorro-antd/modal';
 import { NzSelectModule } from 'ng-zorro-antd/select';
 import { NzTableModule } from 'ng-zorro-antd/table';
 import { NzTagModule } from 'ng-zorro-antd/tag';
 import { catchError, of } from 'rxjs';
+import { CampoAplicable } from '../../../api/configuracion.models';
 import { TipoMovimiento, TiposMovimientoService } from '../../../api/tipos-movimiento.service';
 import {
   BoletaLocal,
@@ -20,8 +31,8 @@ import {
   EstadoLocal,
   LecturaPeso,
   LocalServerService,
-  MaestroLocal,
 } from '../../../api/local-server.service';
+import { ControlCapturado, armarValores } from './armar-valores';
 
 // No hay auth real todavía (SSO/Entra ID no implementado) — mismo espíritu
 // que el resto de la app: un placeholder explícito en vez de una pantalla de
@@ -30,13 +41,53 @@ const USUARIO_PLACEHOLDER = 'operador@naturaceites.com';
 
 const POLL_PESO_MS = 1500;
 
-// PR4 — motor configurable pendiente (slice C). Esta pantalla quedó reducida a
-// la captura de peso + creación/cierre de boleta contra el servidor local. Las
-// secciones de extensión (Calidad, DetalleFruta, Compostera, Características) y
-// la cascada post-POST que las persistía se removieron: las reemplaza el
-// renderer de campos configurables (`GET /tipos-movimiento/{id}/formulario`).
-// La ruta `pesaje` ya no está en el menú y apunta a un placeholder; este
-// componente sigue compilando para que slice C lo reconstruya.
+/** Una sección agrupada del formulario, con sus campos en el orden que los devolvió `/formulario`. */
+interface SeccionRenderizada {
+  clave: string;
+  titulo: string;
+  requerida: boolean;
+  cardinalidad: 'Unica' | 'Repetible';
+  campos: CampoAplicable[];
+}
+
+/** `snake_clave` -> "Snake Clave" para el encabezado de sección (no hay etiqueta de sección en `CampoAplicable`). */
+function titulizarClave(clave: string): string {
+  return clave
+    .split(/[_\s]+/)
+    .filter((p) => p.length > 0)
+    .map((p) => p.charAt(0).toUpperCase() + p.slice(1))
+    .join(' ');
+}
+
+/** Opciones de un campo `Lista` desde su `Configuracion` JSON (claves case-insensitive, como el motor). */
+function opcionesLista(configuracion: string | null): string[] {
+  if (configuracion === null || configuracion.trim() === '') return [];
+  try {
+    const crudo = JSON.parse(configuracion) as Record<string, unknown>;
+    for (const clave of Object.keys(crudo)) {
+      if (clave.toLowerCase() === 'opciones') {
+        const valor = crudo[clave];
+        return Array.isArray(valor)
+          ? valor.filter((o: unknown): o is string => typeof o === 'string')
+          : [];
+      }
+    }
+    return [];
+  } catch {
+    return [];
+  }
+}
+
+// Slice C1 — renderer del motor configurable. La pantalla arma un formulario
+// reactivo a partir de `GET /tipos-movimiento/:id/formulario` (`CampoAplicable[]`,
+// 100% del espejo local): un control tipado por `TipoCampo`, secciones agrupadas
+// y etiquetadas, `Validators.required` en los campos requeridos. `armarValores()`
+// (helper puro) vuelca los controles no vacíos a `valores` para `POST /boletas`.
+//
+// Fuera de C1 (llega después): FormArray para secciones repetibles + carga de
+// opciones de ReferenciaMaestro (C2); mapeo de 422 -> control + banner de
+// staleness de config + ruta/menú (C3). Esta pantalla todavía NO está ruteada
+// (la ruta `pesaje` apunta al placeholder hasta C3.4).
 @Component({
   imports: [
     CommonModule,
@@ -44,8 +95,12 @@ const POLL_PESO_MS = 1500;
     NzAlertModule,
     NzButtonModule,
     NzCardModule,
+    NzCheckboxModule,
+    NzDatePickerModule,
     NzFormModule,
     NzIconModule,
+    NzInputModule,
+    NzInputNumberModule,
     NzModalModule,
     NzSelectModule,
     NzTableModule,
@@ -62,12 +117,6 @@ export class PesajePage implements OnInit, OnDestroy {
   private readonly fb = inject(FormBuilder);
 
   readonly tiposMovimiento = signal<TipoMovimiento[]>([]);
-  readonly pilotos = signal<MaestroLocal[]>([]);
-  readonly transportistas = signal<MaestroLocal[]>([]);
-  readonly equipos = signal<MaestroLocal[]>([]);
-  readonly terceros = signal<MaestroLocal[]>([]);
-  readonly productos = signal<MaestroLocal[]>([]);
-  readonly almacenes = signal<MaestroLocal[]>([]);
 
   readonly lecturaPeso = signal<LecturaPeso>({ peso: null, origen: null });
   readonly estadoLocal = signal<EstadoLocal>({
@@ -78,6 +127,9 @@ export class PesajePage implements OnInit, OnDestroy {
   });
 
   readonly guardando = signal(false);
+  readonly cargandoFormulario = signal(false);
+  readonly camposAplicables = signal<CampoAplicable[]>([]);
+
   readonly cargandoTransito = signal(false);
   readonly boletasEnTransito = signal<BoletaLocal[]>([]);
   readonly boletaCerrando = signal<BoletaLocal | null>(null);
@@ -85,23 +137,43 @@ export class PesajePage implements OnInit, OnDestroy {
 
   readonly basculaSinCodigo = computed(() => this.estadoLocal().basculaCodigo === null);
 
-  readonly form = this.fb.nonNullable.group({
-    tipoMovimientoId: ['', Validators.required],
-    equipoId: ['', Validators.required],
-    transportistaId: ['', Validators.required],
-    pilotoId: ['', Validators.required],
-    terceroId: ['', Validators.required],
-    productoId: ['', Validators.required],
-    almacenOrigenId: [''],
-    almacenDestinoId: [''],
+  // Control del tipo de movimiento: dispara la carga del formulario. Va aparte
+  // del FormGroup dinámico de secciones porque su ciclo de vida es distinto
+  // (persiste mientras las secciones se reconstruyen).
+  readonly tipoMovimientoCtrl = new FormControl<string>('', {
+    nonNullable: true,
+    validators: [Validators.required],
   });
 
-  readonly puedeCrear = computed(
+  // FormGroup dinámico: { [seccionClave]: FormGroup { [campoId]: FormControl } }.
+  // En C1 hay una sola ocurrencia (0) por sección.
+  formSecciones = signal<FormGroup>(this.fb.group({}));
+
+  readonly secciones = computed<SeccionRenderizada[]>(() => {
+    const porClave = new Map<string, SeccionRenderizada>();
+    for (const campo of this.camposAplicables()) {
+      let seccion = porClave.get(campo.seccionClave);
+      if (seccion === undefined) {
+        seccion = {
+          clave: campo.seccionClave,
+          titulo: titulizarClave(campo.seccionClave),
+          requerida: campo.seccionRequerida,
+          cardinalidad: campo.cardinalidad,
+          campos: [],
+        };
+        porClave.set(campo.seccionClave, seccion);
+      }
+      seccion.campos.push(campo);
+    }
+    return [...porClave.values()];
+  });
+
+  readonly tipoMovimientoSeleccionado = computed(() => this.tipoMovimientoCtrl.value !== '');
+  readonly sinSecciones = computed(
     () =>
-      !this.basculaSinCodigo() &&
-      this.lecturaPeso().peso !== null &&
-      this.form.valid &&
-      !this.guardando(),
+      this.tipoMovimientoSeleccionado() &&
+      !this.cargandoFormulario() &&
+      this.camposAplicables().length === 0,
   );
 
   private intervalId: ReturnType<typeof setInterval> | null = null;
@@ -110,6 +182,8 @@ export class PesajePage implements OnInit, OnDestroy {
     this.cargarCatalogos();
     this.cargarEstadoLocal();
     this.cargarBoletasEnTransito();
+
+    this.tipoMovimientoCtrl.valueChanges.subscribe((id) => this.cargarFormulario(id));
 
     this.actualizarPeso();
     this.intervalId = setInterval(() => this.actualizarPeso(), POLL_PESO_MS);
@@ -120,8 +194,8 @@ export class PesajePage implements OnInit, OnDestroy {
   }
 
   private cargarCatalogos(): void {
-    // TipoMovimiento sigue pegando directo a Central (gap abierto); los Maestros
-    // se leen del caché local (SQLite vía servidor local), offline-capable.
+    // TipoMovimiento sigue pegando directo a Central (gap abierto); los campos
+    // configurables sí se resuelven contra el espejo local, offline-capable.
     this.tiposMovimientoService.listar().subscribe({
       next: (tipos) => this.tiposMovimiento.set(tipos),
       error: () =>
@@ -129,16 +203,6 @@ export class PesajePage implements OnInit, OnDestroy {
           'No se pudo cargar Tipos de movimiento — ¿el backend central está arriba?',
         ),
     });
-
-    const maestro = (tipo: string) =>
-      this.localServer.listarMaestros(tipo).pipe(catchError(() => of([] as MaestroLocal[])));
-
-    maestro('Piloto').subscribe((m) => this.pilotos.set(m));
-    maestro('Transportista').subscribe((m) => this.transportistas.set(m));
-    maestro('Equipo').subscribe((m) => this.equipos.set(m));
-    maestro('Tercero').subscribe((m) => this.terceros.set(m));
-    maestro('Producto').subscribe((m) => this.productos.set(m));
-    maestro('Almacen').subscribe((m) => this.almacenes.set(m));
   }
 
   private cargarEstadoLocal(): void {
@@ -152,6 +216,54 @@ export class PesajePage implements OnInit, OnDestroy {
         }
         this.estadoLocal.set(estado);
       });
+  }
+
+  private cargarFormulario(tipoMovimientoId: string): void {
+    this.camposAplicables.set([]);
+    this.formSecciones.set(this.fb.group({}));
+
+    if (tipoMovimientoId === '') return;
+
+    this.cargandoFormulario.set(true);
+    this.localServer
+      .formulario(tipoMovimientoId)
+      .pipe(catchError(() => of(null)))
+      .subscribe((campos) => {
+        this.cargandoFormulario.set(false);
+        if (campos === null) {
+          this.message.error('No se pudo cargar el formulario del tipo de movimiento.');
+          return;
+        }
+        this.camposAplicables.set(campos);
+        this.formSecciones.set(this.construirFormulario(campos));
+      });
+  }
+
+  private construirFormulario(campos: readonly CampoAplicable[]): FormGroup {
+    const grupo: Record<string, FormGroup> = {};
+    for (const campo of campos) {
+      let seccion = grupo[campo.seccionClave];
+      if (seccion === undefined) {
+        seccion = this.fb.group({});
+        grupo[campo.seccionClave] = seccion;
+      }
+      seccion.addControl(campo.campoId, this.crearControl(campo));
+    }
+    return this.fb.group(grupo);
+  }
+
+  private crearControl(campo: CampoAplicable): FormControl {
+    const validators = campo.requerido ? [Validators.required] : [];
+    const inicial: unknown = campo.tipoCampo === 'Booleano' ? (campo.requerido ? false : null) : null;
+    return this.fb.control(inicial, validators);
+  }
+
+  opciones(campo: CampoAplicable): string[] {
+    return opcionesLista(campo.configuracion);
+  }
+
+  controlDe(seccionClave: string, campoId: string): FormControl {
+    return this.formSecciones().get([seccionClave, campoId]) as FormControl;
   }
 
   private cargarBoletasEnTransito(): void {
@@ -179,19 +291,36 @@ export class PesajePage implements OnInit, OnDestroy {
   }
 
   nombreTipoMovimiento(tipoMovimientoId: string): string {
+    return this.tiposMovimiento().find((t) => t.id === tipoMovimientoId)?.nombre ?? tipoMovimientoId;
+  }
+
+  puedeCrear(): boolean {
     return (
-      this.tiposMovimiento().find((t) => t.id === tipoMovimientoId)?.nombre ?? tipoMovimientoId
+      !this.basculaSinCodigo() &&
+      this.lecturaPeso().peso !== null &&
+      this.tipoMovimientoCtrl.valid &&
+      this.formSecciones().valid &&
+      !this.cargandoFormulario() &&
+      !this.guardando()
     );
   }
 
-  crearBoleta(): void {
-    if (this.form.invalid || !this.puedeCrear()) {
-      this.form.markAllAsTouched();
-      return;
-    }
+  private capturarControles(): ControlCapturado[] {
+    const form = this.formSecciones();
+    return this.camposAplicables().map((campo) => ({
+      campo,
+      ocurrencia: 0,
+      valor: form.get([campo.seccionClave, campo.campoId])?.value ?? null,
+    }));
+  }
 
-    const v = this.form.getRawValue();
-    const tipoMovimiento = this.tiposMovimiento().find((t) => t.id === v.tipoMovimientoId);
+  crearBoleta(): void {
+    this.tipoMovimientoCtrl.markAsTouched();
+    this.formSecciones().markAllAsTouched();
+
+    if (!this.puedeCrear()) return;
+
+    const tipoMovimiento = this.tiposMovimiento().find((t) => t.id === this.tipoMovimientoCtrl.value);
     const lectura = this.lecturaPeso();
     const estado = this.estadoLocal();
 
@@ -200,18 +329,12 @@ export class PesajePage implements OnInit, OnDestroy {
     const input: CrearBoletaInput = {
       numeroBoletaPrefijo: tipoMovimiento.prefijo,
       codigoBascula: estado.basculaCodigo,
-      tipoMovimientoId: v.tipoMovimientoId,
-      equipoId: v.equipoId,
-      transportistaId: v.transportistaId,
-      pilotoId: v.pilotoId,
-      terceroId: v.terceroId,
-      productoId: v.productoId,
-      almacenOrigenId: v.almacenOrigenId || null,
-      almacenDestinoId: v.almacenDestinoId || null,
+      tipoMovimientoId: this.tipoMovimientoCtrl.value,
       pesoIngreso: lectura.peso,
       origenPesoIngreso: lectura.origen ?? 'Bascula',
       usuarioIngreso: USUARIO_PLACEHOLDER,
       creadaOffline: true,
+      valores: armarValores(this.capturarControles()),
     };
 
     this.guardando.set(true);
@@ -223,23 +346,30 @@ export class PesajePage implements OnInit, OnDestroy {
         this.cargarBoletasEnTransito();
       },
       error: (err) => {
-        this.message.error(err?.error?.error ?? 'No se pudo crear la boleta.');
+        // El mapeo de `ErrorCampo[]` (400) a cada control llega en C3; por ahora
+        // un mensaje genérico.
+        this.message.error(this.mensajeError(err, 'No se pudo crear la boleta.'));
         this.guardando.set(false);
       },
     });
   }
 
+  private mensajeError(err: unknown, fallback: string): string {
+    const cuerpo = (err as { error?: unknown })?.error;
+    if (typeof cuerpo === 'object' && cuerpo !== null && 'error' in cuerpo) {
+      const mensaje = (cuerpo as { error?: unknown }).error;
+      if (typeof mensaje === 'string') return mensaje;
+    }
+    if (Array.isArray(cuerpo) && cuerpo.length > 0) {
+      return 'Hay campos con errores de validación — revisá los datos capturados.';
+    }
+    return fallback;
+  }
+
   private resetearFormulario(): void {
-    this.form.reset({
-      tipoMovimientoId: '',
-      equipoId: '',
-      transportistaId: '',
-      pilotoId: '',
-      terceroId: '',
-      productoId: '',
-      almacenOrigenId: '',
-      almacenDestinoId: '',
-    });
+    this.tipoMovimientoCtrl.reset('');
+    this.camposAplicables.set([]);
+    this.formSecciones.set(this.fb.group({}));
   }
 
   abrirCierre(boleta: BoletaLocal): void {
@@ -272,7 +402,8 @@ export class PesajePage implements OnInit, OnDestroy {
         this.cargarBoletasEnTransito();
       },
       error: (err) => {
-        this.message.error(err?.error?.error ?? 'No se pudo cerrar la boleta.');
+        // 422 con `ErrorCampo[]`: el mapeo a control + resumen llega en C3.
+        this.message.error(this.mensajeError(err, 'No se pudo cerrar la boleta.'));
         this.cerrando.set(false);
       },
     });
