@@ -158,13 +158,13 @@ export class PesajePage implements OnInit, OnDestroy {
     () => this.tiposMovimiento().find((t) => t.id === this.tipoMovimientoSeleccionado()) ?? null,
   );
   readonly tabsCreacion = computed<SeccionBoleta[]>(() => {
+    // TODO(slice C): motor configurable. El contrato TipoMovimiento ya no
+    // expone los flags habilita*; qué secciones aplican lo resolverá el motor
+    // (GET /tipos-movimiento/{id}/formulario). Hasta entonces solo queda la
+    // sección ungated (Características). El gut completo va en PR4.
     const t = this.tipoMovimientoActual();
     if (!t) return [];
-    const tabs: SeccionBoleta[] = ['caracteristicas'];
-    if (t.habilitaCalidad) tabs.push('calidad');
-    if (t.habilitaDetalleFruta) tabs.push('detalleFruta');
-    if (t.habilitaCompostera) tabs.push('compostera');
-    return tabs;
+    return ['caracteristicas'];
   });
 
   readonly tabActivaCreacion = signal(0);
@@ -419,9 +419,12 @@ export class PesajePage implements OnInit, OnDestroy {
       origenPesoIngreso: lectura.origen ?? 'Bascula',
       usuarioIngreso: USUARIO_PLACEHOLDER,
       creadaOffline: true,
-      habilitaCalidad: tipoMovimiento.habilitaCalidad,
-      habilitaDetalleFruta: tipoMovimiento.habilitaDetalleFruta,
-      habilitaCompostera: tipoMovimiento.habilitaCompostera,
+      // TODO(slice C): motor configurable. El servidor local todavía exige
+      // estos flags en su CrearBoletaInput; el contrato central ya no los
+      // expone. Se fuerzan a false hasta el gut de PR4.
+      habilitaCalidad: false,
+      habilitaDetalleFruta: false,
+      habilitaCompostera: false,
     };
 
     this.guardando.set(true);

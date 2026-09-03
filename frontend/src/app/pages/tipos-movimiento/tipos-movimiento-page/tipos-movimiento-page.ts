@@ -16,6 +16,7 @@ import { NzSwitchModule } from 'ng-zorro-antd/switch';
 import { NzTableModule } from 'ng-zorro-antd/table';
 import { NzTagModule } from 'ng-zorro-antd/tag';
 import { NzTooltipModule } from 'ng-zorro-antd/tooltip';
+import { OperacionD365 } from '../../../api/configuracion.models';
 import {
   DireccionMovimiento,
   GuardarTipoMovimientoInput,
@@ -23,14 +24,16 @@ import {
   TiposMovimientoService,
 } from '../../../api/tipos-movimiento.service';
 
-const CAMPOS_HABILITA: { name: keyof GuardarTipoMovimientoInput; label: string }[] = [
-  { name: 'habilitaCalidad', label: 'Calidad' },
-  { name: 'habilitaMarchamos', label: 'Marchamos' },
-  { name: 'habilitaQR', label: 'QR (transferencias)' },
-  { name: 'habilitaDatosFinca', label: 'Datos de finca' },
-  { name: 'habilitaDetalleFruta', label: 'Detalle de fruta' },
-  { name: 'habilitaCompostera', label: 'Compostera' },
-  { name: 'integracionD365', label: 'Integración D365' },
+// El contrato TipoMovimiento perdió los 6 flags habilita* (el motor
+// configurable resuelve qué secciones aplican) y el bool integracionD365
+// (reemplazado por operacionD365 nullable). La asignación de secciones llega
+// como sub-vista en PR4.
+const OPERACIONES_D365: OperacionD365[] = [
+  'IngresoFruta',
+  'TransferenciaCreacion',
+  'TransferenciaRecepcion',
+  'RecepcionOC',
+  'SalidaOV',
 ];
 
 const DIRECCION_UI: Record<
@@ -70,7 +73,7 @@ export class TiposMovimientoPage {
   private readonly message = inject(NzMessageService);
   private readonly fb = inject(FormBuilder);
 
-  readonly camposHabilita = CAMPOS_HABILITA;
+  readonly operacionesD365 = OPERACIONES_D365;
   readonly direccionUi = DIRECCION_UI;
 
   readonly tipos = signal<TipoMovimiento[]>([]);
@@ -85,7 +88,7 @@ export class TiposMovimientoPage {
       total: lista.length,
       activos: lista.filter((t) => t.activo).length,
       inactivos: lista.filter((t) => !t.activo).length,
-      d365: lista.filter((t) => t.integracionD365 && t.activo).length,
+      d365: lista.filter((t) => t.operacionD365 !== null && t.activo).length,
     };
   });
 
@@ -94,13 +97,8 @@ export class TiposMovimientoPage {
     nombre: ['', Validators.required],
     prefijo: ['', Validators.required],
     direccion: ['Entrada' as DireccionMovimiento, Validators.required],
-    habilitaCalidad: [false],
-    habilitaMarchamos: [false],
-    habilitaQR: [false],
-    habilitaDatosFinca: [false],
-    habilitaDetalleFruta: [false],
-    habilitaCompostera: [false],
-    integracionD365: [false],
+    operacionD365: [null as OperacionD365 | null],
+    generaQR: [false],
   });
 
   constructor() {
@@ -128,13 +126,8 @@ export class TiposMovimientoPage {
       nombre: '',
       prefijo: '',
       direccion: 'Entrada',
-      habilitaCalidad: false,
-      habilitaMarchamos: false,
-      habilitaQR: false,
-      habilitaDatosFinca: false,
-      habilitaDetalleFruta: false,
-      habilitaCompostera: false,
-      integracionD365: false,
+      operacionD365: null,
+      generaQR: false,
     });
     this.modalAbierto.set(true);
   }
@@ -186,9 +179,5 @@ export class TiposMovimientoPage {
       },
       error: (err) => this.message.error(err?.error ?? 'No se pudo desactivar.'),
     });
-  }
-
-  seccionesHabilitadas(tipo: TipoMovimiento): string[] {
-    return this.camposHabilita.filter(({ name }) => tipo[name]).map(({ label }) => label);
   }
 }

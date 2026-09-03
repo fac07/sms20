@@ -13,7 +13,7 @@ import { NzStatisticModule } from 'ng-zorro-antd/statistic';
 import { NzTableModule } from 'ng-zorro-antd/table';
 import { NzTagModule } from 'ng-zorro-antd/tag';
 import { NzTooltipModule } from 'ng-zorro-antd/tooltip';
-import { Boleta, BoletasService, EstadoBoleta } from '../../../api/boletas.service';
+import { BoletaDto, BoletasService, EstadoBoleta } from '../../../api/boletas.service';
 
 @Component({
   imports: [
@@ -39,10 +39,10 @@ export class BoletasPage {
   private readonly service = inject(BoletasService);
   private readonly message = inject(NzMessageService);
 
-  readonly boletas = signal<Boleta[]>([]);
+  readonly boletas = signal<BoletaDto[]>([]);
   readonly cargando = signal(false);
   readonly filtroEstado = signal<EstadoBoleta | null>(null);
-  readonly detalle = signal<Boleta | null>(null);
+  readonly detalle = signal<BoletaDto | null>(null);
 
   readonly stats = computed(() => {
     const lista = this.boletas();
@@ -77,7 +77,7 @@ export class BoletasPage {
     this.cargar();
   }
 
-  verDetalle(boleta: Boleta): void {
+  verDetalle(boleta: BoletaDto): void {
     this.detalle.set(boleta);
   }
 
