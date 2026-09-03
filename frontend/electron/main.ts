@@ -4,6 +4,7 @@ import { startLocalServer } from './local-server'
 import { getDb } from './db'
 import { despacharOutboxPendiente } from './outbox-dispatcher'
 import { sincronizarMaestros } from './maestros-sync'
+import { sincronizarConfigLocal } from './config-sync'
 
 // La UI (renderer) no toca SQLite ni el puerto serial directamente — todo pasa
 // por este servidor HTTP local. Es el mismo contrato que usará el backend
@@ -22,6 +23,12 @@ const DISPATCH_INTERVAL_MS = 15_000
 // tardar un minuto en enterarse de un maestro nuevo, a diferencia de una
 // boleta pendiente de sincronizar.
 const MAESTROS_SYNC_INTERVAL_MS = 60_000
+
+// Sync de configuración (secciones/campos/asignaciones) — misma cadencia y mismo
+// criterio que Maestros: es de solo lectura, por marca de agua, y menos urgente
+// que el Outbox. Un fallo acá NUNCA bloquea la creación de boletas: la báscula
+// sigue trabajando contra el último caché de config bueno.
+const CONFIG_SYNC_INTERVAL_MS = 60_000
 
 let mainWindow: BrowserWindow | null = null
 
@@ -57,6 +64,10 @@ app.whenReady().then(() => {
   setInterval(() => {
     sincronizarMaestros().catch((err) => console.error('Error sincronizando maestros:', err))
   }, MAESTROS_SYNC_INTERVAL_MS)
+
+  setInterval(() => {
+    sincronizarConfigLocal().catch((err) => console.error('Error sincronizando configuración:', err))
+  }, CONFIG_SYNC_INTERVAL_MS)
 
   createWindow()
 

@@ -17,6 +17,7 @@ import { crearPesoProvider, PesoProviderSimulado } from './peso-provider'
 import type { OrigenPeso } from './peso-provider'
 import { despacharOutboxPendiente } from './outbox-dispatcher'
 import { sincronizarMaestros } from './maestros-sync'
+import { obtenerEstadoConfigSync, sincronizarConfigLocal } from './config-sync'
 
 // Mismo origen hardcodeado que ya usan outbox-dispatcher.ts y los servicios
 // Angular — cada archivo tiene su propia copia a propósito (no hay un módulo
@@ -264,6 +265,26 @@ export function startLocalServer(port: number, esDev: boolean): Server {
   app.post('/maestros/sincronizar', async (_req, res) => {
     try {
       const resultado = await sincronizarMaestros()
+      res.json(resultado)
+    } catch (err) {
+      res.status(502).json({ error: (err as Error).message })
+    }
+  })
+
+  // Configuración (secciones/campos/asignaciones) — read path del estado del
+  // último sync para la UI (indicador de staleness en Pesaje) y disparo manual,
+  // mismo patrón que /maestros. GET /config/estado nunca falla: si nunca
+  // sincronizó, lastConfigSyncAt es null y la UI muestra el aviso sin bloquear.
+  app.get('/config/estado', (_req, res) => {
+    res.json(obtenerEstadoConfigSync())
+  })
+
+  // "Sincronizar ahora" — igual que /maestros/sincronizar: no dev-gated, de solo
+  // lectura contra Central. Un fallo acá no compromete nada local (la marca de
+  // agua no avanza sin batch persistido) — 502 y listo.
+  app.post('/config/sincronizar', async (_req, res) => {
+    try {
+      const resultado = await sincronizarConfigLocal()
       res.json(resultado)
     } catch (err) {
       res.status(502).json({ error: (err as Error).message })
