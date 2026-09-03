@@ -14,6 +14,7 @@ import { NzTableModule } from 'ng-zorro-antd/table';
 import { NzTagModule } from 'ng-zorro-antd/tag';
 import { NzTooltipModule } from 'ng-zorro-antd/tooltip';
 import { BoletaDto, BoletasService, EstadoBoleta } from '../../../api/boletas.service';
+import { ValorCampoLeidoDto } from '../../../api/configuracion.models';
 
 @Component({
   imports: [
@@ -83,5 +84,20 @@ export class BoletasPage {
 
   cerrarDetalle(): void {
     this.detalle.set(null);
+  }
+
+  // Vista de solo lectura de un valor de campo configurable. El orden refleja
+  // la prioridad del backend: nombre de maestro resuelto primero, después los
+  // slots tipados. Booleano se muestra como Sí/No y la fecha localizada.
+  valorLegible(v: ValorCampoLeidoDto): string {
+    if (v.valorMaestroNombre != null && v.valorMaestroNombre !== '') return v.valorMaestroNombre;
+    if (v.valorTexto != null && v.valorTexto !== '') return v.valorTexto;
+    if (v.valorNumero != null) return String(v.valorNumero);
+    if (v.valorFecha != null && v.valorFecha !== '') {
+      const fecha = new Date(v.valorFecha);
+      return Number.isNaN(fecha.getTime()) ? v.valorFecha : fecha.toLocaleDateString();
+    }
+    if (v.valorBooleano != null) return v.valorBooleano ? 'Sí' : 'No';
+    return '—';
   }
 }

@@ -1,12 +1,17 @@
 import { CommonModule } from '@angular/common';
 import { Component, computed, inject, signal } from '@angular/core';
-import { FormBuilder, ReactiveFormsModule, Validators } from '@angular/forms';
+import { FormBuilder, FormsModule, ReactiveFormsModule, Validators } from '@angular/forms';
+import { forkJoin } from 'rxjs';
 import { NzButtonModule } from 'ng-zorro-antd/button';
 import { NzCardModule } from 'ng-zorro-antd/card';
+import { NzCheckboxModule } from 'ng-zorro-antd/checkbox';
+import { NzDrawerModule } from 'ng-zorro-antd/drawer';
+import { NzEmptyModule } from 'ng-zorro-antd/empty';
 import { NzFormModule } from 'ng-zorro-antd/form';
 import { NzGridModule } from 'ng-zorro-antd/grid';
 import { NzIconModule } from 'ng-zorro-antd/icon';
 import { NzInputModule } from 'ng-zorro-antd/input';
+import { NzInputNumberModule } from 'ng-zorro-antd/input-number';
 import { NzMessageService } from 'ng-zorro-antd/message';
 import { NzModalModule } from 'ng-zorro-antd/modal';
 import { NzPopconfirmModule } from 'ng-zorro-antd/popconfirm';
@@ -17,12 +22,24 @@ import { NzTableModule } from 'ng-zorro-antd/table';
 import { NzTagModule } from 'ng-zorro-antd/tag';
 import { NzTooltipModule } from 'ng-zorro-antd/tooltip';
 import { OperacionD365 } from '../../../api/configuracion.models';
+import { SeccionDto, SeccionesService } from '../../../api/secciones.service';
 import {
+  AsignacionSeccionInput,
   DireccionMovimiento,
   GuardarTipoMovimientoInput,
   TipoMovimiento,
   TiposMovimientoService,
 } from '../../../api/tipos-movimiento.service';
+
+// Fila de la sub-vista de asignación de secciones: una por SeccionDto, con el
+// estado editable (asignada / orden / requerida) inicializado desde las
+// asignaciones vigentes del tipo de movimiento.
+interface FilaSeccion {
+  seccion: SeccionDto;
+  asignada: boolean;
+  orden: number;
+  requerida: boolean;
+}
 
 // El contrato TipoMovimiento perdió los 6 flags habilita* (el motor
 // configurable resuelve qué secciones aplican) y el bool integracionD365
@@ -48,13 +65,18 @@ const DIRECCION_UI: Record<
 @Component({
   imports: [
     CommonModule,
+    FormsModule,
     ReactiveFormsModule,
     NzButtonModule,
     NzCardModule,
+    NzCheckboxModule,
+    NzDrawerModule,
+    NzEmptyModule,
     NzFormModule,
     NzGridModule,
     NzIconModule,
     NzInputModule,
+    NzInputNumberModule,
     NzModalModule,
     NzPopconfirmModule,
     NzSelectModule,
@@ -70,6 +92,7 @@ const DIRECCION_UI: Record<
 })
 export class TiposMovimientoPage {
   private readonly service = inject(TiposMovimientoService);
+  private readonly seccionesService = inject(SeccionesService);
   private readonly message = inject(NzMessageService);
   private readonly fb = inject(FormBuilder);
 
@@ -81,6 +104,15 @@ export class TiposMovimientoPage {
   readonly guardando = signal(false);
   readonly editando = signal<TipoMovimiento | null>(null);
   readonly modalAbierto = signal(false);
+
+  // Sub-vista de asignación de secciones (drawer). El PUT es declarativo: se
+  // envía el set deseado completo y las secciones omitidas quedan
+  // desasignadas (VigenteHasta) por el backend, nunca borradas.
+  readonly seccionesDrawerAbierto = signal(false);
+  readonly asignando = signal<TipoMovimiento | null>(null);
+  readonly cargandoSecciones = signal(false);
+  readonly guardandoSecciones = signal(false);
+  readonly filasSeccion = signal<FilaSeccion[]>([]);
 
   readonly stats = computed(() => {
     const lista = this.tipos();
@@ -178,6 +210,86 @@ export class TiposMovimientoPage {
         this.cargar();
       },
       error: (err) => this.message.error(err?.error ?? 'No se pudo desactivar.'),
+    });
+  }
+
+  abrirSecciones(tipo: TipoMovimiento): void {
+    this.asignando.set(tipo);
+    this.seccionesDrawerAbierto.set(true);
+    this.filasSeccion.set([]);
+    this.cargandoSecciones.set(true);
+
+    forkJoin({
+      secciones: this.seccionesService.listar(),
+      asignadas: this.service.listarSecciones(tipo.id),
+    }).subscribe({
+      next: ({ secciones, asignadas }) => {
+        const porId = new Map(asignadas.map((a) => [a.seccionId, a]));
+        this.filasSeccion.set(
+          [...secciones]
+            .sort((a, b) => a.orden - b.orden)
+            .map((seccion) => {
+              const vigente = porId.get(seccion.id);
+              return {
+                seccion,
+                asignada: vigente !== undefined,
+                orden: vigente?.orden ?? seccion.orden,
+                requerida: vigente?.requerida ?? false,
+              };
+            }),
+        );
+        this.cargandoSecciones.set(false);
+      },
+      error: (err) => {
+        this.message.error(err?.error ?? 'No se pudieron cargar las secciones.');
+        this.cargandoSecciones.set(false);
+      },
+    });
+  }
+
+  cerrarSecciones(): void {
+    this.seccionesDrawerAbierto.set(false);
+    this.asignando.set(null);
+    this.filasSeccion.set([]);
+  }
+
+  alternarSeccion(seccionId: string, asignada: boolean): void {
+    this.filasSeccion.update((filas) =>
+      filas.map((f) => (f.seccion.id === seccionId ? { ...f, asignada } : f)),
+    );
+  }
+
+  cambiarOrdenSeccion(seccionId: string, orden: number): void {
+    this.filasSeccion.update((filas) =>
+      filas.map((f) => (f.seccion.id === seccionId ? { ...f, orden: orden ?? 0 } : f)),
+    );
+  }
+
+  cambiarRequeridaSeccion(seccionId: string, requerida: boolean): void {
+    this.filasSeccion.update((filas) =>
+      filas.map((f) => (f.seccion.id === seccionId ? { ...f, requerida } : f)),
+    );
+  }
+
+  guardarSecciones(): void {
+    const tipo = this.asignando();
+    if (!tipo) return;
+
+    const payload: AsignacionSeccionInput[] = this.filasSeccion()
+      .filter((f) => f.asignada)
+      .map((f) => ({ seccionId: f.seccion.id, requerida: f.requerida, orden: f.orden }));
+
+    this.guardandoSecciones.set(true);
+    this.service.asignarSecciones(tipo.id, payload).subscribe({
+      next: () => {
+        this.message.success('Secciones actualizadas.');
+        this.guardandoSecciones.set(false);
+        this.cerrarSecciones();
+      },
+      error: (err) => {
+        this.message.error(err?.error ?? 'No se pudieron guardar las secciones.');
+        this.guardandoSecciones.set(false);
+      },
     });
   }
 }

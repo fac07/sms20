@@ -83,9 +83,12 @@ export interface CrearBoletaInput {
   origenPesoIngreso: OrigenPeso;
   usuarioIngreso: string;
   creadaOffline: boolean;
-  habilitaCalidad: boolean;
-  habilitaDetalleFruta: boolean;
-  habilitaCompostera: boolean;
+  // Slice C reemplaza estos flags por el motor configurable; el servidor local
+  // los trata como opcionales (`?? false`) y el frontend ya no los envía desde
+  // el gut de PR4. Se quitan por completo en slice D.
+  habilitaCalidad?: boolean;
+  habilitaDetalleFruta?: boolean;
+  habilitaCompostera?: boolean;
 }
 
 export interface CerrarBoletaInput {
