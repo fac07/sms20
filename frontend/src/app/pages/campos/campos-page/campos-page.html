@@ -1,0 +1,309 @@
+<div nz-row [nzGutter]="16" class="stats-row">
+  <div nz-col [nzSpan]="8">
+    <nz-card>
+      <div class="stat-card">
+        <div class="stat-icon" style="background: #B8711F1a; color: #B8711F">
+          <span nz-icon nzType="form"></span>
+        </div>
+        <nz-statistic [nzTitle]="'Campos vigentes'" [nzValue]="stats().total"></nz-statistic>
+      </div>
+    </nz-card>
+  </div>
+  <div nz-col [nzSpan]="8">
+    <nz-card>
+      <div class="stat-card">
+        <div class="stat-icon" style="background: #2F6FED1a; color: #2F6FED">
+          <span nz-icon nzType="lock"></span>
+        </div>
+        <nz-statistic [nzTitle]="'Requeridos'" [nzValue]="stats().requeridos"></nz-statistic>
+      </div>
+    </nz-card>
+  </div>
+  <div nz-col [nzSpan]="8">
+    <nz-card>
+      <div class="stat-card">
+        <div class="stat-icon" style="background: #3F8F6E1a; color: #3F8F6E">
+          <span nz-icon nzType="appstore"></span>
+        </div>
+        <nz-statistic [nzTitle]="'Tipos distintos'" [nzValue]="stats().tipos"></nz-statistic>
+      </div>
+    </nz-card>
+  </div>
+</div>
+
+<nz-card [nzTitle]="'Campos'" [nzExtra]="extraTpl" [nzBodyStyle]="{ padding: '0' }">
+  <ng-template #extraTpl>
+    <div class="toolbar">
+      <nz-select
+        class="filtro-seccion"
+        nzPlaceHolder="Elegí una sección"
+        [ngModel]="seccionSeleccionadaId()"
+        (ngModelChange)="seleccionarSeccion($event)"
+      >
+        @for (seccion of secciones(); track seccion.id) {
+          <nz-option [nzValue]="seccion.id" [nzLabel]="seccion.nombre"></nz-option>
+        }
+      </nz-select>
+      <label class="historicos">
+        <nz-switch [ngModel]="verHistoricos()" (ngModelChange)="toggleHistoricos()"></nz-switch>
+        Ver históricos
+      </label>
+      <button
+        nz-button
+        nzType="primary"
+        [disabled]="!seccionSeleccionadaId()"
+        (click)="abrirModalCrear()"
+      >
+        <span nz-icon nzType="plus"></span>
+        Nuevo campo
+      </button>
+    </div>
+  </ng-template>
+
+  @if (!seccionSeleccionadaId()) {
+    <p class="vacio">Elegí una sección para ver y administrar sus campos.</p>
+  } @else {
+    <nz-table #tabla [nzData]="camposVisibles()" [nzLoading]="cargando()" [nzPageSize]="15">
+      <thead>
+        <tr>
+          <th>Clave</th>
+          <th>Etiqueta</th>
+          <th>Tipo</th>
+          <th>Catálogo</th>
+          <th nzAlign="center">Requerido</th>
+          <th nzAlign="center">Orden</th>
+          <th nzAlign="center">Vigencia</th>
+          <th></th>
+        </tr>
+      </thead>
+      <tbody>
+        @for (campo of tabla.data; track campo.id) {
+          <tr [class.retirado]="campo.vigenteHasta">
+            <td class="clave">{{ campo.clave }}</td>
+            <td>{{ campo.etiqueta }}</td>
+            <td><nz-tag>{{ campo.tipoCampo }}</nz-tag></td>
+            <td>
+              @if (campo.tipoCatalogoRef) {
+                <nz-tag nzColor="purple">{{ campo.tipoCatalogoRef }}</nz-tag>
+              } @else {
+                <span class="dash">—</span>
+              }
+            </td>
+            <td nzAlign="center">
+              @if (campo.requerido) {
+                <span nz-icon nzType="check-circle" nzTheme="fill" style="color: #3F8F6E"></span>
+              } @else {
+                <span class="dash">—</span>
+              }
+            </td>
+            <td nzAlign="center">{{ campo.orden }}</td>
+            <td nzAlign="center">
+              @if (campo.vigenteHasta) {
+                <nz-tag>Retirado</nz-tag>
+              } @else {
+                <nz-tag nzColor="success">Vigente</nz-tag>
+              }
+            </td>
+            <td class="acciones">
+              @if (!campo.vigenteHasta) {
+                <button
+                  nz-button
+                  nzType="text"
+                  nz-tooltip
+                  nzTooltipTitle="Editar"
+                  (click)="abrirModalEditar(campo)"
+                >
+                  <span nz-icon nzType="edit"></span>
+                </button>
+                <button
+                  nz-button
+                  nzType="text"
+                  nz-tooltip
+                  nzTooltipTitle="Nueva versión"
+                  (click)="abrirModalVersion(campo)"
+                >
+                  <span nz-icon nzType="swap"></span>
+                </button>
+                <button
+                  nz-button
+                  nzType="text"
+                  nzDanger
+                  nz-tooltip
+                  nzTooltipTitle="Eliminar"
+                  nz-popconfirm
+                  nzPopconfirmTitle="¿Eliminar este campo?"
+                  nzPopconfirmDescription="Solo si no tiene valores capturados en boletas."
+                  (nzOnConfirm)="eliminar(campo)"
+                >
+                  <span nz-icon nzType="delete"></span>
+                </button>
+              }
+            </td>
+          </tr>
+        }
+      </tbody>
+    </nz-table>
+  }
+</nz-card>
+
+<!-- Crear / Editar -->
+<nz-modal
+  [nzTitle]="editando() ? 'Editar campo' : 'Nuevo campo'"
+  [nzVisible]="modalAbierto()"
+  [nzOkLoading]="guardando()"
+  nzOkText="Guardar"
+  nzCancelText="Cancelar"
+  (nzOnCancel)="cerrarModal()"
+  (nzOnOk)="guardar()"
+>
+  <ng-container *nzModalContent>
+    @if (editando(); as campo) {
+      <form nz-form [formGroup]="formEdit" nzLayout="vertical">
+        <p class="campo-id">
+          <span class="clave">{{ campo.clave }}</span>
+          <nz-tag>{{ campo.tipoCampo }}</nz-tag>
+          <span class="muted">La clave y el tipo no se editan — usá «Nueva versión».</span>
+        </p>
+        <nz-form-item>
+          <nz-form-label nzRequired>Etiqueta</nz-form-label>
+          <nz-form-control>
+            <input nz-input formControlName="etiqueta" />
+          </nz-form-control>
+        </nz-form-item>
+        <nz-form-item>
+          <nz-form-label nzRequired>Orden</nz-form-label>
+          <nz-form-control>
+            <nz-input-number formControlName="orden" [nzMin]="0" [nzStep]="1"></nz-input-number>
+          </nz-form-control>
+        </nz-form-item>
+        <nz-form-item class="switch-item">
+          <nz-form-label>Requerido</nz-form-label>
+          <nz-form-control
+            [nzExtra]="esReservado(campo.clave) ? 'Campo reservado — no se puede volver opcional.' : ''"
+          >
+            <nz-switch formControlName="requerido"></nz-switch>
+          </nz-form-control>
+        </nz-form-item>
+        <nz-form-item>
+          <nz-form-label>Configuración</nz-form-label>
+          <app-configuracion-campo-editor
+            [tipoCampo]="campo.tipoCampo"
+            [value]="campo.configuracion"
+            (valueChange)="configJson.set($event)"
+            (validChange)="configValido.set($event)"
+          ></app-configuracion-campo-editor>
+        </nz-form-item>
+      </form>
+    } @else {
+      <form nz-form [formGroup]="form" nzLayout="vertical">
+        <nz-form-item>
+          <nz-form-label nzRequired>Clave</nz-form-label>
+          <nz-form-control [nzErrorTip]="'Minúsculas, empieza con letra; solo a-z, 0-9 y _ (máx. 50).'">
+            <input nz-input formControlName="clave" placeholder="racimos_verdes" />
+          </nz-form-control>
+        </nz-form-item>
+        <nz-form-item>
+          <nz-form-label nzRequired>Etiqueta</nz-form-label>
+          <nz-form-control>
+            <input nz-input formControlName="etiqueta" placeholder="Racimos verdes" />
+          </nz-form-control>
+        </nz-form-item>
+        <nz-form-item>
+          <nz-form-label nzRequired>Tipo de campo</nz-form-label>
+          <nz-form-control>
+            <nz-select formControlName="tipoCampo">
+              @for (tipo of tiposCampo; track tipo) {
+                <nz-option [nzValue]="tipo" [nzLabel]="tipo"></nz-option>
+              }
+            </nz-select>
+          </nz-form-control>
+        </nz-form-item>
+        @if (tipoCampoActual() === 'ReferenciaMaestro') {
+          <nz-form-item>
+            <nz-form-label nzRequired>Catálogo de referencia</nz-form-label>
+            <nz-form-control>
+              <nz-select formControlName="tipoCatalogoRef" nzPlaceHolder="Elegí un catálogo">
+                @for (cat of tiposCatalogo; track cat) {
+                  <nz-option [nzValue]="cat" [nzLabel]="cat"></nz-option>
+                }
+              </nz-select>
+            </nz-form-control>
+          </nz-form-item>
+        }
+        <nz-form-item>
+          <nz-form-label nzRequired>Orden</nz-form-label>
+          <nz-form-control>
+            <nz-input-number formControlName="orden" [nzMin]="0" [nzStep]="1"></nz-input-number>
+          </nz-form-control>
+        </nz-form-item>
+        <nz-form-item class="switch-item">
+          <nz-form-label>Requerido</nz-form-label>
+          <nz-form-control>
+            <nz-switch formControlName="requerido"></nz-switch>
+          </nz-form-control>
+        </nz-form-item>
+        <nz-form-item>
+          <nz-form-label>Configuración</nz-form-label>
+          <app-configuracion-campo-editor
+            [tipoCampo]="tipoCampoActual()"
+            [value]="null"
+            (valueChange)="configJson.set($event)"
+            (validChange)="configValido.set($event)"
+          ></app-configuracion-campo-editor>
+        </nz-form-item>
+      </form>
+    }
+  </ng-container>
+</nz-modal>
+
+<!-- Nueva versión -->
+<nz-modal
+  nzTitle="Nueva versión del campo"
+  [nzVisible]="modalVersionAbierto()"
+  [nzOkLoading]="guardando()"
+  nzOkText="Crear versión"
+  nzCancelText="Cancelar"
+  (nzOnCancel)="cerrarModalVersion()"
+  (nzOnOk)="confirmarVersion()"
+>
+  <ng-container *nzModalContent>
+    @if (versionando(); as campo) {
+      <p class="aviso">{{ versionAviso }}</p>
+      <form nz-form [formGroup]="formVersion" nzLayout="vertical">
+        <p class="campo-id">
+          <span class="clave">{{ campo.clave }}</span>
+          <nz-tag>{{ campo.tipoCampo }}</nz-tag>
+        </p>
+        <nz-form-item>
+          <nz-form-label nzRequired>Etiqueta</nz-form-label>
+          <nz-form-control>
+            <input nz-input formControlName="etiqueta" />
+          </nz-form-control>
+        </nz-form-item>
+        <nz-form-item>
+          <nz-form-label nzRequired>Orden</nz-form-label>
+          <nz-form-control>
+            <nz-input-number formControlName="orden" [nzMin]="0" [nzStep]="1"></nz-input-number>
+          </nz-form-control>
+        </nz-form-item>
+        <nz-form-item class="switch-item">
+          <nz-form-label>Requerido</nz-form-label>
+          <nz-form-control
+            [nzExtra]="esReservado(campo.clave) ? 'Campo reservado — no se puede volver opcional.' : ''"
+          >
+            <nz-switch formControlName="requerido"></nz-switch>
+          </nz-form-control>
+        </nz-form-item>
+        <nz-form-item>
+          <nz-form-label>Configuración</nz-form-label>
+          <app-configuracion-campo-editor
+            [tipoCampo]="campo.tipoCampo"
+            [value]="campo.configuracion"
+            (valueChange)="configJson.set($event)"
+            (validChange)="configValido.set($event)"
+          ></app-configuracion-campo-editor>
+        </nz-form-item>
+      </form>
+    }
+  </ng-container>
+</nz-modal>

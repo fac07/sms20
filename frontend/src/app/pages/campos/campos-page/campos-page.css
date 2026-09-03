@@ -1,0 +1,88 @@
+.stats-row {
+  margin-bottom: 20px;
+}
+
+.stat-card {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+}
+
+.stat-icon {
+  width: 44px;
+  height: 44px;
+  border-radius: 10px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 20px;
+  flex-shrink: 0;
+}
+
+.toolbar {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+}
+
+.filtro-seccion {
+  min-width: 220px;
+}
+
+.historicos {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 13px;
+  color: rgba(0, 0, 0, 0.65);
+  white-space: nowrap;
+}
+
+.vacio,
+.aviso {
+  padding: 16px;
+  margin: 0;
+  color: rgba(0, 0, 0, 0.65);
+}
+
+.aviso {
+  background: #fffbe6;
+  border: 1px solid #ffe58f;
+  border-radius: 8px;
+  margin-bottom: 16px;
+}
+
+.clave {
+  font-family: monospace;
+  font-size: 13px;
+}
+
+.dash {
+  color: rgba(0, 0, 0, 0.25);
+}
+
+.acciones {
+  text-align: right;
+  white-space: nowrap;
+}
+
+.switch-item {
+  margin-bottom: 8px;
+}
+
+tr.retirado td {
+  opacity: 0.45;
+}
+
+.campo-id {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+  margin-bottom: 16px;
+}
+
+.muted {
+  color: rgba(0, 0, 0, 0.45);
+  font-size: 12px;
+}
