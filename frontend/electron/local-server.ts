@@ -2,22 +2,13 @@ import cors from 'cors'
 import express from 'express'
 import type { Server } from 'node:http'
 import {
-  agregarBoletaCaracteristicaLocal,
   anularBoletaLocal,
   cerrarBoletaLocal,
   crearBoletaLocal,
-  eliminarBoletaCaracteristicaLocal,
   getConfig,
-  guardarBoletaCalidadLocal,
-  guardarBoletaComposteraLocal,
-  guardarBoletaDetalleFrutaLocal,
-  listarBoletaCaracteristicaLocal,
   listarBoletasLocal,
   listarMaestrosLocal,
   listarOutboxLocal,
-  obtenerBoletaCalidadLocal,
-  obtenerBoletaComposteraLocal,
-  obtenerBoletaDetalleFrutaLocal,
   obtenerBoletaLocal,
   setConfig,
 } from './db'
@@ -146,20 +137,10 @@ export function startLocalServer(port: number, esDev: boolean): Server {
       numeroBoletaPrefijo?: string
       codigoBascula?: string
       tipoMovimientoId?: string
-      equipoId?: string
-      transportistaId?: string
-      pilotoId?: string
-      terceroId?: string
-      productoId?: string
-      almacenOrigenId?: string | null
-      almacenDestinoId?: string | null
       pesoIngreso?: number
       origenPesoIngreso?: OrigenPesoLocal
       usuarioIngreso?: string
       creadaOffline?: boolean
-      habilitaCalidad?: boolean
-      habilitaDetalleFruta?: boolean
-      habilitaCompostera?: boolean
     }
 
     if (typeof body.pesoIngreso !== 'number' || !Number.isFinite(body.pesoIngreso)) {
@@ -167,17 +148,13 @@ export function startLocalServer(port: number, esDev: boolean): Server {
       return
     }
 
+    // NOTA (D1): el Encabezado ya no lleva las FKs de rol a Maestro ni los flags
+    // Habilita*. El contrato con `valores` (validarValores + persistencia EAV)
+    // entra en el slice D4; por ahora esta ruta solo persiste el Encabezado.
     const boleta = crearBoletaLocal({
       prefijo: body.numeroBoletaPrefijo ?? '',
       codigoBascula: body.codigoBascula ?? '',
       tipoMovimientoId: body.tipoMovimientoId ?? '',
-      equipoId: body.equipoId ?? '',
-      transportistaId: body.transportistaId ?? '',
-      pilotoId: body.pilotoId ?? '',
-      terceroId: body.terceroId ?? '',
-      productoId: body.productoId ?? '',
-      almacenOrigenId: body.almacenOrigenId ?? null,
-      almacenDestinoId: body.almacenDestinoId ?? null,
       pesoIngreso: body.pesoIngreso,
       origenPesoIngreso: body.origenPesoIngreso ?? 'Bascula',
       // crearBoletaLocal siempre pisa este valor con la hora real de
@@ -186,13 +163,6 @@ export function startLocalServer(port: number, esDev: boolean): Server {
       fechaHoraIngreso: new Date().toISOString(),
       usuarioIngreso: body.usuarioIngreso ?? '',
       creadaOffline: body.creadaOffline ?? false,
-      // Denormalizado desde el TipoMovimiento que la pantalla de Pesaje ya
-      // tiene en memoria al momento de crear la boleta (ver el comentario
-      // junto al ALTER TABLE en db.ts) — default false para no romper
-      // callers viejos que todavía no mandan estos tres campos.
-      habilitaCalidad: body.habilitaCalidad ?? false,
-      habilitaDetalleFruta: body.habilitaDetalleFruta ?? false,
-      habilitaCompostera: body.habilitaCompostera ?? false,
     })
 
     res.status(201).json(boleta)
@@ -252,220 +222,11 @@ export function startLocalServer(port: number, esDev: boolean): Server {
     }
   })
 
-  // Extensiones de Boleta (Calidad, DetalleFruta, Compostera, Caracteristica)
-  // — mismo shape de rutas que backend/Domain/Boletas/Extensiones
-  // (BoletaExtensionesEndpoints.cs), sin el prefijo /api por el mismo motivo
-  // que el resto de este archivo. El "motor" de gate central resuelve
-  // TipoMovimiento con un lookup en vivo; acá no hay tabla TipoMovimiento
-  // local (solo Boleta y Correlativo), así que el gate lee los 3 flags
-  // Habilita* que crearBoletaLocal ya denormalizó sobre la fila de Boleta —
-  // ver el comentario junto al ALTER TABLE en db.ts.
-  const boletaHabilita = (
-    boletaId: string,
-    campo: 'habilitaCalidad' | 'habilitaDetalleFruta' | 'habilitaCompostera',
-  ): boolean | null => {
-    const boleta = obtenerBoletaLocal(boletaId)
-    return boleta ? boleta[campo] : null
-  }
-
-  const esNumeroONulo = (v: unknown): v is number | null | undefined =>
-    v === null || v === undefined || (typeof v === 'number' && Number.isFinite(v))
-
-  app.get('/boletas/:id/calidad', (req, res) => {
-    if (!obtenerBoletaLocal(req.params.id)) {
-      res.status(404).json({ error: 'No existe esa boleta.' })
-      return
-    }
-
-    const calidad = obtenerBoletaCalidadLocal(req.params.id)
-    if (!calidad) {
-      res.status(404).json({ error: 'Esta boleta no tiene datos de calidad.' })
-      return
-    }
-    res.json(calidad)
-  })
-
-  app.put('/boletas/:id/calidad', (req, res) => {
-    const habilitada = boletaHabilita(req.params.id, 'habilitaCalidad')
-    if (habilitada === null) {
-      res.status(404).json({ error: 'No existe esa boleta.' })
-      return
-    }
-    if (!habilitada) {
-      res.status(400).json({ error: 'Este TipoMovimiento no tiene habilitada la sección Calidad.' })
-      return
-    }
-
-    const { acidez, luz, dobi, humedad, temperatura, numeroRevisionQA } = req.body as {
-      acidez?: number | null
-      luz?: number | null
-      dobi?: number | null
-      humedad?: number | null
-      temperatura?: number | null
-      numeroRevisionQA?: string | null
-    }
-
-    if (
-      !esNumeroONulo(acidez) ||
-      !esNumeroONulo(luz) ||
-      !esNumeroONulo(dobi) ||
-      !esNumeroONulo(humedad) ||
-      !esNumeroONulo(temperatura)
-    ) {
-      res
-        .status(400)
-        .json({ error: 'Acidez, Luz, DOBI, Humedad y Temperatura deben ser números o nulos.' })
-      return
-    }
-
-    const calidad = guardarBoletaCalidadLocal(req.params.id, {
-      acidez: acidez ?? null,
-      luz: luz ?? null,
-      dobi: dobi ?? null,
-      humedad: humedad ?? null,
-      temperatura: temperatura ?? null,
-      numeroRevisionQA: numeroRevisionQA ?? null,
-    })
-    res.json(calidad)
-  })
-
-  app.get('/boletas/:id/compostera', (req, res) => {
-    if (!obtenerBoletaLocal(req.params.id)) {
-      res.status(404).json({ error: 'No existe esa boleta.' })
-      return
-    }
-
-    const compostera = obtenerBoletaComposteraLocal(req.params.id)
-    if (!compostera) {
-      res.status(404).json({ error: 'Esta boleta no tiene datos de compostera.' })
-      return
-    }
-    res.json(compostera)
-  })
-
-  app.put('/boletas/:id/compostera', (req, res) => {
-    const habilitada = boletaHabilita(req.params.id, 'habilitaCompostera')
-    if (habilitada === null) {
-      res.status(404).json({ error: 'No existe esa boleta.' })
-      return
-    }
-    if (!habilitada) {
-      res.status(400).json({ error: 'Este TipoMovimiento no tiene habilitada la sección Compostera.' })
-      return
-    }
-
-    const { cui, camaId, seccionId, cicloId } = req.body as {
-      cui?: string
-      camaId?: string
-      seccionId?: string
-      cicloId?: string
-    }
-
-    if (!cui || !camaId || !seccionId || !cicloId) {
-      res.status(400).json({ error: 'Faltan cui, camaId, seccionId y/o cicloId.' })
-      return
-    }
-
-    const compostera = guardarBoletaComposteraLocal(req.params.id, { cui, camaId, seccionId, cicloId })
-    res.json(compostera)
-  })
-
-  app.get('/boletas/:id/detalle-fruta', (req, res) => {
-    if (!obtenerBoletaLocal(req.params.id)) {
-      res.status(404).json({ error: 'No existe esa boleta.' })
-      return
-    }
-
-    const detalle = obtenerBoletaDetalleFrutaLocal(req.params.id)
-    if (!detalle) {
-      res.status(404).json({ error: 'Esta boleta no tiene datos de detalle de fruta.' })
-      return
-    }
-    res.json(detalle)
-  })
-
-  app.put('/boletas/:id/detalle-fruta', (req, res) => {
-    const habilitada = boletaHabilita(req.params.id, 'habilitaDetalleFruta')
-    if (habilitada === null) {
-      res.status(404).json({ error: 'No existe esa boleta.' })
-      return
-    }
-    if (!habilitada) {
-      res.status(400).json({ error: 'Este TipoMovimiento no tiene habilitada la sección DetalleFruta.' })
-      return
-    }
-
-    const body = req.body as {
-      racimosVerdes?: number
-      racimosMaduros?: number
-      racimosSobreMaduros?: number
-      racimosPasados?: number
-      pedunculoLargo?: number
-    }
-
-    const campos = [
-      body.racimosVerdes,
-      body.racimosMaduros,
-      body.racimosSobreMaduros,
-      body.racimosPasados,
-      body.pedunculoLargo,
-    ]
-    if (campos.some((v) => typeof v !== 'number' || !Number.isFinite(v))) {
-      res.status(400).json({
-        error:
-          'racimosVerdes, racimosMaduros, racimosSobreMaduros, racimosPasados y pedunculoLargo deben ser números.',
-      })
-      return
-    }
-
-    const detalle = guardarBoletaDetalleFrutaLocal(req.params.id, {
-      racimosVerdes: body.racimosVerdes!,
-      racimosMaduros: body.racimosMaduros!,
-      racimosSobreMaduros: body.racimosSobreMaduros!,
-      racimosPasados: body.racimosPasados!,
-      pedunculoLargo: body.pedunculoLargo!,
-    })
-    res.json(detalle)
-  })
-
-  // Ungated — Caracteristica es el escape hatch genérico, igual que en el
-  // backend central: no depende de ningún Habilita*.
-  app.get('/boletas/:id/caracteristicas', (req, res) => {
-    if (!obtenerBoletaLocal(req.params.id)) {
-      res.status(404).json({ error: 'No existe esa boleta.' })
-      return
-    }
-    res.json(listarBoletaCaracteristicaLocal(req.params.id))
-  })
-
-  app.post('/boletas/:id/caracteristicas', (req, res) => {
-    if (!obtenerBoletaLocal(req.params.id)) {
-      res.status(404).json({ error: 'No existe esa boleta.' })
-      return
-    }
-
-    const { caracteristicaId, cantidad } = req.body as { caracteristicaId?: string; cantidad?: number }
-    if (!caracteristicaId || typeof caracteristicaId !== 'string') {
-      res.status(400).json({ error: 'Falta caracteristicaId.' })
-      return
-    }
-    if (typeof cantidad !== 'number' || !Number.isFinite(cantidad)) {
-      res.status(400).json({ error: 'Falta cantidad, o no es un número válido.' })
-      return
-    }
-
-    const caracteristica = agregarBoletaCaracteristicaLocal(req.params.id, { caracteristicaId, cantidad })
-    res.status(201).json(caracteristica)
-  })
-
-  app.delete('/boletas/:id/caracteristicas/:caracteristicaId', (req, res) => {
-    const borrado = eliminarBoletaCaracteristicaLocal(req.params.id, req.params.caracteristicaId)
-    if (!borrado) {
-      res.status(404).json({ error: 'No existe esa característica.' })
-      return
-    }
-    res.status(204).end()
-  })
+  // Las rutas de extensión legacy (calidad / compostera / detalle-fruta /
+  // caracteristicas) se eliminaron junto con sus tablas SQLite en el reshape D1:
+  // ese contexto ahora son valores configurables (BoletaValorCampo). Cualquier
+  // verbo sobre esos paths cae al 404 genérico de Express. Las rutas locales de
+  // /formulario y el POST /boletas con `valores` entran en el slice D4.
 
   // Diagnóstico/lectura del Outbox (Parte 1 del patrón Outbox — ver el
   // comentario junto al CREATE TABLE OutboxLocal en db.ts): permite observar

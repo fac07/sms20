@@ -66,6 +66,24 @@ cd backend && dotnet run
 
 Al arrancar en Development, `MigrateAsync()` reconstruye el esquema desde el `InitialCreate` único y el seeder siembra las 8 secciones estándar.
 
+### Reset del SQLite local de la báscula (reshape a boleta configurable)
+
+El SQLite local de Electron (`electron/db.ts`) también saltó al esquema EAV: la tabla `Boleta` pasó a la forma "Encabezado" (sin las FKs de rol a Maestro ni los flags `Habilita*`), se agregaron las tablas espejo de configuración (`Seccion`, `Campo`, `TipoMovimientoSeccion`, `BoletaValorCampo`) y se descartaron las tablas de extensión legacy (`BoletaCalidad`, `BoletaDetalleFruta`, `BoletaCompostera`, `BoletaCaracteristica`).
+
+Al arrancar, `getDb()` detecta la forma vieja de `Boleta` y hace el reshape una sola vez (bump de `EsquemaLocalVersion` a `2`), así que **para la mayoría no hay que hacer nada**. Ese reshape **pierde las boletas locales en tránsito** — costo aceptado del rollout: todavía no hay datos de producción en básculas.
+
+Si el archivo quedó en un estado raro (o querés partir de cero), cerrá la app y borrá el `.sqlite`:
+
+```bash
+# macOS (dev; el appName empaquetado es "SMS 2.0")
+rm -f ~/Library/Application\ Support/frontend/bascula.sqlite*
+
+# Windows (dev)
+del "%APPDATA%\frontend\bascula.sqlite*"
+```
+
+`app.getPath('userData')` resuelve a `~/Library/Application Support/<appName>` en macOS y `%APPDATA%\<appName>` en Windows; en dev el `appName` es `frontend`. Al volver a arrancar, `getDb()` recrea el esquema completo vacío.
+
 ## Correr cada parte
 
 ```bash
