@@ -188,7 +188,8 @@
           </ng-template>
         </nz-tab>
 
-        @if (tm.habilitaCalidad) {
+        <!-- TODO(slice C): motor configurable — tabs de sección gated. Gut en PR4. -->
+        @if (false) {
           <nz-tab nzTitle="Calidad">
             <ng-template nz-tab>
               <form nz-form [formGroup]="formCalidadCreacion" nzLayout="vertical" class="form-seccion tab-contenido">
@@ -235,7 +236,7 @@
           </nz-tab>
         }
 
-        @if (tm.habilitaDetalleFruta) {
+        @if (false) {
           <nz-tab nzTitle="Detalle de fruta">
             <ng-template nz-tab>
               <form
@@ -281,7 +282,7 @@
           </nz-tab>
         }
 
-        @if (tm.habilitaCompostera) {
+        @if (false) {
           <nz-tab nzTitle="Compostera">
             <ng-template nz-tab>
               <form

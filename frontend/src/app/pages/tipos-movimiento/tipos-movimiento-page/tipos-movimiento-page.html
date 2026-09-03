@@ -54,7 +54,6 @@
       <tr>
         <th>Tipo de movimiento</th>
         <th>Dirección</th>
-        <th>Secciones habilitadas</th>
         <th nzAlign="center">D365</th>
         <th>Estado</th>
         <th></th>
@@ -84,14 +83,15 @@
               {{ tipo.direccion }}
             </nz-tag>
           </td>
-          <td>
-            @for (label of seccionesHabilitadas(tipo); track label) {
-              <nz-tag [nzColor]="'purple'" [nzBordered]="false">{{ label }}</nz-tag>
-            }
-          </td>
           <td nzAlign="center">
-            @if (tipo.integracionD365) {
-              <span nz-icon nzType="api" nz-tooltip nzTooltipTitle="Sincroniza a D365" style="color: #3F8F6E"></span>
+            @if (tipo.operacionD365) {
+              <span
+                nz-icon
+                nzType="api"
+                nz-tooltip
+                [nzTooltipTitle]="'Operación D365: ' + tipo.operacionD365"
+                style="color: #3F8F6E"
+              ></span>
             } @else {
               <span class="dash">—</span>
             }
@@ -181,14 +181,23 @@
         </nz-form-control>
       </nz-form-item>
 
-      @for (campo of camposHabilita; track campo.name) {
-        <nz-form-item class="switch-item">
-          <nz-form-label>{{ campo.label }}</nz-form-label>
-          <nz-form-control>
-            <nz-switch [formControlName]="campo.name"></nz-switch>
-          </nz-form-control>
-        </nz-form-item>
-      }
+      <nz-form-item>
+        <nz-form-label>Operación D365</nz-form-label>
+        <nz-form-control nzExtra="Dejar vacío si este tipo no genera un evento en Dynamics 365.">
+          <nz-select formControlName="operacionD365" nzAllowClear nzPlaceHolder="Sin integración">
+            @for (op of operacionesD365; track op) {
+              <nz-option [nzValue]="op" [nzLabel]="op"></nz-option>
+            }
+          </nz-select>
+        </nz-form-control>
+      </nz-form-item>
+
+      <nz-form-item class="switch-item">
+        <nz-form-label>Genera QR</nz-form-label>
+        <nz-form-control>
+          <nz-switch formControlName="generaQR"></nz-switch>
+        </nz-form-control>
+      </nz-form-item>
     </form>
   </ng-container>
 </nz-modal>

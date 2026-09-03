@@ -62,7 +62,6 @@
         <th>N° Boleta</th>
         <th>Báscula</th>
         <th>Tipo movimiento</th>
-        <th>Piloto / Transportista</th>
         <th nzAlign="right">Peso ingreso</th>
         <th nzAlign="right">Peso salida</th>
         <th nzAlign="right">Peso neto</th>
@@ -77,10 +76,6 @@
           <td class="codigo">{{ b.numeroBoleta }}</td>
           <td>{{ b.basculaCodigo }}</td>
           <td>{{ b.tipoMovimientoNombre }}</td>
-          <td>
-            <div>{{ b.pilotoCodigo }}</div>
-            <div class="dato-secundario">{{ b.transportistaCodigo }}</div>
-          </td>
           <td class="pesos">{{ b.pesoIngreso | number: '1.2-2' }}</td>
           <td class="pesos">{{ b.pesoSalida !== null ? (b.pesoSalida | number: '1.2-2') : '—' }}</td>
           <td class="pesos">{{ b.pesoNeto !== null ? (b.pesoNeto | number: '1.2-2') : '—' }}</td>
@@ -133,14 +128,6 @@
         <nz-descriptions-item nzTitle="Tipo de movimiento">{{ d.tipoMovimientoNombre }}</nz-descriptions-item>
         <nz-descriptions-item nzTitle="Estado">{{ d.estado }}</nz-descriptions-item>
         <nz-descriptions-item nzTitle="Estado de sincronización">{{ d.estadoSync }}</nz-descriptions-item>
-      </nz-descriptions>
-
-      <nz-descriptions nzTitle="Actores" [nzColumn]="2" nzBordered [nzSize]="'small'" class="seccion">
-        <nz-descriptions-item nzTitle="Piloto">{{ d.pilotoCodigo }}</nz-descriptions-item>
-        <nz-descriptions-item nzTitle="Transportista">{{ d.transportistaCodigo }}</nz-descriptions-item>
-        <nz-descriptions-item nzTitle="Equipo">{{ d.equipoCodigo }}</nz-descriptions-item>
-        <nz-descriptions-item nzTitle="Tercero">{{ d.terceroCodigo }}</nz-descriptions-item>
-        <nz-descriptions-item nzTitle="Producto">{{ d.productoCodigo }}</nz-descriptions-item>
       </nz-descriptions>
 
       <nz-descriptions nzTitle="Pesos" [nzColumn]="2" nzBordered [nzSize]="'small'" class="seccion">
