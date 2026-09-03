@@ -1,0 +1,30 @@
+{
+  "nombre": "14-validar-cierre-seccion-requerida-sin-ocurrencia",
+  "fn": "validarCierre",
+  "descripcion": "Seccion requerida con campos vigentes pero sin ninguna ocurrencia capturada: error de seccion (campoClave '(seccion)').",
+  "entrada": {
+    "tipoMovimientoId": "a000000e-0000-0000-0000-000000000001",
+    "asOf": "2026-06-01T00:00:00.000Z",
+    "boleta": {
+      "id": "b011000e-0000-0000-0000-000000000001",
+      "tipoMovimientoId": "a000000e-0000-0000-0000-000000000001",
+      "fechaHoraIngreso": "2026-06-01T00:00:00.000Z"
+    },
+    "secciones": [
+      { "id": "5ecc100e-0000-0000-0000-000000000001", "clave": "par_producto", "nombre": "Producto", "cardinalidad": "Unica", "activa": true, "orden": 1 }
+    ],
+    "campos": [
+      { "id": "ca33100e-0000-0000-0000-00000000000a", "seccionId": "5ecc100e-0000-0000-0000-000000000001", "clave": "nombre", "etiqueta": "Nombre", "tipoCampo": "Texto", "tipoCatalogoRef": null, "requerido": true, "configuracion": null, "orden": 1, "vigenteDesde": "2026-01-01T00:00:00.000Z", "vigenteHasta": null }
+    ],
+    "asignaciones": [
+      { "tipoMovimientoId": "a000000e-0000-0000-0000-000000000001", "seccionId": "5ecc100e-0000-0000-0000-000000000001", "vigenteDesde": "2026-01-01T00:00:00.000Z", "vigenteHasta": null, "requerida": true, "orden": 1 }
+    ],
+    "maestros": [],
+    "filas": []
+  },
+  "esperado": {
+    "errores": [
+      { "seccionClave": "par_producto", "campoClave": "(seccion)", "ocurrencia": 0 }
+    ]
+  }
+}

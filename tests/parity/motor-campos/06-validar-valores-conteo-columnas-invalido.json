@@ -1,0 +1,29 @@
+{
+  "nombre": "06-validar-valores-conteo-columnas-invalido",
+  "fn": "validarValores",
+  "descripcion": "Una entrada con dos columnas de valor y otra con ninguna: ambas fallan el chequeo estructural.",
+  "entrada": {
+    "tipoMovimientoId": "a0000006-0000-0000-0000-000000000001",
+    "asOf": "2026-06-01T00:00:00.000Z",
+    "secciones": [
+      { "id": "5ecc1006-0000-0000-0000-000000000001", "clave": "notas", "nombre": "Notas", "cardinalidad": "Repetible", "activa": true, "orden": 1 }
+    ],
+    "campos": [
+      { "id": "ca331006-0000-0000-0000-00000000000a", "seccionId": "5ecc1006-0000-0000-0000-000000000001", "clave": "nota", "etiqueta": "Nota", "tipoCampo": "Texto", "tipoCatalogoRef": null, "requerido": false, "configuracion": null, "orden": 1, "vigenteDesde": "2026-01-01T00:00:00.000Z", "vigenteHasta": null }
+    ],
+    "asignaciones": [
+      { "tipoMovimientoId": "a0000006-0000-0000-0000-000000000001", "seccionId": "5ecc1006-0000-0000-0000-000000000001", "vigenteDesde": "2026-01-01T00:00:00.000Z", "vigenteHasta": null, "requerida": false, "orden": 1 }
+    ],
+    "maestros": [],
+    "valores": [
+      { "campoId": "ca331006-0000-0000-0000-00000000000a", "ocurrencia": 0, "valorTexto": "x", "valorNumero": 5 },
+      { "campoId": "ca331006-0000-0000-0000-00000000000a", "ocurrencia": 1 }
+    ]
+  },
+  "esperado": {
+    "errores": [
+      { "seccionClave": "notas", "campoClave": "nota", "ocurrencia": 0 },
+      { "seccionClave": "notas", "campoClave": "nota", "ocurrencia": 1 }
+    ]
+  }
+}

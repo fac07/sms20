@@ -1,0 +1,27 @@
+{
+  "nombre": "11-validar-valores-decimal-exceso-decimales",
+  "fn": "validarValores",
+  "descripcion": "Decimal configurado con 2 decimales que recibe 1.234: la escala excede lo permitido.",
+  "entrada": {
+    "tipoMovimientoId": "a000000b-0000-0000-0000-000000000001",
+    "asOf": "2026-06-01T00:00:00.000Z",
+    "secciones": [
+      { "id": "5ecc100b-0000-0000-0000-000000000001", "clave": "medicion", "nombre": "Medicion", "cardinalidad": "Unica", "activa": true, "orden": 1 }
+    ],
+    "campos": [
+      { "id": "ca33100b-0000-0000-0000-00000000000a", "seccionId": "5ecc100b-0000-0000-0000-000000000001", "clave": "peso", "etiqueta": "Peso", "tipoCampo": "Decimal", "tipoCatalogoRef": null, "requerido": false, "configuracion": "{\"decimales\":2,\"max\":100}", "orden": 1, "vigenteDesde": "2026-01-01T00:00:00.000Z", "vigenteHasta": null }
+    ],
+    "asignaciones": [
+      { "tipoMovimientoId": "a000000b-0000-0000-0000-000000000001", "seccionId": "5ecc100b-0000-0000-0000-000000000001", "vigenteDesde": "2026-01-01T00:00:00.000Z", "vigenteHasta": null, "requerida": false, "orden": 1 }
+    ],
+    "maestros": [],
+    "valores": [
+      { "campoId": "ca33100b-0000-0000-0000-00000000000a", "ocurrencia": 0, "valorNumero": 1.234 }
+    ]
+  },
+  "esperado": {
+    "errores": [
+      { "seccionClave": "medicion", "campoClave": "peso", "ocurrencia": 0 }
+    ]
+  }
+}

@@ -23,4 +23,12 @@
     <ProjectReference Include="../../backend/SmsBackend.csproj" />
   </ItemGroup>
 
+  <!-- Vectores de paridad del motor de campos: los consumen este proyecto
+       (MotorCamposParityTests) y frontend/electron/motor-campos.spec.ts. -->
+  <ItemGroup>
+    <None Include="../parity/motor-campos/*.json"
+          Link="parity/motor-campos/%(Filename)%(Extension)"
+          CopyToOutputDirectory="PreserveNewest" />
+  </ItemGroup>
+
 </Project>

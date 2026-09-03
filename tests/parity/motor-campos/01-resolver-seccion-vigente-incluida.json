@@ -1,0 +1,23 @@
+{
+  "nombre": "01-resolver-seccion-vigente-incluida",
+  "fn": "resolverCampos",
+  "descripcion": "TipoMovimientoSeccion abierta en asOf: sus campos vigentes aparecen con SeccionRequerida tomada de Requerida.",
+  "entrada": {
+    "tipoMovimientoId": "a0000001-0000-0000-0000-000000000001",
+    "asOf": "2026-06-01T00:00:00.000Z",
+    "secciones": [
+      { "id": "5ecc1001-0000-0000-0000-000000000001", "clave": "par_calidad", "nombre": "Calidad", "cardinalidad": "Unica", "activa": true, "orden": 1 }
+    ],
+    "campos": [
+      { "id": "ca331001-0000-0000-0000-000000000001", "seccionId": "5ecc1001-0000-0000-0000-000000000001", "clave": "acidez", "etiqueta": "Acidez (%)", "tipoCampo": "Decimal", "tipoCatalogoRef": null, "requerido": false, "configuracion": null, "orden": 1, "vigenteDesde": "2026-01-01T00:00:00.000Z", "vigenteHasta": null }
+    ],
+    "asignaciones": [
+      { "tipoMovimientoId": "a0000001-0000-0000-0000-000000000001", "seccionId": "5ecc1001-0000-0000-0000-000000000001", "vigenteDesde": "2026-01-01T00:00:00.000Z", "vigenteHasta": null, "requerida": true, "orden": 1 }
+    ]
+  },
+  "esperado": {
+    "aplicables": [
+      { "campoId": "ca331001-0000-0000-0000-000000000001", "seccionClave": "par_calidad", "campoClave": "acidez", "seccionRequerida": true, "cardinalidad": "Unica" }
+    ]
+  }
+}

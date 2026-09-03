@@ -1,0 +1,27 @@
+{
+  "nombre": "13-validar-valores-campoid-fuera-de-conjunto",
+  "fn": "validarValores",
+  "descripcion": "Un campoId que no pertenece al conjunto vigente al crear la boleta se rechaza con claves '(desconocida)'/'(desconocido)'.",
+  "entrada": {
+    "tipoMovimientoId": "a000000d-0000-0000-0000-000000000001",
+    "asOf": "2026-06-01T00:00:00.000Z",
+    "secciones": [
+      { "id": "5ecc100d-0000-0000-0000-000000000001", "clave": "par_calidad", "nombre": "Calidad", "cardinalidad": "Unica", "activa": true, "orden": 1 }
+    ],
+    "campos": [
+      { "id": "ca33100d-0000-0000-0000-00000000000a", "seccionId": "5ecc100d-0000-0000-0000-000000000001", "clave": "acidez", "etiqueta": "Acidez", "tipoCampo": "Decimal", "tipoCatalogoRef": null, "requerido": false, "configuracion": null, "orden": 1, "vigenteDesde": "2026-01-01T00:00:00.000Z", "vigenteHasta": null }
+    ],
+    "asignaciones": [
+      { "tipoMovimientoId": "a000000d-0000-0000-0000-000000000001", "seccionId": "5ecc100d-0000-0000-0000-000000000001", "vigenteDesde": "2026-01-01T00:00:00.000Z", "vigenteHasta": null, "requerida": false, "orden": 1 }
+    ],
+    "maestros": [],
+    "valores": [
+      { "campoId": "dead100d-0000-0000-0000-0000000000ff", "ocurrencia": 0, "valorNumero": 1 }
+    ]
+  },
+  "esperado": {
+    "errores": [
+      { "seccionClave": "(desconocida)", "campoClave": "(desconocido)", "ocurrencia": 0 }
+    ]
+  }
+}

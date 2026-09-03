@@ -1,0 +1,34 @@
+{
+  "nombre": "15-validar-cierre-campo-requerido-sin-valor",
+  "fn": "validarCierre",
+  "descripcion": "Seccion repetible no requerida con dos ocurrencias: la ocurrencia 0 no tiene el campo requerido; la ocurrencia 1 si.",
+  "entrada": {
+    "tipoMovimientoId": "a000000f-0000-0000-0000-000000000001",
+    "asOf": "2026-06-01T00:00:00.000Z",
+    "boleta": {
+      "id": "b011000f-0000-0000-0000-000000000001",
+      "tipoMovimientoId": "a000000f-0000-0000-0000-000000000001",
+      "fechaHoraIngreso": "2026-06-01T00:00:00.000Z"
+    },
+    "secciones": [
+      { "id": "5ecc100f-0000-0000-0000-000000000001", "clave": "par_marchamos", "nombre": "Marchamos", "cardinalidad": "Repetible", "activa": true, "orden": 1 }
+    ],
+    "campos": [
+      { "id": "ca33100f-0000-0000-0000-00000000000a", "seccionId": "5ecc100f-0000-0000-0000-000000000001", "clave": "numero", "etiqueta": "Numero", "tipoCampo": "Texto", "tipoCatalogoRef": null, "requerido": true, "configuracion": null, "orden": 1, "vigenteDesde": "2026-01-01T00:00:00.000Z", "vigenteHasta": null },
+      { "id": "ca33100f-0000-0000-0000-00000000000b", "seccionId": "5ecc100f-0000-0000-0000-000000000001", "clave": "observacion", "etiqueta": "Observacion", "tipoCampo": "Texto", "tipoCatalogoRef": null, "requerido": false, "configuracion": null, "orden": 2, "vigenteDesde": "2026-01-01T00:00:00.000Z", "vigenteHasta": null }
+    ],
+    "asignaciones": [
+      { "tipoMovimientoId": "a000000f-0000-0000-0000-000000000001", "seccionId": "5ecc100f-0000-0000-0000-000000000001", "vigenteDesde": "2026-01-01T00:00:00.000Z", "vigenteHasta": null, "requerida": false, "orden": 1 }
+    ],
+    "maestros": [],
+    "filas": [
+      { "campoId": "ca33100f-0000-0000-0000-00000000000b", "ocurrencia": 0, "seccionId": "5ecc100f-0000-0000-0000-000000000001", "valorTexto": "sin numero aun" },
+      { "campoId": "ca33100f-0000-0000-0000-00000000000a", "ocurrencia": 1, "seccionId": "5ecc100f-0000-0000-0000-000000000001", "valorTexto": "M-2" }
+    ]
+  },
+  "esperado": {
+    "errores": [
+      { "seccionClave": "par_marchamos", "campoClave": "numero", "ocurrencia": 0 }
+    ]
+  }
+}

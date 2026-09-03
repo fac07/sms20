@@ -1,0 +1,24 @@
+{
+  "nombre": "03-resolver-campo-versionado-usa-vigente",
+  "fn": "resolverCampos",
+  "descripcion": "Campo clave 'acidez' con version A retirada en T1 y version B vigente desde T1: a asOf > T1 resuelve solo B.",
+  "entrada": {
+    "tipoMovimientoId": "a0000003-0000-0000-0000-000000000001",
+    "asOf": "2026-06-01T00:00:00.000Z",
+    "secciones": [
+      { "id": "5ecc1003-0000-0000-0000-000000000001", "clave": "par_calidad", "nombre": "Calidad", "cardinalidad": "Unica", "activa": true, "orden": 1 }
+    ],
+    "campos": [
+      { "id": "ca331003-0000-0000-0000-00000000000a", "seccionId": "5ecc1003-0000-0000-0000-000000000001", "clave": "acidez", "etiqueta": "Acidez v1", "tipoCampo": "Decimal", "tipoCatalogoRef": null, "requerido": false, "configuracion": null, "orden": 1, "vigenteDesde": "2026-01-01T00:00:00.000Z", "vigenteHasta": "2026-04-01T00:00:00.000Z" },
+      { "id": "ca331003-0000-0000-0000-00000000000b", "seccionId": "5ecc1003-0000-0000-0000-000000000001", "clave": "acidez", "etiqueta": "Acidez v2", "tipoCampo": "Decimal", "tipoCatalogoRef": null, "requerido": false, "configuracion": null, "orden": 1, "vigenteDesde": "2026-04-01T00:00:00.000Z", "vigenteHasta": null }
+    ],
+    "asignaciones": [
+      { "tipoMovimientoId": "a0000003-0000-0000-0000-000000000001", "seccionId": "5ecc1003-0000-0000-0000-000000000001", "vigenteDesde": "2026-01-01T00:00:00.000Z", "vigenteHasta": null, "requerida": false, "orden": 1 }
+    ]
+  },
+  "esperado": {
+    "aplicables": [
+      { "campoId": "ca331003-0000-0000-0000-00000000000b", "seccionClave": "par_calidad", "campoClave": "acidez", "seccionRequerida": false, "cardinalidad": "Unica" }
+    ]
+  }
+}
