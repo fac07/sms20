@@ -54,7 +54,7 @@
     @if (camposAplicables().length > 0) {
       <div [formGroup]="formSecciones()" class="secciones">
         @for (seccion of secciones(); track seccion.clave) {
-          <section class="seccion" [formGroupName]="seccion.clave">
+          <section class="seccion">
             <header class="seccion__header">
               <h3 class="seccion__titulo">{{ seccion.titulo }}</h3>
               @if (seccion.requerida) {
@@ -65,67 +65,114 @@
               }
             </header>
 
-            <div class="form-grid">
-              @for (campo of seccion.campos; track campo.campoId) {
-                <nz-form-item>
-                  <nz-form-label [nzRequired]="campo.requerido">{{ campo.etiqueta }}</nz-form-label>
-                  <nz-form-control>
-                    @switch (campo.tipoCampo) {
-                      @case ('Texto') {
-                        <input nz-input [formControlName]="campo.campoId" [placeholder]="campo.etiqueta" />
+            @if (seccion.cardinalidad === 'Repetible') {
+              <div [formArrayName]="seccion.clave" class="ocurrencias">
+                @for (grupo of ocurrenciasDe(seccion.clave); track $index) {
+                  <div class="ocurrencia" [formGroupName]="$index">
+                    <div class="ocurrencia__barra">
+                      <span class="ocurrencia__n">#{{ $index + 1 }}</span>
+                      <button
+                        nz-button
+                        nzType="text"
+                        nzDanger
+                        nzSize="small"
+                        [disabled]="seccion.requerida && ocurrenciasDe(seccion.clave).length <= 1"
+                        (click)="quitarOcurrencia(seccion.clave, $index)"
+                      >
+                        <span nz-icon nzType="delete"></span>
+                        Quitar
+                      </button>
+                    </div>
+                    <div class="form-grid">
+                      @for (campo of seccion.campos; track campo.campoId) {
+                        <ng-container
+                          *ngTemplateOutlet="campoField; context: { $implicit: campo }"
+                        ></ng-container>
                       }
-                      @case ('Entero') {
-                        <nz-input-number
-                          [formControlName]="campo.campoId"
-                          [nzPrecision]="0"
-                          class="control-full"
-                        ></nz-input-number>
-                      }
-                      @case ('Decimal') {
-                        <nz-input-number [formControlName]="campo.campoId" class="control-full"></nz-input-number>
-                      }
-                      @case ('Fecha') {
-                        <nz-date-picker [formControlName]="campo.campoId" class="control-full"></nz-date-picker>
-                      }
-                      @case ('FechaHora') {
-                        <nz-date-picker
-                          [formControlName]="campo.campoId"
-                          [nzShowTime]="true"
-                          class="control-full"
-                        ></nz-date-picker>
-                      }
-                      @case ('Booleano') {
-                        <label nz-checkbox [formControlName]="campo.campoId">{{ campo.etiqueta }}</label>
-                      }
-                      @case ('Lista') {
-                        <nz-select
-                          [formControlName]="campo.campoId"
-                          nzPlaceHolder="Elegí una opción"
-                          nzAllowClear
-                        >
-                          @for (opcion of opciones(campo); track opcion) {
-                            <nz-option [nzValue]="opcion" [nzLabel]="opcion"></nz-option>
-                          }
-                        </nz-select>
-                      }
-                      @case ('ReferenciaMaestro') {
-                        <nz-select
-                          [formControlName]="campo.campoId"
-                          nzPlaceHolder="Catálogo (carga en la próxima iteración)"
-                          nzAllowClear
-                          nzDisabled
-                        ></nz-select>
-                      }
-                    }
-                  </nz-form-control>
-                </nz-form-item>
-              }
-            </div>
+                    </div>
+                  </div>
+                } @empty {
+                  <p class="ocurrencias__vacio">Sin ocurrencias — usá "Agregar" para capturar una.</p>
+                }
+                <button
+                  nz-button
+                  nzType="dashed"
+                  class="btn-agregar"
+                  (click)="agregarOcurrencia(seccion.clave)"
+                >
+                  <span nz-icon nzType="plus"></span>
+                  Agregar
+                </button>
+              </div>
+            } @else {
+              <div [formGroupName]="seccion.clave" class="form-grid">
+                @for (campo of seccion.campos; track campo.campoId) {
+                  <ng-container
+                    *ngTemplateOutlet="campoField; context: { $implicit: campo }"
+                  ></ng-container>
+                }
+              </div>
+            }
           </section>
         }
       </div>
     }
   </form>
+
+  <ng-template #campoField let-campo>
+    <nz-form-item>
+      <nz-form-label [nzRequired]="campo.requerido">{{ campo.etiqueta }}</nz-form-label>
+      <nz-form-control>
+        @switch (campo.tipoCampo) {
+          @case ('Texto') {
+            <input nz-input [formControlName]="campo.campoId" [placeholder]="campo.etiqueta" />
+          }
+          @case ('Entero') {
+            <nz-input-number
+              [formControlName]="campo.campoId"
+              [nzPrecision]="0"
+              class="control-full"
+            ></nz-input-number>
+          }
+          @case ('Decimal') {
+            <nz-input-number [formControlName]="campo.campoId" class="control-full"></nz-input-number>
+          }
+          @case ('Fecha') {
+            <nz-date-picker [formControlName]="campo.campoId" class="control-full"></nz-date-picker>
+          }
+          @case ('FechaHora') {
+            <nz-date-picker
+              [formControlName]="campo.campoId"
+              [nzShowTime]="true"
+              class="control-full"
+            ></nz-date-picker>
+          }
+          @case ('Booleano') {
+            <label nz-checkbox [formControlName]="campo.campoId">{{ campo.etiqueta }}</label>
+          }
+          @case ('Lista') {
+            <nz-select [formControlName]="campo.campoId" nzPlaceHolder="Elegí una opción" nzAllowClear>
+              @for (opcion of opciones(campo); track opcion) {
+                <nz-option [nzValue]="opcion" [nzLabel]="opcion"></nz-option>
+              }
+            </nz-select>
+          }
+          @case ('ReferenciaMaestro') {
+            <nz-select
+              [formControlName]="campo.campoId"
+              nzPlaceHolder="Elegí una opción"
+              nzAllowClear
+              nzShowSearch
+            >
+              @for (maestro of opcionesMaestro(campo); track maestro.id) {
+                <nz-option [nzValue]="maestro.id" [nzLabel]="maestro.nombre"></nz-option>
+              }
+            </nz-select>
+          }
+        }
+      </nz-form-control>
+    </nz-form-item>
+  </ng-template>
 
   <button
     nz-button

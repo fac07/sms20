@@ -41,6 +41,9 @@ interface AplicableEsperado {
   campoClave: string
   seccionRequerida: boolean
   cardinalidad: string
+  orden: number
+  seccionOrden: number
+  seccionEtiqueta: string
 }
 
 interface ErrorEsperado {
@@ -92,6 +95,9 @@ describe('paridad motor-campos (vectores compartidos con MotorCampos.cs)', () =>
             campoClave: c.campoClave,
             seccionRequerida: c.seccionRequerida,
             cardinalidad: c.cardinalidad as string,
+            orden: c.orden,
+            seccionOrden: c.seccionOrden,
+            seccionEtiqueta: c.seccionEtiqueta,
           }))
           .sort((a, b) => a.campoId.localeCompare(b.campoId))
 
