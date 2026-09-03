@@ -33,7 +33,8 @@ public record TipoMovimientoSeccionDto(
     bool Requerida,
     int Orden,
     DateTime VigenteDesde,
-    DateTime? VigenteHasta);
+    DateTime? VigenteHasta,
+    DateTime FechaModificacion);
 
 /// <summary>
 /// Entrada del set deseado de secciones para un tipo de movimiento. El PUT es

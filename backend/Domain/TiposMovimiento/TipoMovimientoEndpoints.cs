@@ -111,7 +111,7 @@ public static class TipoMovimientoEndpoints
         // --- Secciones asignadas al tipo de movimiento -----------------------
 
         group.MapGet("/{id:guid}/secciones", async (
-            Guid id, SmsDbContext db, bool incluirHistoricas = false) =>
+            Guid id, SmsDbContext db, bool incluirHistoricas = false, DateTime? modificadoDesde = null) =>
         {
             if (!await db.TiposMovimiento.AnyAsync(t => t.Id == id))
             {
@@ -120,7 +120,18 @@ public static class TipoMovimientoEndpoints
 
             var query = db.TipoMovimientoSecciones.AsNoTracking()
                 .Where(x => x.TipoMovimientoId == id);
-            if (!incluirHistoricas)
+
+            if (modificadoDesde is not null)
+            {
+                // Delta-sync (mismo criterio que /api/maestros): el watermark ya
+                // es el último valor visto, así que el filtro es estrictamente
+                // mayor. Acá SIEMPRE se incluyen las asignaciones cerradas
+                // (VigenteHasta != null): una sección desasignada después del
+                // watermark tiene que llegar al caché local para que el motor
+                // offline deje de resolverla.
+                query = query.Where(x => x.FechaModificacion > modificadoDesde);
+            }
+            else if (!incluirHistoricas)
             {
                 query = query.Where(x => x.VigenteHasta == null);
             }
@@ -130,7 +141,8 @@ public static class TipoMovimientoEndpoints
                 join s in db.Secciones.AsNoTracking() on x.SeccionId equals s.Id
                 orderby x.Orden, s.Clave
                 select new TipoMovimientoSeccionDto(
-                    x.SeccionId, s.Clave, s.Nombre, x.Requerida, x.Orden, x.VigenteDesde, x.VigenteHasta))
+                    x.SeccionId, s.Clave, s.Nombre, x.Requerida, x.Orden, x.VigenteDesde, x.VigenteHasta,
+                    x.FechaModificacion))
                 .ToListAsync();
 
             return Results.Ok(filas);
@@ -208,7 +220,8 @@ public static class TipoMovimientoEndpoints
                 join s in db.Secciones.AsNoTracking() on x.SeccionId equals s.Id
                 orderby x.Orden, s.Clave
                 select new TipoMovimientoSeccionDto(
-                    x.SeccionId, s.Clave, s.Nombre, x.Requerida, x.Orden, x.VigenteDesde, x.VigenteHasta))
+                    x.SeccionId, s.Clave, s.Nombre, x.Requerida, x.Orden, x.VigenteDesde, x.VigenteHasta,
+                    x.FechaModificacion))
                 .ToListAsync();
 
             return Results.Ok(vigentes);

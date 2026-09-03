@@ -13,11 +13,13 @@ public record CampoDto(
     string? Configuracion,
     int Orden,
     DateTime VigenteDesde,
-    DateTime? VigenteHasta)
+    DateTime? VigenteHasta,
+    DateTime FechaModificacion)
 {
     public static CampoDto FromEntity(Campo c) => new(
         c.Id, c.SeccionId, c.Clave, c.Etiqueta, c.TipoCampo, c.TipoCatalogoRef,
-        c.Requerido, c.Configuracion, c.Orden, c.VigenteDesde, c.VigenteHasta);
+        c.Requerido, c.Configuracion, c.Orden, c.VigenteDesde, c.VigenteHasta,
+        c.FechaModificacion);
 }
 
 /// <summary>

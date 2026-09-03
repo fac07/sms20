@@ -9,7 +9,11 @@ public static class CampoEndpoints
     {
         var group = app.MapGroup("/api/campos").WithTags("Campos");
 
-        group.MapGet("/", async (SmsDbContext db, Guid? seccionId = null, bool incluirHistoricos = false) =>
+        group.MapGet("/", async (
+            SmsDbContext db,
+            Guid? seccionId = null,
+            bool incluirHistoricos = false,
+            DateTime? modificadoDesde = null) =>
         {
             var query = db.Campos.AsNoTracking();
 
@@ -18,7 +22,15 @@ public static class CampoEndpoints
                 query = query.Where(c => c.SeccionId == seccionId);
             }
 
-            if (!incluirHistoricos)
+            if (modificadoDesde is not null)
+            {
+                // Delta-sync (mismo criterio que /api/maestros): filtro
+                // estrictamente mayor al watermark. Los históricos (campos
+                // versionados / retirados) SIEMPRE se incluyen: la báscula
+                // necesita ver la fila cerrada para dejar de ofrecer ese CampoId.
+                query = query.Where(c => c.FechaModificacion > modificadoDesde);
+            }
+            else if (!incluirHistoricos)
             {
                 query = query.Where(c => c.VigenteHasta == null);
             }
