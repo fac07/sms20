@@ -88,6 +88,44 @@
   gap: 0 24px;
 }
 
+/* Secciones Repetible: cada ocurrencia es un bloque con barra de acciones y su
+   propia grilla de campos (ver ocurrenciasDe() / agregarOcurrencia()). */
+.ocurrencias {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.ocurrencia {
+  padding: 12px 16px;
+  background: #fafafa;
+  border: 1px solid #e8e8e8;
+  border-radius: 6px;
+}
+
+.ocurrencia__barra {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 8px;
+}
+
+.ocurrencia__n {
+  font-family: monospace;
+  font-size: 13px;
+  color: rgba(0, 0, 0, 0.45);
+}
+
+.ocurrencias__vacio {
+  margin: 0;
+  color: rgba(0, 0, 0, 0.45);
+  font-size: 13px;
+}
+
+.btn-agregar {
+  align-self: flex-start;
+}
+
 .control-full {
   width: 100%;
 }

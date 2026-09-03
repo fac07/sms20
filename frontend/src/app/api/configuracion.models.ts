@@ -86,6 +86,12 @@ export interface CampoAplicable {
   cardinalidad: Cardinalidad;
   seccionRequerida: boolean;
   configuracion: string | null;
+  // Proyecciones de Campo.Orden / Seccion.Orden / Seccion.Nombre para que el
+  // renderer ordene campos y secciones de forma determinista y muestre un
+  // encabezado de sección legible (cae a la clave titulizada si viene vacío).
+  orden: number;
+  seccionOrden: number;
+  seccionEtiqueta: string;
 }
 
 /** Error de validación por campo/ocurrencia. Espejo de backend ErrorCampo. */
