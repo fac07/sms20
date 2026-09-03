@@ -114,6 +114,16 @@
               nz-button
               nzType="text"
               nz-tooltip
+              nzTooltipTitle="Secciones asignadas"
+              (click)="abrirSecciones(tipo)"
+            >
+              <span nz-icon nzType="apartment"></span>
+              Secciones
+            </button>
+            <button
+              nz-button
+              nzType="text"
+              nz-tooltip
               nzTooltipTitle="Editar"
               (click)="abrirModalEditar(tipo)"
             >
@@ -201,3 +211,70 @@
     </form>
   </ng-container>
 </nz-modal>
+
+<nz-drawer
+  [nzVisible]="seccionesDrawerAbierto()"
+  [nzWidth]="480"
+  [nzTitle]="'Secciones — ' + (asignando()?.nombre ?? '')"
+  (nzOnClose)="cerrarSecciones()"
+>
+  <ng-container *nzDrawerContent>
+    <p class="drawer-ayuda">
+      Marcá las secciones que aplican a este tipo de movimiento. Desmarcar una
+      sección la desasigna a partir de ahora — las boletas ya creadas no cambian.
+    </p>
+
+    @if (cargandoSecciones()) {
+      <p>Cargando…</p>
+    } @else {
+      <div class="secciones-lista">
+        @for (fila of filasSeccion(); track fila.seccion.id) {
+          <div class="seccion-fila">
+            <label
+              nz-checkbox
+              [nzChecked]="fila.asignada"
+              (nzCheckedChange)="alternarSeccion(fila.seccion.id, $event)"
+            >
+              <span class="seccion-nombre">{{ fila.seccion.nombre }}</span>
+              <span class="seccion-clave">{{ fila.seccion.clave }}</span>
+            </label>
+
+            @if (fila.asignada) {
+              <div class="seccion-config">
+                <label>
+                  Orden
+                  <nz-input-number
+                    [nzMin]="0"
+                    [ngModel]="fila.orden"
+                    (ngModelChange)="cambiarOrdenSeccion(fila.seccion.id, $event)"
+                  ></nz-input-number>
+                </label>
+                <label>
+                  Requerida
+                  <nz-switch
+                    [ngModel]="fila.requerida"
+                    (ngModelChange)="cambiarRequeridaSeccion(fila.seccion.id, $event)"
+                  ></nz-switch>
+                </label>
+              </div>
+            }
+          </div>
+        } @empty {
+          <nz-empty nzNotFoundContent="No hay secciones definidas todavía."></nz-empty>
+        }
+      </div>
+    }
+
+    <div class="drawer-acciones">
+      <button nz-button (click)="cerrarSecciones()">Cancelar</button>
+      <button
+        nz-button
+        nzType="primary"
+        [nzLoading]="guardandoSecciones()"
+        (click)="guardarSecciones()"
+      >
+        Guardar
+      </button>
+    </div>
+  </ng-container>
+</nz-drawer>
