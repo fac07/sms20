@@ -1,6 +1,7 @@
 import { HttpClient } from '@angular/common/http';
 import { Injectable, inject } from '@angular/core';
 import { Observable } from 'rxjs';
+import { CampoAplicable, ValorCampoDto } from './configuracion.models';
 
 // Servidor LOCAL de Electron (127.0.0.1:4127) — no confundir con el backend
 // central (http://localhost:5094) que usan los demás servicios de src/app/api.
@@ -19,21 +20,16 @@ export type EstadoSyncBoletaLocal =
   | 'ErrorD365';
 
 // Mismos campos que BoletaLocal en frontend/electron/db.ts (camelCase) — esta
-// es la respuesta cruda del servidor local, sin nombres denormalizados como
-// tipoMovimientoNombre (a diferencia de la Boleta del backend central).
+// es la respuesta cruda del servidor local. El reshape de slice D (D1/D4) quitó
+// las 7 columnas FK de Maestro (equipoId, transportistaId, …) y los flags
+// habilita*: ese contexto ahora son valores configurables (BoletaValorCampo)
+// capturados por el renderer del motor.
 export interface BoletaLocal {
   id: string;
   numeroBoleta: string;
   tipoMovimientoId: string;
   estado: EstadoBoletaLocal;
   estadoSync: EstadoSyncBoletaLocal;
-  equipoId: string;
-  transportistaId: string;
-  pilotoId: string;
-  terceroId: string;
-  productoId: string;
-  almacenOrigenId: string | null;
-  almacenDestinoId: string | null;
   pesoIngreso: number;
   pesoSalida: number | null;
   pesoNeto: number | null;
@@ -46,14 +42,13 @@ export interface BoletaLocal {
   usuarioAnula: string | null;
   usuarioAutoriza: string | null;
   motivoAnulacion: string | null;
+  fechaHoraAnulacion: string | null;
+  preIngresoId: string | null;
   boletaReemplazoId: string | null;
   boletaOrigenId: string | null;
   basculaSalidaId: string | null;
   respuestaD365Id: string | null;
   creadaOffline: boolean;
-  habilitaCalidad: boolean;
-  habilitaDetalleFruta: boolean;
-  habilitaCompostera: boolean;
 }
 
 export interface LecturaPeso {
@@ -68,27 +63,25 @@ export interface EstadoLocal {
   dev: boolean;
 }
 
+// Estado del último sync de configuración (Seccion/Campo/TipoMovimientoSeccion).
+// `lastConfigSyncAt` es null hasta el primer sync exitoso; el indicador de
+// staleness de la pantalla lo lee sin bloquear la creación de boletas.
+export interface ConfigEstado {
+  lastConfigSyncAt: string | null;
+}
+
+// Espejo del body que espera `POST /boletas` del servidor local tras el
+// reshape D4: el encabezado estructural + `valores` capturados por el motor
+// configurable. El servidor deriva `SeccionId` de cada valor server-side.
 export interface CrearBoletaInput {
   numeroBoletaPrefijo: string;
   codigoBascula: string;
   tipoMovimientoId: string;
-  equipoId: string;
-  transportistaId: string;
-  pilotoId: string;
-  terceroId: string;
-  productoId: string;
-  almacenOrigenId: string | null;
-  almacenDestinoId: string | null;
   pesoIngreso: number;
   origenPesoIngreso: OrigenPeso;
   usuarioIngreso: string;
   creadaOffline: boolean;
-  // Slice C reemplaza estos flags por el motor configurable; el servidor local
-  // los trata como opcionales (`?? false`) y el frontend ya no los envía desde
-  // el gut de PR4. Se quitan por completo en slice D.
-  habilitaCalidad?: boolean;
-  habilitaDetalleFruta?: boolean;
-  habilitaCompostera?: boolean;
+  valores: ValorCampoDto[];
 }
 
 export interface CerrarBoletaInput {
@@ -97,66 +90,6 @@ export interface CerrarBoletaInput {
   usuarioSalida: string;
   basculaSalidaId?: string | null;
 }
-
-// Extensiones de Boleta (Calidad, DetalleFruta, Compostera, Caracteristica) —
-// mismos campos que BoletaCalidadLocal/BoletaDetalleFrutaLocal/
-// BoletaComposteraLocal/BoletaCaracteristicaLocal en frontend/electron/db.ts.
-export interface BoletaCalidadLocal {
-  id: string;
-  boletaId: string;
-  acidez: number | null;
-  luz: number | null;
-  dobi: number | null;
-  humedad: number | null;
-  temperatura: number | null;
-  numeroRevisionQA: string | null;
-}
-
-export interface GuardarBoletaCalidadInput {
-  acidez: number | null;
-  luz: number | null;
-  dobi: number | null;
-  humedad: number | null;
-  temperatura: number | null;
-  numeroRevisionQA: string | null;
-}
-
-export interface BoletaComposteraLocal {
-  id: string;
-  boletaId: string;
-  cui: string;
-  camaId: string;
-  seccionId: string;
-  cicloId: string;
-}
-
-export interface GuardarBoletaComposteraInput {
-  cui: string;
-  camaId: string;
-  seccionId: string;
-  cicloId: string;
-}
-
-export interface BoletaDetalleFrutaLocal {
-  id: string;
-  boletaId: string;
-  racimosVerdes: number;
-  racimosMaduros: number;
-  racimosSobreMaduros: number;
-  racimosPasados: number;
-  pedunculoLargo: number;
-}
-
-export type GuardarBoletaDetalleFrutaInput = Omit<BoletaDetalleFrutaLocal, 'id' | 'boletaId'>;
-
-export interface BoletaCaracteristicaLocal {
-  id: string;
-  boletaId: string;
-  caracteristicaId: string;
-  cantidad: number;
-}
-
-export type AgregarBoletaCaracteristicaInput = Omit<BoletaCaracteristicaLocal, 'id' | 'boletaId'>;
 
 // Mismos campos que MaestroLocal en frontend/electron/db.ts — snapshot local
 // del catálogo central que alimenta los combos de Pesaje sin depender de
@@ -176,9 +109,9 @@ export interface MaestroLocal {
 /**
  * Cliente del servidor local de Electron (127.0.0.1:4127) — contrapartida de
  * los servicios de esta carpeta que hablan con el backend central. Es el
- * único lugar de este screen que lee/escribe la Boleta real: la creación y
- * el cierre son 100% offline-capable contra SQLite, a diferencia de los
- * catálogos (ver pesaje-page, que sí depende de central hoy).
+ * único lugar de este screen que lee/escribe la Boleta real: el formulario,
+ * la creación y el cierre son 100% offline-capable contra SQLite, a diferencia
+ * de la consulta de solo lectura (ver boletas-page, que sí usa central).
  */
 @Injectable({ providedIn: 'root' })
 export class LocalServerService {
@@ -190,6 +123,20 @@ export class LocalServerService {
 
   obtenerPeso(): Observable<LecturaPeso> {
     return this.http.get<LecturaPeso>(`${LOCAL_SERVER_URL}/peso`);
+  }
+
+  // Campos configurables que aplican al tipo de movimiento, resueltos as-of
+  // ahora — 100% del espejo local de configuración, sin llamada a central
+  // (ver GET /tipos-movimiento/:id/formulario en local-server.ts).
+  formulario(tipoMovimientoId: string): Observable<CampoAplicable[]> {
+    return this.http.get<CampoAplicable[]>(
+      `${LOCAL_SERVER_URL}/tipos-movimiento/${tipoMovimientoId}/formulario`,
+    );
+  }
+
+  // Nunca falla: si nunca sincronizó, lastConfigSyncAt es null.
+  configEstado(): Observable<ConfigEstado> {
+    return this.http.get<ConfigEstado>(`${LOCAL_SERVER_URL}/config/estado`);
   }
 
   listarBoletasEnTransito(): Observable<BoletaLocal[]> {
@@ -204,70 +151,6 @@ export class LocalServerService {
     return this.http.post<BoletaLocal>(`${LOCAL_SERVER_URL}/boletas/${id}/cerrar`, input);
   }
 
-  // Extensiones — Calidad, DetalleFruta y Compostera son upsert 1:1 por
-  // boleta (PUT); Caracteristica es la única colección 1:N (POST/DELETE por
-  // fila).
-  obtenerCalidad(boletaId: string): Observable<BoletaCalidadLocal> {
-    return this.http.get<BoletaCalidadLocal>(`${LOCAL_SERVER_URL}/boletas/${boletaId}/calidad`);
-  }
-
-  guardarCalidad(boletaId: string, input: GuardarBoletaCalidadInput): Observable<BoletaCalidadLocal> {
-    return this.http.put<BoletaCalidadLocal>(`${LOCAL_SERVER_URL}/boletas/${boletaId}/calidad`, input);
-  }
-
-  obtenerCompostera(boletaId: string): Observable<BoletaComposteraLocal> {
-    return this.http.get<BoletaComposteraLocal>(`${LOCAL_SERVER_URL}/boletas/${boletaId}/compostera`);
-  }
-
-  guardarCompostera(
-    boletaId: string,
-    input: GuardarBoletaComposteraInput,
-  ): Observable<BoletaComposteraLocal> {
-    return this.http.put<BoletaComposteraLocal>(
-      `${LOCAL_SERVER_URL}/boletas/${boletaId}/compostera`,
-      input,
-    );
-  }
-
-  // Un 404 acá es el caso normal de "nada guardado todavía" — el caller lo
-  // maneja (ver abrirDetalle() en pesaje-page), no es responsabilidad de
-  // este service.
-  obtenerDetalleFruta(boletaId: string): Observable<BoletaDetalleFrutaLocal> {
-    return this.http.get<BoletaDetalleFrutaLocal>(
-      `${LOCAL_SERVER_URL}/boletas/${boletaId}/detalle-fruta`,
-    );
-  }
-
-  guardarDetalleFruta(
-    boletaId: string,
-    input: GuardarBoletaDetalleFrutaInput,
-  ): Observable<BoletaDetalleFrutaLocal> {
-    return this.http.put<BoletaDetalleFrutaLocal>(
-      `${LOCAL_SERVER_URL}/boletas/${boletaId}/detalle-fruta`,
-      input,
-    );
-  }
-
-  listarCaracteristicas(boletaId: string): Observable<BoletaCaracteristicaLocal[]> {
-    return this.http.get<BoletaCaracteristicaLocal[]>(
-      `${LOCAL_SERVER_URL}/boletas/${boletaId}/caracteristicas`,
-    );
-  }
-
-  agregarCaracteristica(
-    boletaId: string,
-    input: AgregarBoletaCaracteristicaInput,
-  ): Observable<BoletaCaracteristicaLocal> {
-    return this.http.post<BoletaCaracteristicaLocal>(
-      `${LOCAL_SERVER_URL}/boletas/${boletaId}/caracteristicas`,
-      input,
-    );
-  }
-
-  eliminarCaracteristica(boletaId: string, id: string): Observable<void> {
-    return this.http.delete<void>(`${LOCAL_SERVER_URL}/boletas/${boletaId}/caracteristicas/${id}`);
-  }
-
   // Maestros — read path local de los combos de Pesaje (ver GET /maestros en
   // local-server.ts: siempre Activo=1). Contrapartida offline-capable de
   // MaestrosService.listar(), que pega directo a Central.
@@ -276,11 +159,14 @@ export class LocalServerService {
     return this.http.get<MaestroLocal[]>(`${LOCAL_SERVER_URL}/maestros${params}`);
   }
 
-  aprovisionar(codigo: string): Observable<{ basculaId: string; basculaCodigo: string; maestrosDescargados: number }> {
-    return this.http.post<{ basculaId: string; basculaCodigo: string; maestrosDescargados: number }>(
-      `${LOCAL_SERVER_URL}/aprovisionamiento`,
-      { codigo },
-    );
+  aprovisionar(
+    codigo: string,
+  ): Observable<{ basculaId: string; basculaCodigo: string; maestrosDescargados: number }> {
+    return this.http.post<{
+      basculaId: string;
+      basculaCodigo: string;
+      maestrosDescargados: number;
+    }>(`${LOCAL_SERVER_URL}/aprovisionamiento`, { codigo });
   }
 
   sincronizarMaestros(): Observable<{ descargados: number }> {
