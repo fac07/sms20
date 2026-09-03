@@ -24,7 +24,7 @@ import { NzSelectModule } from 'ng-zorro-antd/select';
 import { NzTableModule } from 'ng-zorro-antd/table';
 import { NzTagModule } from 'ng-zorro-antd/tag';
 import { Observable, catchError, forkJoin, of } from 'rxjs';
-import { CampoAplicable } from '../../../api/configuracion.models';
+import { CampoAplicable, ErrorCampo } from '../../../api/configuracion.models';
 import { TipoMovimiento, TiposMovimientoService } from '../../../api/tipos-movimiento.service';
 import {
   BoletaLocal,
@@ -36,6 +36,19 @@ import {
   MaestroLocal,
 } from '../../../api/local-server.service';
 import { ControlCapturado, armarValores } from './armar-valores';
+import {
+  LineaResumen,
+  aplicarErrores,
+  construirMapaControles,
+  limpiarErroresServidor,
+} from './aplicar-errores';
+import { AntiguedadSync, calcularAntiguedadSync } from './antiguedad-sync';
+import {
+  SeccionRenderizada,
+  agruparSecciones,
+  limitesNumericos,
+  opcionesLista,
+} from './secciones';
 
 // No hay auth real todavía (SSO/Entra ID no implementado) — mismo espíritu
 // que el resto de la app: un placeholder explícito en vez de una pantalla de
@@ -44,99 +57,32 @@ const USUARIO_PLACEHOLDER = 'operador@naturaceites.com';
 
 const POLL_PESO_MS = 1500;
 
-/** Una sección agrupada del formulario, ya ordenada y con sus campos ordenados por `orden`. */
-interface SeccionRenderizada {
-  clave: string;
-  titulo: string;
-  requerida: boolean;
-  cardinalidad: 'Unica' | 'Repetible';
-  seccionOrden: number;
-  campos: CampoAplicable[];
+// Slice C3 — sobre C1/C2 agrega:
+//  - mapeo de `ErrorCampo[]` (400 al crear / 422 al cerrar) a cada control con
+//    `{ servidor: mensaje }`, alertas por sección para los errores `(seccion)`
+//    y un `nz-alert` de resumen arriba (helpers puros en `aplicar-errores.ts`).
+//  - indicador no bloqueante de antigüedad del último sync de configuración,
+//    en estilo warning cuando supera 24h (`antiguedad-sync.ts`).
+// El agrupado/orden de secciones y los helpers de `Configuracion` viven ahora
+// en `secciones.ts` (compartidos con `aplicar-errores.ts`).
+
+/** ¿El cuerpo de la respuesta de error es un `ErrorCampo[]` del motor? */
+function esErrorCampoArray(cuerpo: unknown): cuerpo is ErrorCampo[] {
+  return (
+    Array.isArray(cuerpo) &&
+    cuerpo.length > 0 &&
+    cuerpo.every(
+      (e) =>
+        typeof e === 'object' &&
+        e !== null &&
+        typeof (e as ErrorCampo).seccionClave === 'string' &&
+        typeof (e as ErrorCampo).campoClave === 'string' &&
+        typeof (e as ErrorCampo).ocurrencia === 'number' &&
+        typeof (e as ErrorCampo).mensaje === 'string',
+    )
+  );
 }
 
-/** `snake_clave` -> "Snake Clave" — fallback del encabezado cuando `seccionEtiqueta` viene vacía. */
-function titulizarClave(clave: string): string {
-  return clave
-    .split(/[_\s]+/)
-    .filter((p) => p.length > 0)
-    .map((p) => p.charAt(0).toUpperCase() + p.slice(1))
-    .join(' ');
-}
-
-/** Claves de `Configuracion` JSON case-insensitive, como el motor (`PropertyNameCaseInsensitive`). */
-function leerConfiguracion(configuracion: string | null): Record<string, unknown> {
-  if (configuracion === null || configuracion.trim() === '') return {};
-  try {
-    const crudo = JSON.parse(configuracion) as Record<string, unknown>;
-    const norm: Record<string, unknown> = {};
-    for (const clave of Object.keys(crudo)) norm[clave.toLowerCase()] = crudo[clave];
-    return norm;
-  } catch {
-    return {};
-  }
-}
-
-/** Opciones de un campo `Lista` desde su `Configuracion` JSON. */
-function opcionesLista(configuracion: string | null): string[] {
-  const valor = leerConfiguracion(configuracion)['opciones'];
-  return Array.isArray(valor)
-    ? valor.filter((o: unknown): o is string => typeof o === 'string')
-    : [];
-}
-
-/** Cotas numéricas (`min` / `max`) de un campo `Entero` / `Decimal` desde su `Configuracion`. */
-function limitesNumericos(configuracion: string | null): { min?: number; max?: number } {
-  const cfg = leerConfiguracion(configuracion);
-  const out: { min?: number; max?: number } = {};
-  if (typeof cfg['min'] === 'number') out.min = cfg['min'];
-  if (typeof cfg['max'] === 'number') out.max = cfg['max'];
-  return out;
-}
-
-/**
- * Agrupa `CampoAplicable[]` por sección y ordena de forma determinista:
- * secciones por `seccionOrden` (luego clave), campos por `orden` (luego clave).
- * El encabezado usa `seccionEtiqueta` (`Seccion.Nombre`) y cae a la clave
- * titulizada cuando viene vacía.
- */
-function agruparSecciones(campos: readonly CampoAplicable[]): SeccionRenderizada[] {
-  const porClave = new Map<string, SeccionRenderizada>();
-  for (const campo of campos) {
-    let seccion = porClave.get(campo.seccionClave);
-    if (seccion === undefined) {
-      seccion = {
-        clave: campo.seccionClave,
-        titulo: campo.seccionEtiqueta.trim() !== ''
-          ? campo.seccionEtiqueta
-          : titulizarClave(campo.seccionClave),
-        requerida: campo.seccionRequerida,
-        cardinalidad: campo.cardinalidad,
-        seccionOrden: campo.seccionOrden,
-        campos: [],
-      };
-      porClave.set(campo.seccionClave, seccion);
-    }
-    seccion.campos.push(campo);
-  }
-
-  const secciones = [...porClave.values()];
-  for (const seccion of secciones) {
-    seccion.campos.sort((a, b) => a.orden - b.orden || a.campoClave.localeCompare(b.campoClave));
-  }
-  secciones.sort((a, b) => a.seccionOrden - b.seccionOrden || a.clave.localeCompare(b.clave));
-  return secciones;
-}
-
-// Slice C2 — renderer del motor configurable sobre C1. Agrega:
-//  - secciones `Repetible` como `FormArray` de ocurrencias con "Agregar" y
-//    quitar por fila; `Unica` sigue siendo un único grupo en la ocurrencia 0.
-//  - opciones de `ReferenciaMaestro` cargadas del cache local de maestros por
-//    `TipoCatalogoRef` (batch `forkJoin`).
-//  - cotas numéricas de `Configuracion` (min/max) mapeadas a validators.
-//  - orden determinista de secciones/campos vía `Orden` / `SeccionOrden`.
-//
-// Fuera de C2 (llega en C3): mapeo de 422/400 -> control + resumen, banner de
-// staleness de config, ruta/menú y el spec dedicado de `pesaje-page`.
 @Component({
   imports: [
     CommonModule,
@@ -188,6 +134,18 @@ export class PesajePage implements OnInit, OnDestroy {
   readonly boletaCerrando = signal<BoletaLocal | null>(null);
   readonly cerrando = signal(false);
 
+  // Errores del servidor (400 al crear / 422 al cerrar) mapeados a controles:
+  // `resumenErrores` alimenta el `nz-alert` de arriba y `erroresPorSeccion` los
+  // `nz-alert` por sección. Se limpian en cada envío y tras un éxito.
+  readonly resumenErrores = signal<LineaResumen[]>([]);
+  readonly erroresPorSeccion = signal<Record<string, string[]>>({});
+
+  // Indicador de antigüedad del último sync de configuración — nunca bloquea.
+  readonly lastConfigSyncAt = signal<string | null>(null);
+  readonly antiguedadSync = computed<AntiguedadSync>(() =>
+    calcularAntiguedadSync(this.lastConfigSyncAt()),
+  );
+
   readonly basculaSinCodigo = computed(() => this.estadoLocal().basculaCodigo === null);
 
   // Control del tipo de movimiento: dispara la carga del formulario. Va aparte
@@ -220,6 +178,7 @@ export class PesajePage implements OnInit, OnDestroy {
   ngOnInit(): void {
     this.cargarCatalogos();
     this.cargarEstadoLocal();
+    this.cargarConfigEstado();
     this.cargarBoletasEnTransito();
 
     this.tipoMovimientoCtrl.valueChanges.subscribe((id) => this.cargarFormulario(id));
@@ -255,6 +214,13 @@ export class PesajePage implements OnInit, OnDestroy {
         }
         this.estadoLocal.set(estado);
       });
+  }
+
+  private cargarConfigEstado(): void {
+    this.localServer
+      .configEstado()
+      .pipe(catchError(() => of({ lastConfigSyncAt: null })))
+      .subscribe((estado) => this.lastConfigSyncAt.set(estado.lastConfigSyncAt));
   }
 
   private cargarFormulario(tipoMovimientoId: string): void {
@@ -446,6 +412,8 @@ export class PesajePage implements OnInit, OnDestroy {
 
     if (!this.puedeCrear()) return;
 
+    this.limpiarResumenErrores();
+
     const tipoMovimiento = this.tiposMovimiento().find((t) => t.id === this.tipoMovimientoCtrl.value);
     const lectura = this.lecturaPeso();
     const estado = this.estadoLocal();
@@ -468,28 +436,56 @@ export class PesajePage implements OnInit, OnDestroy {
       next: (boleta) => {
         this.message.success(`Boleta ${boleta.numeroBoleta} creada.`);
         this.guardando.set(false);
+        this.limpiarResumenErrores();
         this.resetearFormulario();
         this.cargarBoletasEnTransito();
       },
       error: (err) => {
-        // El mapeo de `ErrorCampo[]` (400) a cada control llega en C3; por ahora
-        // un mensaje genérico.
-        this.message.error(this.mensajeError(err, 'No se pudo crear la boleta.'));
+        this.manejarErrorValidacion(err, 'No se pudo crear la boleta.');
         this.guardando.set(false);
       },
     });
   }
 
-  private mensajeError(err: unknown, fallback: string): string {
+  /** `seccionClave` -> mensajes para el `nz-alert` a nivel de sección (template). */
+  mensajesDeSeccion(seccionClave: string): string[] {
+    return this.erroresPorSeccion()[seccionClave] ?? [];
+  }
+
+  private limpiarResumenErrores(): void {
+    limpiarErroresServidor(construirMapaControles(this.secciones(), this.formSecciones()));
+    this.resumenErrores.set([]);
+    this.erroresPorSeccion.set({});
+  }
+
+  /**
+   * Ruta de error de crear/cerrar: si el cuerpo es un `ErrorCampo[]`, lo mapea a
+   * los controles + alertas por sección + resumen; si no, muestra un mensaje
+   * genérico (o el `{ error }` del servidor local).
+   */
+  private manejarErrorValidacion(err: unknown, fallback: string): void {
     const cuerpo = (err as { error?: unknown })?.error;
+
+    if (esErrorCampoArray(cuerpo)) {
+      const mapa = construirMapaControles(this.secciones(), this.formSecciones());
+      limpiarErroresServidor(mapa);
+      const aplicados = aplicarErrores(cuerpo, mapa, this.camposAplicables());
+      this.resumenErrores.set(aplicados.resumen);
+      this.erroresPorSeccion.set(aplicados.porSeccion);
+      this.message.error('Hay campos con errores de validación — revisá el detalle.');
+      return;
+    }
+
+    this.resumenErrores.set([]);
+    this.erroresPorSeccion.set({});
     if (typeof cuerpo === 'object' && cuerpo !== null && 'error' in cuerpo) {
       const mensaje = (cuerpo as { error?: unknown }).error;
-      if (typeof mensaje === 'string') return mensaje;
+      if (typeof mensaje === 'string') {
+        this.message.error(mensaje);
+        return;
+      }
     }
-    if (Array.isArray(cuerpo) && cuerpo.length > 0) {
-      return 'Hay campos con errores de validación — revisá los datos capturados.';
-    }
-    return fallback;
+    this.message.error(fallback);
   }
 
   private resetearFormulario(): void {
@@ -518,6 +514,7 @@ export class PesajePage implements OnInit, OnDestroy {
       usuarioSalida: USUARIO_PLACEHOLDER,
     };
 
+    this.limpiarResumenErrores();
     this.cerrando.set(true);
     this.localServer.cerrarBoleta(boleta.id, input).subscribe({
       next: (cerrada) => {
@@ -526,11 +523,13 @@ export class PesajePage implements OnInit, OnDestroy {
         );
         this.cerrando.set(false);
         this.boletaCerrando.set(null);
+        this.limpiarResumenErrores();
         this.cargarBoletasEnTransito();
       },
       error: (err) => {
-        // 422 con `ErrorCampo[]`: el mapeo a control + resumen llega en C3.
-        this.message.error(this.mensajeError(err, 'No se pudo cerrar la boleta.'));
+        // 422 con `ErrorCampo[]`: los errores `(seccion)` de `validarCierre` se
+        // muestran en el resumen; la boleta queda `EnTransito`.
+        this.manejarErrorValidacion(err, 'No se pudo cerrar la boleta.');
         this.cerrando.set(false);
       },
     });

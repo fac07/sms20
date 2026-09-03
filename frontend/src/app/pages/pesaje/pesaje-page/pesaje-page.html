@@ -8,6 +8,34 @@
     ></nz-alert>
   }
 
+  <div class="staleness">
+    <nz-tag [nzColor]="antiguedadSync().esViejo ? 'warning' : 'default'">
+      {{ antiguedadSync().texto }}
+    </nz-tag>
+    @if (antiguedadSync().esViejo) {
+      <span class="staleness__nota">
+        La configuración puede estar desactualizada — podés crear boletas igual.
+      </span>
+    }
+  </div>
+
+  @if (resumenErrores().length > 0) {
+    <nz-alert
+      nzType="error"
+      nzShowIcon
+      class="alerta-resumen"
+      nzMessage="Hay campos con errores de validación"
+      [nzDescription]="tplResumenErrores"
+    ></nz-alert>
+    <ng-template #tplResumenErrores>
+      <ul class="resumen-errores">
+        @for (linea of resumenErrores(); track $index) {
+          <li>{{ linea.texto }}</li>
+        }
+      </ul>
+    </ng-template>
+  }
+
   <div class="peso-actual">
     <div class="peso-actual__label">Peso actual</div>
     <div class="peso-actual__valor">
@@ -64,6 +92,15 @@
                 <nz-tag nzColor="default">Repetible</nz-tag>
               }
             </header>
+
+            @for (mensaje of mensajesDeSeccion(seccion.clave); track $index) {
+              <nz-alert
+                nzType="error"
+                nzShowIcon
+                class="alerta-seccion"
+                [nzMessage]="mensaje"
+              ></nz-alert>
+            }
 
             @if (seccion.cardinalidad === 'Repetible') {
               <div [formArrayName]="seccion.clave" class="ocurrencias">
@@ -122,7 +159,18 @@
   <ng-template #campoField let-campo>
     <nz-form-item>
       <nz-form-label [nzRequired]="campo.requerido">{{ campo.etiqueta }}</nz-form-label>
-      <nz-form-control>
+      <nz-form-control [nzErrorTip]="tplErrorCampo">
+        <ng-template #tplErrorCampo let-control>
+          @if (control.hasError('servidor')) {
+            {{ control.getError('servidor') }}
+          } @else if (control.hasError('required')) {
+            Campo requerido.
+          } @else if (control.hasError('min')) {
+            Debe ser ≥ {{ control.getError('min').min }}.
+          } @else if (control.hasError('max')) {
+            Debe ser ≤ {{ control.getError('max').max }}.
+          }
+        </ng-template>
         @switch (campo.tipoCampo) {
           @case ('Texto') {
             <input nz-input [formControlName]="campo.campoId" [placeholder]="campo.etiqueta" />
