@@ -4,6 +4,108 @@ import { app } from 'electron'
 
 let db: Database.Database | null = null
 
+// Forma "Encabezado" de la Boleta local — espejo del Encabezado EAV del central
+// (backend/Domain/Boletas/Boleta.cs). Ya NO trae las 7 FKs de rol a Maestro
+// (equipo/transportista/piloto/tercero/producto/almacén origen/destino) ni los 3
+// flags Habilita* denormalizados: ese contexto de negocio ahora son valores
+// configurables (BoletaValorCampo) resueltos por sección/campo.
+//
+// Sin BasculaId a propósito: este archivo SQLite es de UNA sola báscula (una
+// instalación = una báscula física), así que la báscula de una fila local
+// siempre es "esta báscula" — es implícito. El espejo central sí tiene BasculaId
+// porque agrega boletas de todas las básculas; el Outbox de sync lo completa
+// leyendo la config local al subir la boleta.
+//
+// EstadoSync acá SIEMPRE arranca en 'Local' — hay un paso real de sync pendiente
+// (Outbox), así que 'Local' es el estado inicial honesto.
+const SQL_CREAR_BOLETA = `
+  CREATE TABLE IF NOT EXISTS Boleta (
+    Id TEXT PRIMARY KEY,
+    NumeroBoleta TEXT NOT NULL UNIQUE,
+    TipoMovimientoId TEXT NOT NULL,
+    Estado TEXT NOT NULL,
+    EstadoSync TEXT NOT NULL,
+    PesoIngreso REAL NOT NULL,
+    PesoSalida REAL,
+    PesoNeto REAL,
+    OrigenPesoIngreso TEXT NOT NULL,
+    OrigenPesoSalida TEXT,
+    FechaHoraIngreso TEXT NOT NULL,
+    FechaHoraSalida TEXT,
+    UsuarioIngreso TEXT NOT NULL,
+    UsuarioSalida TEXT,
+    UsuarioAnula TEXT,
+    UsuarioAutoriza TEXT,
+    MotivoAnulacion TEXT,
+    FechaHoraAnulacion TEXT,
+    PreIngresoId TEXT,
+    BoletaReemplazoId TEXT,
+    BoletaOrigenId TEXT,
+    BasculaSalidaId TEXT,
+    RespuestaD365Id TEXT,
+    CreadaOffline INTEGER NOT NULL
+  );
+`
+
+// Versión del esquema SQLite local. v2 = Boleta pasa de la forma vieja (FKs de
+// rol a Maestro + Habilita*) al Encabezado EAV, y las tablas de extensión legacy
+// (BoletaCalidad/DetalleFruta/Compostera/Caracteristica) se descartan.
+const ESQUEMA_LOCAL_VERSION = '2'
+
+/**
+ * Guardia de versión del esquema local (decisión de diseño D2). SQLite no
+ * permite dropear varias columnas de forma razonable y CREATE TABLE IF NOT
+ * EXISTS no toca una Boleta vieja preexistente, así que el salto al Encabezado
+ * EAV se hace recreando la tabla. NO hay datos de producción en básculas: las
+ * boletas locales en tránsito se PIERDEN — costo aceptado del rollout (ver
+ * README, "Reset del SQLite local de la báscula"). El bump de versión hace que
+ * borrar el .sqlite a mano sea opcional para la mayoría.
+ */
+function aplicarReshapeEsquemaLocal(database: Database.Database): void {
+  const fila = database
+    .prepare(`SELECT Valor FROM ConfiguracionLocal WHERE Clave = 'EsquemaLocalVersion'`)
+    .get() as { Valor: string } | undefined
+  if (fila?.Valor === ESQUEMA_LOCAL_VERSION) return
+
+  const sellarVersion = (): void => {
+    database
+      .prepare(
+        `INSERT INTO ConfiguracionLocal (Clave, Valor) VALUES ('EsquemaLocalVersion', ?)
+         ON CONFLICT(Clave) DO UPDATE SET Valor = excluded.Valor`,
+      )
+      .run(ESQUEMA_LOCAL_VERSION)
+  }
+
+  // Las instalaciones previas nunca sellaron EsquemaLocalVersion, así que no
+  // alcanza con mirar la clave: se inspecciona la forma real de la tabla Boleta.
+  // Si todavía tiene alguna columna de la forma vieja (FK de rol a Maestro o un
+  // flag Habilita*), es una DB v1 que hay que reshapear. Una DB nueva ya nació
+  // con la forma Encabezado y solo necesita que se selle la versión.
+  const columnasBoleta = database.prepare(`PRAGMA table_info(Boleta)`).all() as { name: string }[]
+  const tieneFormaVieja = columnasBoleta.some(
+    (c) => c.name === 'HabilitaCalidad' || c.name === 'EquipoId',
+  )
+
+  if (tieneFormaVieja) {
+    console.warn(
+      '[db] Migrando el esquema SQLite local a v2: se recrea Boleta con la ' +
+        'forma Encabezado (EAV) y se descartan las tablas de extensión legacy ' +
+        '(BoletaCalidad/DetalleFruta/Compostera/Caracteristica). Las boletas ' +
+        'locales EN TRÁNSITO SE PIERDEN — no hay datos de producción en básculas.',
+    )
+    database.exec(`
+      DROP TABLE IF EXISTS Boleta;
+      DROP TABLE IF EXISTS BoletaCalidad;
+      DROP TABLE IF EXISTS BoletaDetalleFruta;
+      DROP TABLE IF EXISTS BoletaCompostera;
+      DROP TABLE IF EXISTS BoletaCaracteristica;
+    `)
+    database.exec(SQL_CREAR_BOLETA)
+  }
+
+  sellarVersion()
+}
+
 // Un archivo SQLite embebido por instalación de báscula — sin servidor, sin
 // nada que configurar aparte de correr el instalador de Electron.
 export function getDb(): Database.Database {
@@ -13,9 +115,9 @@ export function getDb(): Database.Database {
   db = new Database(dbPath)
   db.pragma('journal_mode = WAL')
 
-  // Tabla mínima de arranque: identidad y aprovisionamiento de esta báscula.
-  // El resto del esquema (Maestro, Outbox, ...) se agrega cuando arranque la
-  // implementación real — esto solo prueba el patrón de acceso.
+  // Todo lo que sea puro CREATE TABLE IF NOT EXISTS vive en este bloque; el
+  // reshape de Boleta al Encabezado EAV (que SÍ necesita DROP) lo maneja
+  // aplicarReshapeEsquemaLocal() más abajo.
   db.exec(`
     CREATE TABLE IF NOT EXISTS ConfiguracionLocal (
       Clave TEXT PRIMARY KEY,
@@ -27,107 +129,99 @@ export function getDb(): Database.Database {
       Secuencial INTEGER NOT NULL DEFAULT 0
     );
 
-    -- Sin BasculaId a propósito: este archivo SQLite es de UNA sola báscula
-    -- (una instalación = una báscula física), así que la báscula de una fila
-    -- local siempre es "esta báscula" — es implícito, no hace falta guardarlo.
-    -- El espejo central (backend/Domain/Boletas) sí tiene BasculaId porque
-    -- agrega boletas de todas las básculas; cuando exista el Outbox de sync,
-    -- ese proceso completa BasculaId leyendo la config local en el momento
-    -- de subir la boleta. Nada de eso se resuelve acá todavía.
-    --
-    -- EstadoSync acá SIEMPRE arranca en 'Local' — a diferencia del endpoint
-    -- central de prueba (POST /api/boletas), que la marca directo como
-    -- SincronizadoCentral porque hoy no tiene otro origen posible. Acá sí
-    -- hay un paso real de sincronización pendiente (Outbox, todavía no
-    -- implementado), así que 'Local' es el estado inicial honesto.
-    CREATE TABLE IF NOT EXISTS Boleta (
+    ${SQL_CREAR_BOLETA}
+
+    -- Espejo local de la configuración central de secciones/campos
+    -- (backend/Domain/Configuracion + backend/Domain/Boletas/Valores).
+    -- Column-for-column con el esquema central v7: Id como TEXT (Guid verbatim),
+    -- enums y timestamps como TEXT ISO-8601. Se llenan por config-sync (todavía
+    -- no implementado, slice D2) con ?modificadoDesde=MAX(FechaModificacion) por
+    -- tabla — mismo patrón de marca de agua que Maestro, sin watermark
+    -- almacenado.
+    CREATE TABLE IF NOT EXISTS Seccion (
       Id TEXT PRIMARY KEY,
-      NumeroBoleta TEXT NOT NULL UNIQUE,
-      TipoMovimientoId TEXT NOT NULL,
-      Estado TEXT NOT NULL,
-      EstadoSync TEXT NOT NULL,
-      EquipoId TEXT NOT NULL,
-      TransportistaId TEXT NOT NULL,
-      PilotoId TEXT NOT NULL,
-      TerceroId TEXT NOT NULL,
-      ProductoId TEXT NOT NULL,
-      AlmacenOrigenId TEXT,
-      AlmacenDestinoId TEXT,
-      PesoIngreso REAL NOT NULL,
-      PesoSalida REAL,
-      PesoNeto REAL,
-      OrigenPesoIngreso TEXT NOT NULL,
-      OrigenPesoSalida TEXT,
-      FechaHoraIngreso TEXT NOT NULL,
-      FechaHoraSalida TEXT,
-      UsuarioIngreso TEXT NOT NULL,
-      UsuarioSalida TEXT,
-      UsuarioAnula TEXT,
-      UsuarioAutoriza TEXT,
-      MotivoAnulacion TEXT,
-      BoletaReemplazoId TEXT,
-      BoletaOrigenId TEXT,
-      BasculaSalidaId TEXT,
-      RespuestaD365Id TEXT,
-      CreadaOffline INTEGER NOT NULL,
-      HabilitaCalidad INTEGER NOT NULL DEFAULT 0,
-      HabilitaDetalleFruta INTEGER NOT NULL DEFAULT 0,
-      HabilitaCompostera INTEGER NOT NULL DEFAULT 0
+      Clave TEXT NOT NULL UNIQUE,
+      Nombre TEXT NOT NULL,
+      Cardinalidad TEXT NOT NULL,
+      Reportable INTEGER NOT NULL,
+      Estandar INTEGER NOT NULL,
+      Orden INTEGER NOT NULL,
+      Activa INTEGER NOT NULL,
+      FechaModificacion TEXT NOT NULL
     );
 
-    -- Extensiones de Boleta (mismo shape que backend/Domain/Boletas/Extensiones):
-    -- BoletaCalidad y BoletaCompostera son 1:1 (UNIQUE en BoletaId, igual que
-    -- el HasIndex(...).IsUnique() del central), BoletaDetalleFruta y
-    -- BoletaCaracteristica son 1:N. Sin FK declarada hacia Boleta a propósito
-    -- — igual que el resto de este archivo, SQLite acá no fuerza integridad
-    -- referencial entre tablas propias; la relación la sostiene el código.
-    CREATE TABLE IF NOT EXISTS BoletaCalidad (
+    -- Campo es versionado: una fila nueva (nuevo Id, misma Clave) reemplaza a la
+    -- anterior, a la que se le pone VigenteHasta. Por eso (SeccionId, Clave)
+    -- solo es único entre versiones vigentes — índice parcial, igual que el
+    -- filtered unique index central.
+    CREATE TABLE IF NOT EXISTS Campo (
       Id TEXT PRIMARY KEY,
-      BoletaId TEXT NOT NULL UNIQUE,
-      Acidez REAL,
-      Luz REAL,
-      DOBI REAL,
-      Humedad REAL,
-      Temperatura REAL,
-      NumeroRevisionQA TEXT
-    );
-
-    -- Reshape directo (sin ALTER TABLE) — corrección post-verificación contra
-    -- el legacy: pasa de 1:N a 1:1 (BoletaId UNIQUE, igual que BoletaCalidad/
-    -- BoletaCompostera arriba) y deja caer Sacos/Jornales/Hectareas (mal
-    -- ubicados — ver el doc comment de backend/Domain/Boletas/Extensiones/
-    -- BoletaDetalleFruta.cs). Solo hay datos descartables de desarrollo en
-    -- esta tabla hoy, así que no hace falta migrar filas existentes.
-    CREATE TABLE IF NOT EXISTS BoletaDetalleFruta (
-      Id TEXT PRIMARY KEY,
-      BoletaId TEXT NOT NULL UNIQUE,
-      RacimosVerdes INTEGER NOT NULL,
-      RacimosMaduros INTEGER NOT NULL,
-      RacimosSobreMaduros INTEGER NOT NULL,
-      RacimosPasados INTEGER NOT NULL,
-      PedunculoLargo INTEGER NOT NULL
-    );
-
-    CREATE TABLE IF NOT EXISTS BoletaCompostera (
-      Id TEXT PRIMARY KEY,
-      BoletaId TEXT NOT NULL UNIQUE,
-      CUI TEXT NOT NULL,
-      CamaId TEXT NOT NULL,
       SeccionId TEXT NOT NULL,
-      CicloId TEXT NOT NULL
+      Clave TEXT NOT NULL,
+      Etiqueta TEXT NOT NULL,
+      TipoCampo TEXT NOT NULL,
+      TipoCatalogoRef TEXT,
+      Requerido INTEGER NOT NULL,
+      Configuracion TEXT,
+      Orden INTEGER NOT NULL,
+      VigenteDesde TEXT NOT NULL,
+      VigenteHasta TEXT,
+      FechaModificacion TEXT NOT NULL
     );
 
-    -- CaracteristicaId/Cantidad reemplaza el diseño anterior de
-    -- Clave/Valor/TipoDato (escape hatch libre) por el catálogo predefinido
-    -- que confirmó el cliente contra el legacy (mas_Caracteristica_Equipo) —
-    -- cambio de forma antes de tener datos reales, no hace falta migrar
-    -- filas existentes.
-    CREATE TABLE IF NOT EXISTS BoletaCaracteristica (
-      Id TEXT PRIMARY KEY,
-      BoletaId TEXT NOT NULL,
-      CaracteristicaId TEXT NOT NULL,
-      Cantidad REAL NOT NULL
+    CREATE UNIQUE INDEX IF NOT EXISTS IX_Campo_Seccion_Clave_Vigente
+      ON Campo(SeccionId, Clave) WHERE VigenteHasta IS NULL;
+    CREATE INDEX IF NOT EXISTS IX_Campo_Seccion_Orden ON Campo(SeccionId, Orden);
+
+    -- Puente temporal TipoMovimiento↔Seccion. VigenteDesde entra a la PK (igual
+    -- que el central, que se desvió de la PK de 2 columnas del v7 §03) para que
+    -- reasignar una sección no choque con la fila cerrada. El índice parcial
+    -- garantiza una sola asignación abierta por par.
+    CREATE TABLE IF NOT EXISTS TipoMovimientoSeccion (
+      TipoMovimientoId TEXT NOT NULL,
+      SeccionId TEXT NOT NULL,
+      VigenteDesde TEXT NOT NULL,
+      VigenteHasta TEXT,
+      Requerida INTEGER NOT NULL,
+      Orden INTEGER NOT NULL,
+      FechaModificacion TEXT NOT NULL,
+      PRIMARY KEY (TipoMovimientoId, SeccionId, VigenteDesde)
     );
+
+    CREATE UNIQUE INDEX IF NOT EXISTS IX_TipoMovimientoSeccion_Vigente
+      ON TipoMovimientoSeccion(TipoMovimientoId, SeccionId) WHERE VigenteHasta IS NULL;
+
+    -- Valores capturados en una boleta (EAV tipado), espejo de
+    -- backend/Domain/Boletas/Valores/BoletaValorCampo. Exactamente una columna
+    -- Valor* poblada por fila — mismo check constraint que el central
+    -- (CK_BoletaValorCampo_UnSoloValor). ValorNumero se guarda como TEXT para no
+    -- perder precisión decimal (central: decimal(18,4)); el motor lo parsea.
+    -- SeccionId es denormalizado server-side desde Campo.SeccionId, nunca del
+    -- cliente.
+    CREATE TABLE IF NOT EXISTS BoletaValorCampo (
+      BoletaId TEXT NOT NULL,
+      CampoId TEXT NOT NULL,
+      Ocurrencia INTEGER NOT NULL,
+      SeccionId TEXT NOT NULL,
+      ValorTexto TEXT,
+      ValorNumero TEXT,
+      ValorFecha TEXT,
+      ValorBooleano INTEGER,
+      ValorMaestroId TEXT,
+      PRIMARY KEY (BoletaId, CampoId, Ocurrencia),
+      CONSTRAINT CK_BoletaValorCampo_UnSoloValor CHECK (
+        (CASE WHEN ValorTexto IS NULL THEN 0 ELSE 1 END
+         + CASE WHEN ValorNumero IS NULL THEN 0 ELSE 1 END
+         + CASE WHEN ValorFecha IS NULL THEN 0 ELSE 1 END
+         + CASE WHEN ValorBooleano IS NULL THEN 0 ELSE 1 END
+         + CASE WHEN ValorMaestroId IS NULL THEN 0 ELSE 1 END) = 1
+      )
+    );
+
+    CREATE INDEX IF NOT EXISTS IX_BoletaValorCampo_Boleta_Seccion
+      ON BoletaValorCampo(BoletaId, SeccionId);
+    CREATE INDEX IF NOT EXISTS IX_BoletaValorCampo_ValorMaestroId
+      ON BoletaValorCampo(ValorMaestroId);
 
     -- Outbox local del patrón Outbox (ver diseño, sección #sincronizacion):
     -- cada mutación de Boleta (crear/cerrar/anular) escribe acá, en la MISMA
@@ -182,32 +276,7 @@ export function getDb(): Database.Database {
     CREATE INDEX IF NOT EXISTS IX_Maestro_TipoCatalogo ON Maestro(TipoCatalogo);
   `)
 
-  // CREATE TABLE IF NOT EXISTS no toca una tabla Boleta que ya existía de una
-  // instalación previa (no cambia su esquema) — así que las 3 columnas nuevas
-  // de arriba necesitan su propio ALTER TABLE para llegar a instalaciones que
-  // ya tenían el archivo .sqlite creado. Son la versión denormalizada de
-  // TipoMovimiento.HabilitaCalidad/HabilitaDetalleFruta/HabilitaCompostera:
-  // la Pesaje screen ya tiene el TipoMovimiento completo en memoria al crear
-  // la boleta (lo necesita para el prefijo del correlativo), así que copia
-  // esos 3 flags acá mismo — la boleta "recuerda" qué secciones tiene
-  // habilitadas sin volver a consultar TipoMovimiento (que ni siquiera existe
-  // como tabla local todavía), y el gate de las rutas de abajo funciona 100%
-  // offline.
-  try {
-    db.exec('ALTER TABLE Boleta ADD COLUMN HabilitaCalidad INTEGER NOT NULL DEFAULT 0')
-  } catch {
-    /* la columna ya existe en instalaciones previas */
-  }
-  try {
-    db.exec('ALTER TABLE Boleta ADD COLUMN HabilitaDetalleFruta INTEGER NOT NULL DEFAULT 0')
-  } catch {
-    /* la columna ya existe en instalaciones previas */
-  }
-  try {
-    db.exec('ALTER TABLE Boleta ADD COLUMN HabilitaCompostera INTEGER NOT NULL DEFAULT 0')
-  } catch {
-    /* la columna ya existe en instalaciones previas */
-  }
+  aplicarReshapeEsquemaLocal(db)
 
   return db
 }
@@ -296,21 +365,15 @@ export type EstadoSyncBoletaLocal =
 
 export type OrigenPesoLocal = 'Bascula' | 'Manual'
 
-// Mismos campos que la tabla Boleta de arriba, en camelCase y sin BasculaId
-// (ver el comentario junto al CREATE TABLE: acá es implícito).
+// Encabezado de la Boleta local, en camelCase — espejo del Encabezado EAV del
+// central. Ver el comentario junto a SQL_CREAR_BOLETA para el porqué de las
+// columnas que ya no están (FKs de rol a Maestro, Habilita*, BasculaId).
 export interface BoletaLocal {
   id: string
   numeroBoleta: string
   tipoMovimientoId: string
   estado: EstadoBoletaLocal
   estadoSync: EstadoSyncBoletaLocal
-  equipoId: string
-  transportistaId: string
-  pilotoId: string
-  terceroId: string
-  productoId: string
-  almacenOrigenId: string | null
-  almacenDestinoId: string | null
   pesoIngreso: number
   pesoSalida: number | null
   pesoNeto: number | null
@@ -323,14 +386,13 @@ export interface BoletaLocal {
   usuarioAnula: string | null
   usuarioAutoriza: string | null
   motivoAnulacion: string | null
+  fechaHoraAnulacion: string | null
+  preIngresoId: string | null
   boletaReemplazoId: string | null
   boletaOrigenId: string | null
   basculaSalidaId: string | null
   respuestaD365Id: string | null
   creadaOffline: boolean
-  habilitaCalidad: boolean
-  habilitaDetalleFruta: boolean
-  habilitaCompostera: boolean
 }
 
 // Forma cruda de la fila tal como sale de better-sqlite3 (columnas
@@ -341,13 +403,6 @@ interface BoletaRow {
   TipoMovimientoId: string
   Estado: EstadoBoletaLocal
   EstadoSync: EstadoSyncBoletaLocal
-  EquipoId: string
-  TransportistaId: string
-  PilotoId: string
-  TerceroId: string
-  ProductoId: string
-  AlmacenOrigenId: string | null
-  AlmacenDestinoId: string | null
   PesoIngreso: number
   PesoSalida: number | null
   PesoNeto: number | null
@@ -360,14 +415,13 @@ interface BoletaRow {
   UsuarioAnula: string | null
   UsuarioAutoriza: string | null
   MotivoAnulacion: string | null
+  FechaHoraAnulacion: string | null
+  PreIngresoId: string | null
   BoletaReemplazoId: string | null
   BoletaOrigenId: string | null
   BasculaSalidaId: string | null
   RespuestaD365Id: string | null
   CreadaOffline: number
-  HabilitaCalidad: number
-  HabilitaDetalleFruta: number
-  HabilitaCompostera: number
 }
 
 function filaABoletaLocal(row: BoletaRow): BoletaLocal {
@@ -377,13 +431,6 @@ function filaABoletaLocal(row: BoletaRow): BoletaLocal {
     tipoMovimientoId: row.TipoMovimientoId,
     estado: row.Estado,
     estadoSync: row.EstadoSync,
-    equipoId: row.EquipoId,
-    transportistaId: row.TransportistaId,
-    pilotoId: row.PilotoId,
-    terceroId: row.TerceroId,
-    productoId: row.ProductoId,
-    almacenOrigenId: row.AlmacenOrigenId,
-    almacenDestinoId: row.AlmacenDestinoId,
     pesoIngreso: row.PesoIngreso,
     pesoSalida: row.PesoSalida,
     pesoNeto: row.PesoNeto,
@@ -396,14 +443,13 @@ function filaABoletaLocal(row: BoletaRow): BoletaLocal {
     usuarioAnula: row.UsuarioAnula,
     usuarioAutoriza: row.UsuarioAutoriza,
     motivoAnulacion: row.MotivoAnulacion,
+    fechaHoraAnulacion: row.FechaHoraAnulacion,
+    preIngresoId: row.PreIngresoId,
     boletaReemplazoId: row.BoletaReemplazoId,
     boletaOrigenId: row.BoletaOrigenId,
     basculaSalidaId: row.BasculaSalidaId,
     respuestaD365Id: row.RespuestaD365Id,
     creadaOffline: Boolean(row.CreadaOffline),
-    habilitaCalidad: Boolean(row.HabilitaCalidad),
-    habilitaDetalleFruta: Boolean(row.HabilitaDetalleFruta),
-    habilitaCompostera: Boolean(row.HabilitaCompostera),
   }
 }
 
@@ -572,6 +618,8 @@ export function crearBoletaLocal(
     | 'usuarioAnula'
     | 'usuarioAutoriza'
     | 'motivoAnulacion'
+    | 'fechaHoraAnulacion'
+    | 'preIngresoId'
     | 'boletaReemplazoId'
     | 'boletaOrigenId'
     | 'basculaSalidaId'
@@ -597,18 +645,12 @@ export function crearBoletaLocal(
       .prepare(
         `INSERT INTO Boleta (
           Id, NumeroBoleta, TipoMovimientoId, Estado, EstadoSync,
-          EquipoId, TransportistaId, PilotoId, TerceroId, ProductoId,
-          AlmacenOrigenId, AlmacenDestinoId,
           PesoIngreso, OrigenPesoIngreso,
-          FechaHoraIngreso, UsuarioIngreso, CreadaOffline,
-          HabilitaCalidad, HabilitaDetalleFruta, HabilitaCompostera
+          FechaHoraIngreso, UsuarioIngreso, CreadaOffline
         ) VALUES (
           @id, @numeroBoleta, @tipoMovimientoId, @estado, @estadoSync,
-          @equipoId, @transportistaId, @pilotoId, @terceroId, @productoId,
-          @almacenOrigenId, @almacenDestinoId,
           @pesoIngreso, @origenPesoIngreso,
-          @fechaHoraIngreso, @usuarioIngreso, @creadaOffline,
-          @habilitaCalidad, @habilitaDetalleFruta, @habilitaCompostera
+          @fechaHoraIngreso, @usuarioIngreso, @creadaOffline
         )`,
       )
       .run({
@@ -617,21 +659,11 @@ export function crearBoletaLocal(
         tipoMovimientoId: input.tipoMovimientoId,
         estado: 'EnTransito',
         estadoSync: 'Local',
-        equipoId: input.equipoId,
-        transportistaId: input.transportistaId,
-        pilotoId: input.pilotoId,
-        terceroId: input.terceroId,
-        productoId: input.productoId,
-        almacenOrigenId: input.almacenOrigenId,
-        almacenDestinoId: input.almacenDestinoId,
         pesoIngreso: input.pesoIngreso,
         origenPesoIngreso: input.origenPesoIngreso,
         fechaHoraIngreso,
         usuarioIngreso: input.usuarioIngreso,
         creadaOffline: input.creadaOffline ? 1 : 0,
-        habilitaCalidad: input.habilitaCalidad ? 1 : 0,
-        habilitaDetalleFruta: input.habilitaDetalleFruta ? 1 : 0,
-        habilitaCompostera: input.habilitaCompostera ? 1 : 0,
       })
 
     // El payload es la Boleta completa tal como queda en ese instante — si en
@@ -723,10 +755,11 @@ export function anularBoletaLocal(
           Estado = 'Anulada',
           UsuarioAnula = @usuarioAnula,
           UsuarioAutoriza = @usuarioAutoriza,
-          MotivoAnulacion = @motivoAnulacion
+          MotivoAnulacion = @motivoAnulacion,
+          FechaHoraAnulacion = @fechaHoraAnulacion
         WHERE Id = @id`,
       )
-      .run({ id, ...input })
+      .run({ id, ...input, fechaHoraAnulacion: new Date().toISOString() })
 
     // Ver el comentario en crearBoletaLocal sobre el alcance del payload.
     const payload = JSON.stringify(obtenerBoletaLocal(id))
@@ -738,271 +771,70 @@ export function anularBoletaLocal(
 }
 
 // ---------------------------------------------------------------------------
-// Extensiones de Boleta — Calidad, DetalleFruta, Compostera, Caracteristica.
-// Mismos campos que backend/Domain/Boletas/Extensiones (ver *.cs), en
-// camelCase. El gate de TipoMovimiento.Habilita* vive en local-server.ts
-// (lee Boleta.HabilitaCalidad/HabilitaDetalleFruta/HabilitaCompostera, ya
-// denormalizadas en la fila — ver el comentario junto al ALTER TABLE de
-// arriba), no acá: estas funciones solo leen/escriben, no deciden si el
-// caller tiene permiso.
+// Espejo local de la configuración central (Seccion, Campo,
+// TipoMovimientoSeccion, BoletaValorCampo). Ver los CREATE TABLE en getDb()
+// para el porqué de cada columna. Este slice (D1) solo agrega el esquema y los
+// tipos de fila; los helpers de lectura/escritura y el sync entran en D2/D3/D4.
+// Las tablas de extensión legacy (BoletaCalidad/DetalleFruta/Compostera/
+// Caracteristica) y sus helpers se eliminaron: ese contexto ahora vive como
+// BoletaValorCampo resuelto por sección/campo configurable.
 // ---------------------------------------------------------------------------
 
-export interface BoletaCalidadLocal {
-  id: string
-  boletaId: string
-  acidez: number | null
-  luz: number | null
-  dobi: number | null
-  humedad: number | null
-  temperatura: number | null
-  numeroRevisionQA: string | null
-}
-
-interface BoletaCalidadRow {
+/** Fila cruda de `Seccion` (columnas PascalCase, booleanos 0/1). */
+export interface SeccionRow {
   Id: string
-  BoletaId: string
-  Acidez: number | null
-  Luz: number | null
-  DOBI: number | null
-  Humedad: number | null
-  Temperatura: number | null
-  NumeroRevisionQA: string | null
+  Clave: string
+  Nombre: string
+  Cardinalidad: string
+  Reportable: number
+  Estandar: number
+  Orden: number
+  Activa: number
+  FechaModificacion: string
 }
 
-function filaABoletaCalidadLocal(row: BoletaCalidadRow): BoletaCalidadLocal {
-  return {
-    id: row.Id,
-    boletaId: row.BoletaId,
-    acidez: row.Acidez,
-    luz: row.Luz,
-    dobi: row.DOBI,
-    humedad: row.Humedad,
-    temperatura: row.Temperatura,
-    numeroRevisionQA: row.NumeroRevisionQA,
-  }
-}
-
-export function obtenerBoletaCalidadLocal(boletaId: string): BoletaCalidadLocal | null {
-  const row = getDb()
-    .prepare('SELECT * FROM BoletaCalidad WHERE BoletaId = ?')
-    .get(boletaId) as BoletaCalidadRow | undefined
-  return row ? filaABoletaCalidadLocal(row) : null
-}
-
-/** Upsert — a lo sumo una fila de Calidad por boleta (BoletaId UNIQUE). */
-export function guardarBoletaCalidadLocal(
-  boletaId: string,
-  input: Omit<BoletaCalidadLocal, 'id' | 'boletaId'>,
-): BoletaCalidadLocal {
-  getDb()
-    .prepare(
-      `INSERT INTO BoletaCalidad (Id, BoletaId, Acidez, Luz, DOBI, Humedad, Temperatura, NumeroRevisionQA)
-       VALUES (@id, @boletaId, @acidez, @luz, @dobi, @humedad, @temperatura, @numeroRevisionQA)
-       ON CONFLICT(BoletaId) DO UPDATE SET
-         Acidez = excluded.Acidez,
-         Luz = excluded.Luz,
-         DOBI = excluded.DOBI,
-         Humedad = excluded.Humedad,
-         Temperatura = excluded.Temperatura,
-         NumeroRevisionQA = excluded.NumeroRevisionQA`,
-    )
-    .run({
-      id: crypto.randomUUID(),
-      boletaId,
-      acidez: input.acidez,
-      luz: input.luz,
-      dobi: input.dobi,
-      humedad: input.humedad,
-      temperatura: input.temperatura,
-      numeroRevisionQA: input.numeroRevisionQA,
-    })
-
-  return obtenerBoletaCalidadLocal(boletaId)!
-}
-
-export interface BoletaComposteraLocal {
-  id: string
-  boletaId: string
-  cui: string
-  camaId: string
-  seccionId: string
-  cicloId: string
-}
-
-interface BoletaComposteraRow {
+/** Fila cruda de `Campo`. `VigenteHasta` null = versión vigente. */
+export interface CampoRow {
   Id: string
-  BoletaId: string
-  CUI: string
-  CamaId: string
   SeccionId: string
-  CicloId: string
+  Clave: string
+  Etiqueta: string
+  TipoCampo: string
+  TipoCatalogoRef: string | null
+  Requerido: number
+  Configuracion: string | null
+  Orden: number
+  VigenteDesde: string
+  VigenteHasta: string | null
+  FechaModificacion: string
 }
 
-function filaABoletaComposteraLocal(row: BoletaComposteraRow): BoletaComposteraLocal {
-  return {
-    id: row.Id,
-    boletaId: row.BoletaId,
-    cui: row.CUI,
-    camaId: row.CamaId,
-    seccionId: row.SeccionId,
-    cicloId: row.CicloId,
-  }
+/** Fila cruda de `TipoMovimientoSeccion`. PK (TipoMovimientoId, SeccionId, VigenteDesde). */
+export interface TipoMovimientoSeccionRow {
+  TipoMovimientoId: string
+  SeccionId: string
+  VigenteDesde: string
+  VigenteHasta: string | null
+  Requerida: number
+  Orden: number
+  FechaModificacion: string
 }
 
-export function obtenerBoletaComposteraLocal(boletaId: string): BoletaComposteraLocal | null {
-  const row = getDb()
-    .prepare('SELECT * FROM BoletaCompostera WHERE BoletaId = ?')
-    .get(boletaId) as BoletaComposteraRow | undefined
-  return row ? filaABoletaComposteraLocal(row) : null
-}
-
-/** Upsert — a lo sumo una fila de Compostera por boleta (BoletaId UNIQUE). */
-export function guardarBoletaComposteraLocal(
-  boletaId: string,
-  input: Omit<BoletaComposteraLocal, 'id' | 'boletaId'>,
-): BoletaComposteraLocal {
-  getDb()
-    .prepare(
-      `INSERT INTO BoletaCompostera (Id, BoletaId, CUI, CamaId, SeccionId, CicloId)
-       VALUES (@id, @boletaId, @cui, @camaId, @seccionId, @cicloId)
-       ON CONFLICT(BoletaId) DO UPDATE SET
-         CUI = excluded.CUI,
-         CamaId = excluded.CamaId,
-         SeccionId = excluded.SeccionId,
-         CicloId = excluded.CicloId`,
-    )
-    .run({
-      id: crypto.randomUUID(),
-      boletaId,
-      cui: input.cui,
-      camaId: input.camaId,
-      seccionId: input.seccionId,
-      cicloId: input.cicloId,
-    })
-
-  return obtenerBoletaComposteraLocal(boletaId)!
-}
-
-export interface BoletaDetalleFrutaLocal {
-  id: string
-  boletaId: string
-  racimosVerdes: number
-  racimosMaduros: number
-  racimosSobreMaduros: number
-  racimosPasados: number
-  pedunculoLargo: number
-}
-
-interface BoletaDetalleFrutaRow {
-  Id: string
+/**
+ * Fila cruda de `BoletaValorCampo` (EAV tipado). Exactamente una columna
+ * `Valor*` no nula por fila (check constraint). `ValorNumero` se guarda como
+ * TEXT para no perder precisión decimal.
+ */
+export interface BoletaValorCampoRow {
   BoletaId: string
-  RacimosVerdes: number
-  RacimosMaduros: number
-  RacimosSobreMaduros: number
-  RacimosPasados: number
-  PedunculoLargo: number
-}
-
-function filaABoletaDetalleFrutaLocal(row: BoletaDetalleFrutaRow): BoletaDetalleFrutaLocal {
-  return {
-    id: row.Id,
-    boletaId: row.BoletaId,
-    racimosVerdes: row.RacimosVerdes,
-    racimosMaduros: row.RacimosMaduros,
-    racimosSobreMaduros: row.RacimosSobreMaduros,
-    racimosPasados: row.RacimosPasados,
-    pedunculoLargo: row.PedunculoLargo,
-  }
-}
-
-export function obtenerBoletaDetalleFrutaLocal(boletaId: string): BoletaDetalleFrutaLocal | null {
-  const row = getDb()
-    .prepare('SELECT * FROM BoletaDetalleFruta WHERE BoletaId = ?')
-    .get(boletaId) as BoletaDetalleFrutaRow | undefined
-  return row ? filaABoletaDetalleFrutaLocal(row) : null
-}
-
-/** Upsert — a lo sumo una fila de DetalleFruta por boleta (BoletaId UNIQUE). */
-export function guardarBoletaDetalleFrutaLocal(
-  boletaId: string,
-  input: Omit<BoletaDetalleFrutaLocal, 'id' | 'boletaId'>,
-): BoletaDetalleFrutaLocal {
-  getDb()
-    .prepare(
-      `INSERT INTO BoletaDetalleFruta (
-        Id, BoletaId, RacimosVerdes, RacimosMaduros, RacimosSobreMaduros,
-        RacimosPasados, PedunculoLargo
-      ) VALUES (
-        @id, @boletaId, @racimosVerdes, @racimosMaduros, @racimosSobreMaduros,
-        @racimosPasados, @pedunculoLargo
-      )
-      ON CONFLICT(BoletaId) DO UPDATE SET
-        RacimosVerdes = excluded.RacimosVerdes,
-        RacimosMaduros = excluded.RacimosMaduros,
-        RacimosSobreMaduros = excluded.RacimosSobreMaduros,
-        RacimosPasados = excluded.RacimosPasados,
-        PedunculoLargo = excluded.PedunculoLargo`,
-    )
-    .run({ id: crypto.randomUUID(), boletaId, ...input })
-
-  return obtenerBoletaDetalleFrutaLocal(boletaId)!
-}
-
-export interface BoletaCaracteristicaLocal {
-  id: string
-  boletaId: string
-  caracteristicaId: string
-  cantidad: number
-}
-
-interface BoletaCaracteristicaRow {
-  Id: string
-  BoletaId: string
-  CaracteristicaId: string
-  Cantidad: number
-}
-
-function filaABoletaCaracteristicaLocal(row: BoletaCaracteristicaRow): BoletaCaracteristicaLocal {
-  return {
-    id: row.Id,
-    boletaId: row.BoletaId,
-    caracteristicaId: row.CaracteristicaId,
-    cantidad: row.Cantidad,
-  }
-}
-
-export function listarBoletaCaracteristicaLocal(boletaId: string): BoletaCaracteristicaLocal[] {
-  const rows = getDb()
-    .prepare('SELECT * FROM BoletaCaracteristica WHERE BoletaId = ?')
-    .all(boletaId) as BoletaCaracteristicaRow[]
-  return rows.map(filaABoletaCaracteristicaLocal)
-}
-
-export function agregarBoletaCaracteristicaLocal(
-  boletaId: string,
-  input: Omit<BoletaCaracteristicaLocal, 'id' | 'boletaId'>,
-): BoletaCaracteristicaLocal {
-  const id = crypto.randomUUID()
-
-  getDb()
-    .prepare(
-      `INSERT INTO BoletaCaracteristica (Id, BoletaId, CaracteristicaId, Cantidad)
-       VALUES (@id, @boletaId, @caracteristicaId, @cantidad)`,
-    )
-    .run({ id, boletaId, ...input })
-
-  const row = getDb()
-    .prepare('SELECT * FROM BoletaCaracteristica WHERE Id = ?')
-    .get(id) as BoletaCaracteristicaRow
-  return filaABoletaCaracteristicaLocal(row)
-}
-
-/** true si existía y se borró. */
-export function eliminarBoletaCaracteristicaLocal(boletaId: string, id: string): boolean {
-  const resultado = getDb()
-    .prepare('DELETE FROM BoletaCaracteristica WHERE Id = ? AND BoletaId = ?')
-    .run(id, boletaId)
-  return resultado.changes > 0
+  CampoId: string
+  Ocurrencia: number
+  SeccionId: string
+  ValorTexto: string | null
+  ValorNumero: string | null
+  ValorFecha: string | null
+  ValorBooleano: number | null
+  ValorMaestroId: string | null
 }
 
 // ---------------------------------------------------------------------------
