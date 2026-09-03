@@ -10,9 +10,13 @@ import {
   listarMaestrosLocal,
   listarOutboxLocal,
   obtenerBoletaLocal,
+  resolverCamposLocal,
   setConfig,
+  validarCierreLocal,
+  validarValoresLocal,
 } from './db'
 import type { EstadoOutboxLocal, OrigenPesoLocal } from './db'
+import type { ValorCampo } from './motor-campos'
 import { crearPesoProvider, PesoProviderSimulado } from './peso-provider'
 import type { OrigenPeso } from './peso-provider'
 import { despacharOutboxPendiente } from './outbox-dispatcher'
@@ -25,6 +29,34 @@ import { obtenerEstadoConfigSync, sincronizarConfigLocal } from './config-sync'
 const CENTRAL_API_URL = 'http://localhost:5094'
 
 let server: Server | null = null
+
+/**
+ * Normaliza el arreglo `valores` crudo del body a `ValorCampo[]` — keyed por
+ * `campoId` + `ocurrencia`, con un único slot tipado por entrada. Entradas que
+ * no son objetos con `campoId` string se descartan; la validación de tipo/config
+ * la hace después `validarValoresLocal` (motor). Un `valores` ausente → `[]`.
+ */
+function normalizarValores(crudo: unknown): ValorCampo[] {
+  if (!Array.isArray(crudo)) return []
+
+  const valores: ValorCampo[] = []
+  for (const entrada of crudo) {
+    if (typeof entrada !== 'object' || entrada === null) continue
+    const v = entrada as Record<string, unknown>
+    if (typeof v['campoId'] !== 'string') continue
+
+    valores.push({
+      campoId: v['campoId'],
+      ocurrencia: typeof v['ocurrencia'] === 'number' ? v['ocurrencia'] : 0,
+      valorTexto: typeof v['valorTexto'] === 'string' ? v['valorTexto'] : null,
+      valorNumero: typeof v['valorNumero'] === 'number' ? v['valorNumero'] : null,
+      valorFecha: typeof v['valorFecha'] === 'string' ? v['valorFecha'] : null,
+      valorBooleano: typeof v['valorBooleano'] === 'boolean' ? v['valorBooleano'] : null,
+      valorMaestroId: typeof v['valorMaestroId'] === 'string' ? v['valorMaestroId'] : null,
+    })
+  }
+  return valores
+}
 
 /**
  * Servidor HTTP local (127.0.0.1) embebido en el proceso principal de
@@ -111,6 +143,15 @@ export function startLocalServer(port: number, esDev: boolean): Server {
     })
   }
 
+  // Formulario de campos configurables — resuelto 100% contra el espejo local
+  // de configuración (Seccion/Campo/TipoMovimientoSeccion), sin ninguna llamada
+  // a central. Devuelve `CampoAplicable[]` (mismo shape camelCase que
+  // `GET /api/tipos-movimiento/:id/formulario` del central) resuelto as-of el
+  // instante actual — el renderer arma el formulario reactivo con esto.
+  app.get('/tipos-movimiento/:id/formulario', (req, res) => {
+    res.json(resolverCamposLocal(req.params.id, new Date().toISOString()))
+  })
+
   // Boletas — este es el flujo real (offline-first): la boleta nace acá,
   // en SQLite, y queda EstadoSync='Local' hasta que exista el Outbox de
   // sincronización. Compará con POST /api/boletas del backend central, que
@@ -142,6 +183,7 @@ export function startLocalServer(port: number, esDev: boolean): Server {
       origenPesoIngreso?: OrigenPesoLocal
       usuarioIngreso?: string
       creadaOffline?: boolean
+      valores?: unknown
     }
 
     if (typeof body.pesoIngreso !== 'number' || !Number.isFinite(body.pesoIngreso)) {
@@ -149,21 +191,32 @@ export function startLocalServer(port: number, esDev: boolean): Server {
       return
     }
 
-    // NOTA (D1): el Encabezado ya no lleva las FKs de rol a Maestro ni los flags
-    // Habilita*. El contrato con `valores` (validarValores + persistencia EAV)
-    // entra en el slice D4; por ahora esta ruta solo persiste el Encabezado.
+    const tipoMovimientoId = body.tipoMovimientoId ?? ''
+    const valores = normalizarValores(body.valores)
+    // asOf compartido entre validación y persistencia: se congela acá y se pasa
+    // a crearBoletaLocal para que el conjunto de campos vigente sea el mismo en
+    // ambos pasos.
+    const fechaHoraIngreso = new Date().toISOString()
+
+    // Bloqueo de creación: un `campoId` fuera del conjunto vigente as-of, o un
+    // valor que viola su tipo/config, aborta con la lista de `ErrorCampo`
+    // (arreglo pelado, igual que `Results.BadRequest(errores)` del central).
+    const errores = validarValoresLocal(tipoMovimientoId, fechaHoraIngreso, valores)
+    if (errores.length > 0) {
+      res.status(400).json(errores)
+      return
+    }
+
     const boleta = crearBoletaLocal({
       prefijo: body.numeroBoletaPrefijo ?? '',
       codigoBascula: body.codigoBascula ?? '',
-      tipoMovimientoId: body.tipoMovimientoId ?? '',
+      tipoMovimientoId,
       pesoIngreso: body.pesoIngreso,
       origenPesoIngreso: body.origenPesoIngreso ?? 'Bascula',
-      // crearBoletaLocal siempre pisa este valor con la hora real de
-      // creación — queda acá solo porque BoletaLocal no lo excluye del
-      // input (a diferencia de FechaHoraSalida, que sí se excluye).
-      fechaHoraIngreso: new Date().toISOString(),
+      fechaHoraIngreso,
       usuarioIngreso: body.usuarioIngreso ?? '',
       creadaOffline: body.creadaOffline ?? false,
+      valores,
     })
 
     res.status(201).json(boleta)
@@ -177,26 +230,44 @@ export function startLocalServer(port: number, esDev: boolean): Server {
       basculaSalidaId?: string | null
     }
 
+    const boleta = obtenerBoletaLocal(req.params.id)
+    if (!boleta) {
+      res.status(404).json({ error: 'No existe esa boleta.' })
+      return
+    }
+
+    // Máquina de estados: solo se cierra una boleta EnTransito (una ya cerrada o
+    // anulada → 409, sin cambios).
+    if (boleta.estado !== 'EnTransito') {
+      res.status(409).json({ error: 'Solo se puede cerrar una boleta en estado EnTransito.' })
+      return
+    }
+
     if (typeof pesoSalida !== 'number' || !Number.isFinite(pesoSalida)) {
       res.status(400).json({ error: 'El peso debe ser un número finito.' })
       return
     }
 
-    try {
-      const boleta = cerrarBoletaLocal(req.params.id, {
-        pesoSalida,
-        origenPesoSalida: origenPesoSalida ?? 'Bascula',
-        usuarioSalida: usuarioSalida ?? '',
-        basculaSalidaId,
-      })
-      if (!boleta) {
-        res.status(404).json({ error: 'No existe esa boleta.' })
-        return
-      }
-      res.json(boleta)
-    } catch (err) {
-      res.status(409).json({ error: (err as Error).message })
+    // Bloqueo duro de cierre (sin ruta de override): el motor valida contra el
+    // conjunto resuelto a asOf = fechaHoraIngreso. Si hay errores → 422 y la
+    // boleta se queda EnTransito.
+    const errores = validarCierreLocal({
+      id: boleta.id,
+      tipoMovimientoId: boleta.tipoMovimientoId,
+      fechaHoraIngreso: boleta.fechaHoraIngreso,
+    })
+    if (errores.length > 0) {
+      res.status(422).json(errores)
+      return
     }
+
+    const cerrada = cerrarBoletaLocal(boleta.id, {
+      pesoSalida,
+      origenPesoSalida: origenPesoSalida ?? 'Bascula',
+      usuarioSalida: usuarioSalida ?? '',
+      basculaSalidaId,
+    })
+    res.json(cerrada)
   })
 
   app.post('/boletas/:id/anular', (req, res) => {
@@ -225,9 +296,10 @@ export function startLocalServer(port: number, esDev: boolean): Server {
 
   // Las rutas de extensión legacy (calidad / compostera / detalle-fruta /
   // caracteristicas) se eliminaron junto con sus tablas SQLite en el reshape D1:
-  // ese contexto ahora son valores configurables (BoletaValorCampo). Cualquier
-  // verbo sobre esos paths cae al 404 genérico de Express. Las rutas locales de
-  // /formulario y el POST /boletas con `valores` entran en el slice D4.
+  // ese contexto ahora son valores configurables (BoletaValorCampo) capturados
+  // vía `GET /tipos-movimiento/:id/formulario` + `valores` en `POST /boletas`
+  // (slice D4). Cualquier verbo sobre esos paths legacy cae al 404 genérico de
+  // Express.
 
   // Diagnóstico/lectura del Outbox (Parte 1 del patrón Outbox — ver el
   // comentario junto al CREATE TABLE OutboxLocal en db.ts): permite observar
