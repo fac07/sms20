@@ -6,6 +6,35 @@
   margin-bottom: 16px;
 }
 
+/* Indicador de antigüedad del último sync de configuración — informativo, no
+   bloquea la creación de boletas (ver antiguedadSync()). */
+.staleness {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 16px;
+}
+
+.staleness__nota {
+  font-size: 12px;
+  color: rgba(0, 0, 0, 0.45);
+}
+
+/* Resumen de errores del servidor (400 al crear / 422 al cerrar) y las alertas
+   por sección para los errores a nivel de sección (ver aplicarErrores()). */
+.alerta-resumen {
+  margin-bottom: 16px;
+}
+
+.alerta-seccion {
+  margin-bottom: 8px;
+}
+
+.resumen-errores {
+  margin: 0;
+  padding-left: 18px;
+}
+
 /* Pantalla operativa: el peso es lo único que el operador realmente mira,
    así que va grande y de alto contraste — a diferencia de las páginas de
    catálogo, acá no alcanza con un valor más en una tabla. */
