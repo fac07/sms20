@@ -15,6 +15,7 @@ import { NzTagModule } from 'ng-zorro-antd/tag';
 import { NzTooltipModule } from 'ng-zorro-antd/tooltip';
 import { BoletaDto, BoletasService, EstadoBoleta } from '../../../api/boletas.service';
 import { ValorCampoLeidoDto } from '../../../api/configuracion.models';
+import { agruparValores } from './valores-agrupados';
 
 @Component({
   imports: [
@@ -44,6 +45,11 @@ export class BoletasPage {
   readonly cargando = signal(false);
   readonly filtroEstado = signal<EstadoBoleta | null>(null);
   readonly detalle = signal<BoletaDto | null>(null);
+
+  // Valores del detalle plegados en secciones -> ocurrencias. El backend ya
+  // entrega `valores` ordenado por Seccion.Orden, Campo.Orden, Ocurrencia; el
+  // helper solo agrupa y marca las secciones repetibles para las sub-filas.
+  readonly seccionesValores = computed(() => agruparValores(this.detalle()?.valores ?? []));
 
   readonly stats = computed(() => {
     const lista = this.boletas();

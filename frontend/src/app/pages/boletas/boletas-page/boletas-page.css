@@ -40,3 +40,58 @@
 .seccion {
   margin-top: 16px;
 }
+
+.valores__titulo {
+  margin: 0 0 8px;
+  font-size: 14px;
+  font-weight: 600;
+}
+
+.valores__seccion {
+  margin-bottom: 16px;
+}
+
+.valores__seccion-titulo {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 0 0 6px;
+  font-size: 13px;
+  font-weight: 600;
+  color: rgba(0, 0, 0, 0.75);
+}
+
+.valores__badge {
+  margin: 0;
+  font-weight: 400;
+}
+
+.valores__ocurrencia {
+  margin-bottom: 8px;
+}
+
+.valores__ocurrencia-titulo {
+  font-size: 12px;
+  color: rgba(0, 0, 0, 0.45);
+  margin-bottom: 2px;
+}
+
+.valores__tabla {
+  width: 100%;
+  border-collapse: collapse;
+}
+
+.valores__tabla th,
+.valores__tabla td {
+  border: 1px solid rgba(0, 0, 0, 0.1);
+  padding: 4px 8px;
+  font-size: 13px;
+  text-align: left;
+  vertical-align: top;
+}
+
+.valores__tabla th {
+  width: 40%;
+  font-weight: 500;
+  background: rgba(0, 0, 0, 0.02);
+}

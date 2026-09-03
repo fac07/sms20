@@ -153,35 +153,36 @@
         </nz-descriptions>
       }
 
-      @if (d.valores.length > 0) {
+      @if (seccionesValores().length > 0) {
         <div class="seccion valores">
           <h4 class="valores__titulo">Valores capturados</h4>
-          <nz-table
-            #tablaValores
-            [nzData]="d.valores"
-            [nzShowPagination]="false"
-            nzSize="small"
-            [nzBordered]="true"
-          >
-            <thead>
-              <tr>
-                <th>Sección</th>
-                <th>Campo</th>
-                <th nzAlign="center">Ocurrencia</th>
-                <th>Valor</th>
-              </tr>
-            </thead>
-            <tbody>
-              @for (v of tablaValores.data; track v.campoId + '-' + v.ocurrencia) {
-                <tr>
-                  <td>{{ v.seccionClave }}</td>
-                  <td>{{ v.etiqueta || v.campoClave }}</td>
-                  <td nzAlign="center">{{ v.ocurrencia > 0 ? v.ocurrencia : '—' }}</td>
-                  <td>{{ valorLegible(v) }}</td>
-                </tr>
+          @for (s of seccionesValores(); track s.clave) {
+            <div class="valores__seccion">
+              <h5 class="valores__seccion-titulo">
+                {{ s.titulo }}
+                @if (s.repetible) {
+                  <nz-tag class="valores__badge">{{ s.ocurrencias.length }} ocurrencias</nz-tag>
+                }
+              </h5>
+              @for (o of s.ocurrencias; track o.ocurrencia) {
+                <div class="valores__ocurrencia">
+                  @if (s.repetible) {
+                    <div class="valores__ocurrencia-titulo">Ocurrencia {{ o.ocurrencia + 1 }}</div>
+                  }
+                  <table class="valores__tabla">
+                    <tbody>
+                      @for (v of o.valores; track v.campoId) {
+                        <tr>
+                          <th scope="row">{{ v.etiqueta || v.campoClave }}</th>
+                          <td>{{ valorLegible(v) }}</td>
+                        </tr>
+                      }
+                    </tbody>
+                  </table>
+                </div>
               }
-            </tbody>
-          </nz-table>
+            </div>
+          }
         </div>
       }
     }
