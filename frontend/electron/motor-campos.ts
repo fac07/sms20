@@ -29,7 +29,9 @@ export type Cardinalidad = 'Unica' | 'Repetible'
 export interface SeccionData {
   id: string
   clave: string
+  nombre: string
   cardinalidad: Cardinalidad
+  orden: number
 }
 
 /** Una versión de `Campo` con sus mismas fechas de vigencia que el central. */
@@ -42,6 +44,7 @@ export interface CampoData {
   tipoCatalogoRef: string | null
   requerido: boolean
   configuracion: string | null
+  orden: number
   vigenteDesde: string
   vigenteHasta: string | null
 }
@@ -90,6 +93,9 @@ export interface CampoAplicable {
   cardinalidad: Cardinalidad
   seccionRequerida: boolean
   configuracion: string | null
+  orden: number
+  seccionOrden: number
+  seccionEtiqueta: string
 }
 
 /** Espejo de `ErrorCampo` (C#). */
@@ -152,6 +158,9 @@ export function resolverCampos(
         cardinalidad: seccion.cardinalidad,
         seccionRequerida: tms.requerida,
         configuracion: campo.configuracion,
+        orden: campo.orden,
+        seccionOrden: seccion.orden,
+        seccionEtiqueta: seccion.nombre,
       })
     }
   }

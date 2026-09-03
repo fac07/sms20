@@ -64,7 +64,10 @@ public sealed class MotorCamposParityTests : IAsyncLifetime
                     a.SeccionClave,
                     a.CampoClave,
                     a.SeccionRequerida,
-                    a.Cardinalidad.ToString()))
+                    a.Cardinalidad.ToString(),
+                    a.Orden,
+                    a.SeccionOrden,
+                    a.SeccionEtiqueta))
                 .OrderBy(a => a.CampoId, StringComparer.Ordinal)
                 .ToList();
 
@@ -305,7 +308,10 @@ public sealed record AplicableEsperado(
     string SeccionClave,
     string CampoClave,
     bool SeccionRequerida,
-    string Cardinalidad);
+    string Cardinalidad,
+    int Orden = 0,
+    int SeccionOrden = 0,
+    string SeccionEtiqueta = "");
 
 public sealed record ErrorEsperado(string SeccionClave, string CampoClave, int Ocurrencia);
 

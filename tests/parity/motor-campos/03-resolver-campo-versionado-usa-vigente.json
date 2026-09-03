@@ -18,7 +18,7 @@
   },
   "esperado": {
     "aplicables": [
-      { "campoId": "ca331003-0000-0000-0000-00000000000b", "seccionClave": "par_calidad", "campoClave": "acidez", "seccionRequerida": false, "cardinalidad": "Unica" }
+      { "campoId": "ca331003-0000-0000-0000-00000000000b", "seccionClave": "par_calidad", "campoClave": "acidez", "seccionRequerida": false, "cardinalidad": "Unica", "orden": 1, "seccionOrden": 1, "seccionEtiqueta": "Calidad" }
     ]
   }
 }

@@ -48,7 +48,10 @@ public sealed class MotorCampos(SmsDbContext db)
                 c.Requerido,
                 s.Cardinalidad,
                 tms.Requerida,
-                c.Configuracion);
+                c.Configuracion,
+                c.Orden,
+                s.Orden,
+                s.Nombre);
 
         return await query.ToListAsync(ct);
     }

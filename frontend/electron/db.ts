@@ -900,7 +900,9 @@ function filaASeccionData(row: SeccionRow): SeccionData {
   return {
     id: row.Id,
     clave: row.Clave,
+    nombre: row.Nombre,
     cardinalidad: row.Cardinalidad === 'Repetible' ? 'Repetible' : 'Unica',
+    orden: row.Orden,
   }
 }
 
@@ -914,6 +916,7 @@ function filaACampoData(row: CampoRow): CampoData {
     tipoCatalogoRef: row.TipoCatalogoRef,
     requerido: Boolean(row.Requerido),
     configuracion: row.Configuracion,
+    orden: row.Orden,
     vigenteDesde: row.VigenteDesde,
     vigenteHasta: row.VigenteHasta,
   }
