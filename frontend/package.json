@@ -12,7 +12,8 @@
     "build:app": "ng build && npm run electron:compile && electron-builder",
     "postinstall": "electron-rebuild -f -w better-sqlite3",
     "watch": "ng build --watch --configuration development",
-    "test": "ng test"
+    "test": "ng test",
+    "test:electron": "vitest run --config vitest.electron.config.ts"
   },
   "private": true,
   "packageManager": "npm@11.17.0",

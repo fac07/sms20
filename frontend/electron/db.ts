@@ -106,19 +106,10 @@ function aplicarReshapeEsquemaLocal(database: Database.Database): void {
   sellarVersion()
 }
 
-// Un archivo SQLite embebido por instalación de báscula — sin servidor, sin
-// nada que configurar aparte de correr el instalador de Electron.
-export function getDb(): Database.Database {
-  if (db) return db
-
-  const dbPath = path.join(app.getPath('userData'), 'bascula.sqlite')
-  db = new Database(dbPath)
-  db.pragma('journal_mode = WAL')
-
-  // Todo lo que sea puro CREATE TABLE IF NOT EXISTS vive en este bloque; el
-  // reshape de Boleta al Encabezado EAV (que SÍ necesita DROP) lo maneja
-  // aplicarReshapeEsquemaLocal() más abajo.
-  db.exec(`
+// Esquema completo de la base local — todo lo que sea puro CREATE TABLE IF NOT
+// EXISTS vive acá; el reshape de Boleta al Encabezado EAV (que SÍ necesita DROP)
+// lo maneja aplicarReshapeEsquemaLocal().
+const SQL_ESQUEMA_LOCAL = `
     CREATE TABLE IF NOT EXISTS ConfiguracionLocal (
       Clave TEXT PRIMARY KEY,
       Valor TEXT
@@ -274,9 +265,28 @@ export function getDb(): Database.Database {
     );
 
     CREATE INDEX IF NOT EXISTS IX_Maestro_TipoCatalogo ON Maestro(TipoCatalogo);
-  `)
+`
 
-  aplicarReshapeEsquemaLocal(db)
+/**
+ * Levanta el esquema local completo (idempotente) y aplica la guardia de reshape
+ * de Boleta. getDb() la usa en producción; los specs la usan para levantar el
+ * mismo esquema sobre una base `:memory:` sin depender del runtime de Electron.
+ */
+export function inicializarEsquemaLocal(database: Database.Database): void {
+  database.exec(SQL_ESQUEMA_LOCAL)
+  aplicarReshapeEsquemaLocal(database)
+}
+
+// Un archivo SQLite embebido por instalación de báscula — sin servidor, sin
+// nada que configurar aparte de correr el instalador de Electron.
+export function getDb(): Database.Database {
+  if (db) return db
+
+  const dbPath = path.join(app.getPath('userData'), 'bascula.sqlite')
+  db = new Database(dbPath)
+  db.pragma('journal_mode = WAL')
+
+  inicializarEsquemaLocal(db)
 
   return db
 }
