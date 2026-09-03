@@ -79,6 +79,7 @@ export interface CampoAplicable {
   seccionId: string;
   seccionClave: string;
   campoClave: string;
+  etiqueta: string;
   tipoCampo: TipoCampo;
   tipoCatalogoRef: TipoCatalogoRef | null;
   requerido: boolean;
