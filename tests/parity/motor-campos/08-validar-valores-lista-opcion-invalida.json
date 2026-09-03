@@ -1,0 +1,28 @@
+{
+  "nombre": "08-validar-valores-lista-opcion-invalida",
+  "fn": "validarValores",
+  "descripcion": "Lista con opciones [rojo, verde]: 'azul' no es una opcion, 'rojo' si.",
+  "entrada": {
+    "tipoMovimientoId": "a0000008-0000-0000-0000-000000000001",
+    "asOf": "2026-06-01T00:00:00.000Z",
+    "secciones": [
+      { "id": "5ecc1008-0000-0000-0000-000000000001", "clave": "clasificacion", "nombre": "Clasificacion", "cardinalidad": "Repetible", "activa": true, "orden": 1 }
+    ],
+    "campos": [
+      { "id": "ca331008-0000-0000-0000-00000000000a", "seccionId": "5ecc1008-0000-0000-0000-000000000001", "clave": "color", "etiqueta": "Color", "tipoCampo": "Lista", "tipoCatalogoRef": null, "requerido": false, "configuracion": "{\"opciones\":[\"rojo\",\"verde\"]}", "orden": 1, "vigenteDesde": "2026-01-01T00:00:00.000Z", "vigenteHasta": null }
+    ],
+    "asignaciones": [
+      { "tipoMovimientoId": "a0000008-0000-0000-0000-000000000001", "seccionId": "5ecc1008-0000-0000-0000-000000000001", "vigenteDesde": "2026-01-01T00:00:00.000Z", "vigenteHasta": null, "requerida": false, "orden": 1 }
+    ],
+    "maestros": [],
+    "valores": [
+      { "campoId": "ca331008-0000-0000-0000-00000000000a", "ocurrencia": 0, "valorTexto": "azul" },
+      { "campoId": "ca331008-0000-0000-0000-00000000000a", "ocurrencia": 1, "valorTexto": "rojo" }
+    ]
+  },
+  "esperado": {
+    "errores": [
+      { "seccionClave": "clasificacion", "campoClave": "color", "ocurrencia": 0 }
+    ]
+  }
+}

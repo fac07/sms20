@@ -1,0 +1,31 @@
+{
+  "nombre": "10-validar-valores-entero-parte-decimal-y-rango",
+  "fn": "validarValores",
+  "descripcion": "Entero con min 0 y max 10: parte decimal, sobre el maximo y bajo el minimo fallan (una ocurrencia cada uno).",
+  "entrada": {
+    "tipoMovimientoId": "a000000a-0000-0000-0000-000000000001",
+    "asOf": "2026-06-01T00:00:00.000Z",
+    "secciones": [
+      { "id": "5ecc100a-0000-0000-0000-000000000001", "clave": "conteo", "nombre": "Conteo", "cardinalidad": "Repetible", "activa": true, "orden": 1 }
+    ],
+    "campos": [
+      { "id": "ca33100a-0000-0000-0000-00000000000a", "seccionId": "5ecc100a-0000-0000-0000-000000000001", "clave": "racimos", "etiqueta": "Racimos", "tipoCampo": "Entero", "tipoCatalogoRef": null, "requerido": false, "configuracion": "{\"min\":0,\"max\":10}", "orden": 1, "vigenteDesde": "2026-01-01T00:00:00.000Z", "vigenteHasta": null }
+    ],
+    "asignaciones": [
+      { "tipoMovimientoId": "a000000a-0000-0000-0000-000000000001", "seccionId": "5ecc100a-0000-0000-0000-000000000001", "vigenteDesde": "2026-01-01T00:00:00.000Z", "vigenteHasta": null, "requerida": false, "orden": 1 }
+    ],
+    "maestros": [],
+    "valores": [
+      { "campoId": "ca33100a-0000-0000-0000-00000000000a", "ocurrencia": 0, "valorNumero": 5.5 },
+      { "campoId": "ca33100a-0000-0000-0000-00000000000a", "ocurrencia": 1, "valorNumero": 20 },
+      { "campoId": "ca33100a-0000-0000-0000-00000000000a", "ocurrencia": 2, "valorNumero": -3 }
+    ]
+  },
+  "esperado": {
+    "errores": [
+      { "seccionClave": "conteo", "campoClave": "racimos", "ocurrencia": 0 },
+      { "seccionClave": "conteo", "campoClave": "racimos", "ocurrencia": 1 },
+      { "seccionClave": "conteo", "campoClave": "racimos", "ocurrencia": 2 }
+    ]
+  }
+}

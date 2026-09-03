@@ -1,6 +1,19 @@
 import Database from 'better-sqlite3'
 import path from 'node:path'
 import { app } from 'electron'
+import {
+  resolverCampos,
+  validarCierre,
+  validarValores,
+  type AsignacionData,
+  type CampoAplicable,
+  type CampoData,
+  type ErrorCampo,
+  type FilaValor,
+  type MaestroData,
+  type SeccionData,
+  type ValorCampo,
+} from './motor-campos'
 
 let db: Database.Database | null = null
 
@@ -845,6 +858,149 @@ export interface BoletaValorCampoRow {
   ValorFecha: string | null
   ValorBooleano: number | null
   ValorMaestroId: string | null
+}
+
+// ---------------------------------------------------------------------------
+// Motor de campos local (D3) — read helpers sobre el espejo de configuración que
+// alimentan las funciones PURAS de motor-campos.ts (puerto de MotorCampos.cs).
+// Los SELECT viven acá; la lógica de reglas (join temporal, chequeos por
+// TipoCampo, reglas de cierre) vive en el módulo puro y se verifica por paridad
+// con vectores compartidos (tests/parity/motor-campos/*.json). Las rutas HTTP
+// que exponen esto (`/formulario`, POST `/boletas`, `/cerrar`) entran en D4.
+// ---------------------------------------------------------------------------
+
+function filaASeccionData(row: SeccionRow): SeccionData {
+  return {
+    id: row.Id,
+    clave: row.Clave,
+    cardinalidad: row.Cardinalidad === 'Repetible' ? 'Repetible' : 'Unica',
+  }
+}
+
+function filaACampoData(row: CampoRow): CampoData {
+  return {
+    id: row.Id,
+    seccionId: row.SeccionId,
+    clave: row.Clave,
+    etiqueta: row.Etiqueta,
+    tipoCampo: row.TipoCampo as CampoData['tipoCampo'],
+    tipoCatalogoRef: row.TipoCatalogoRef,
+    requerido: Boolean(row.Requerido),
+    configuracion: row.Configuracion,
+    vigenteDesde: row.VigenteDesde,
+    vigenteHasta: row.VigenteHasta,
+  }
+}
+
+function filaAAsignacionData(row: TipoMovimientoSeccionRow): AsignacionData {
+  return {
+    tipoMovimientoId: row.TipoMovimientoId,
+    seccionId: row.SeccionId,
+    vigenteDesde: row.VigenteDesde,
+    vigenteHasta: row.VigenteHasta,
+    requerida: Boolean(row.Requerida),
+  }
+}
+
+function filaAFilaValor(row: BoletaValorCampoRow): FilaValor {
+  return {
+    campoId: row.CampoId,
+    ocurrencia: row.Ocurrencia,
+    seccionId: row.SeccionId,
+    valorTexto: row.ValorTexto,
+    valorNumero: row.ValorNumero === null ? null : Number(row.ValorNumero),
+    valorFecha: row.ValorFecha,
+    valorBooleano: row.ValorBooleano === null ? null : row.ValorBooleano !== 0,
+    valorMaestroId: row.ValorMaestroId,
+  }
+}
+
+function maestrosParaValidacion(ids: readonly string[]): MaestroData[] {
+  const unicos = [...new Set(ids)].filter((id) => id.length > 0)
+  if (unicos.length === 0) return []
+
+  const marcadores = unicos.map(() => '?').join(', ')
+  const rows = getDb()
+    .prepare(`SELECT Id, TipoCatalogo, Activo FROM Maestro WHERE Id IN (${marcadores})`)
+    .all(...unicos) as Array<{ Id: string; TipoCatalogo: string; Activo: number }>
+
+  return rows.map((row) => ({
+    id: row.Id,
+    tipoCatalogo: row.TipoCatalogo,
+    activo: row.Activo !== 0,
+  }))
+}
+
+/**
+ * Campos vigentes para `(tipoMovimientoId, asOf)` resueltos contra el espejo
+ * local — transliteración de `MotorCampos.ResolverCamposAsync`. `asOf` es un
+ * string ISO-8601 en UTC (para `/formulario` en D4 será el instante actual;
+ * para validar/cerrar, `boleta.fechaHoraIngreso`).
+ */
+export function resolverCamposLocal(tipoMovimientoId: string, asOf: string): CampoAplicable[] {
+  const base = getDb()
+
+  const asignaciones = base
+    .prepare('SELECT * FROM TipoMovimientoSeccion WHERE TipoMovimientoId = ?')
+    .all(tipoMovimientoId) as TipoMovimientoSeccionRow[]
+
+  const secciones = base.prepare('SELECT * FROM Seccion').all() as SeccionRow[]
+
+  const campos = base
+    .prepare(
+      'SELECT * FROM Campo WHERE SeccionId IN ' +
+        '(SELECT SeccionId FROM TipoMovimientoSeccion WHERE TipoMovimientoId = ?)',
+    )
+    .all(tipoMovimientoId) as CampoRow[]
+
+  return resolverCampos(
+    tipoMovimientoId,
+    asOf,
+    secciones.map(filaASeccionData),
+    campos.map(filaACampoData),
+    asignaciones.map(filaAAsignacionData),
+  )
+}
+
+/** Filas de valores capturados de una boleta, como entrada del motor de cierre. */
+export function leerFilasValorLocal(boletaId: string): FilaValor[] {
+  const rows = getDb()
+    .prepare('SELECT * FROM BoletaValorCampo WHERE BoletaId = ?')
+    .all(boletaId) as BoletaValorCampoRow[]
+  return rows.map(filaAFilaValor)
+}
+
+/**
+ * Valida una lista de valores capturados contra el conjunto vigente local.
+ * Espejo de `MotorCampos.ValidarValoresAsync`.
+ */
+export function validarValoresLocal(
+  tipoMovimientoId: string,
+  asOf: string,
+  valores: readonly ValorCampo[],
+): ErrorCampo[] {
+  const aplicables = resolverCamposLocal(tipoMovimientoId, asOf)
+  const maestros = maestrosParaValidacion(
+    valores.map((v) => v.valorMaestroId ?? '').filter((id) => id.length > 0),
+  )
+  return validarValores(aplicables, valores, maestros)
+}
+
+/**
+ * Validación de cierre (bloqueo duro) contra el conjunto resuelto a
+ * `asOf = boleta.fechaHoraIngreso`. Espejo de `MotorCampos.ValidarCierreAsync`.
+ */
+export function validarCierreLocal(boleta: {
+  id: string
+  tipoMovimientoId: string
+  fechaHoraIngreso: string
+}): ErrorCampo[] {
+  const aplicables = resolverCamposLocal(boleta.tipoMovimientoId, boleta.fechaHoraIngreso)
+  const filas = leerFilasValorLocal(boleta.id)
+  const maestros = maestrosParaValidacion(
+    filas.map((f) => f.valorMaestroId ?? '').filter((id) => id.length > 0),
+  )
+  return validarCierre(aplicables, filas, maestros)
 }
 
 // ---------------------------------------------------------------------------

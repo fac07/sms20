@@ -1,0 +1,31 @@
+{
+  "nombre": "04-validar-valores-ok-tipos-basicos",
+  "fn": "validarValores",
+  "descripcion": "Texto dentro de maxLength, Decimal en rango y escala, Booleano y Fecha sin chequeos: sin errores.",
+  "entrada": {
+    "tipoMovimientoId": "a0000004-0000-0000-0000-000000000001",
+    "asOf": "2026-06-01T00:00:00.000Z",
+    "secciones": [
+      { "id": "5ecc1004-0000-0000-0000-000000000001", "clave": "muestra", "nombre": "Muestra", "cardinalidad": "Unica", "activa": true, "orden": 1 }
+    ],
+    "campos": [
+      { "id": "ca331004-0000-0000-0000-00000000000a", "seccionId": "5ecc1004-0000-0000-0000-000000000001", "clave": "nota", "etiqueta": "Nota", "tipoCampo": "Texto", "tipoCatalogoRef": null, "requerido": false, "configuracion": "{\"maxLength\":10}", "orden": 1, "vigenteDesde": "2026-01-01T00:00:00.000Z", "vigenteHasta": null },
+      { "id": "ca331004-0000-0000-0000-00000000000b", "seccionId": "5ecc1004-0000-0000-0000-000000000001", "clave": "peso", "etiqueta": "Peso", "tipoCampo": "Decimal", "tipoCatalogoRef": null, "requerido": false, "configuracion": "{\"max\":100,\"decimales\":2}", "orden": 2, "vigenteDesde": "2026-01-01T00:00:00.000Z", "vigenteHasta": null },
+      { "id": "ca331004-0000-0000-0000-00000000000c", "seccionId": "5ecc1004-0000-0000-0000-000000000001", "clave": "aprobado", "etiqueta": "Aprobado", "tipoCampo": "Booleano", "tipoCatalogoRef": null, "requerido": false, "configuracion": null, "orden": 3, "vigenteDesde": "2026-01-01T00:00:00.000Z", "vigenteHasta": null },
+      { "id": "ca331004-0000-0000-0000-00000000000d", "seccionId": "5ecc1004-0000-0000-0000-000000000001", "clave": "fecha_muestra", "etiqueta": "Fecha muestra", "tipoCampo": "Fecha", "tipoCatalogoRef": null, "requerido": false, "configuracion": null, "orden": 4, "vigenteDesde": "2026-01-01T00:00:00.000Z", "vigenteHasta": null }
+    ],
+    "asignaciones": [
+      { "tipoMovimientoId": "a0000004-0000-0000-0000-000000000001", "seccionId": "5ecc1004-0000-0000-0000-000000000001", "vigenteDesde": "2026-01-01T00:00:00.000Z", "vigenteHasta": null, "requerida": false, "orden": 1 }
+    ],
+    "maestros": [],
+    "valores": [
+      { "campoId": "ca331004-0000-0000-0000-00000000000a", "ocurrencia": 0, "valorTexto": "hola" },
+      { "campoId": "ca331004-0000-0000-0000-00000000000b", "ocurrencia": 0, "valorNumero": 12.5 },
+      { "campoId": "ca331004-0000-0000-0000-00000000000c", "ocurrencia": 0, "valorBooleano": true },
+      { "campoId": "ca331004-0000-0000-0000-00000000000d", "ocurrencia": 0, "valorFecha": "2026-05-01T00:00:00.000Z" }
+    ]
+  },
+  "esperado": {
+    "errores": []
+  }
+}

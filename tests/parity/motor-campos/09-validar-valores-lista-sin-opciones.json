@@ -1,0 +1,27 @@
+{
+  "nombre": "09-validar-valores-lista-sin-opciones",
+  "fn": "validarValores",
+  "descripcion": "Lista sin configuracion de opciones: cualquier valor es error de configuracion.",
+  "entrada": {
+    "tipoMovimientoId": "a0000009-0000-0000-0000-000000000001",
+    "asOf": "2026-06-01T00:00:00.000Z",
+    "secciones": [
+      { "id": "5ecc1009-0000-0000-0000-000000000001", "clave": "clasificacion", "nombre": "Clasificacion", "cardinalidad": "Unica", "activa": true, "orden": 1 }
+    ],
+    "campos": [
+      { "id": "ca331009-0000-0000-0000-00000000000a", "seccionId": "5ecc1009-0000-0000-0000-000000000001", "clave": "categoria", "etiqueta": "Categoria", "tipoCampo": "Lista", "tipoCatalogoRef": null, "requerido": false, "configuracion": null, "orden": 1, "vigenteDesde": "2026-01-01T00:00:00.000Z", "vigenteHasta": null }
+    ],
+    "asignaciones": [
+      { "tipoMovimientoId": "a0000009-0000-0000-0000-000000000001", "seccionId": "5ecc1009-0000-0000-0000-000000000001", "vigenteDesde": "2026-01-01T00:00:00.000Z", "vigenteHasta": null, "requerida": false, "orden": 1 }
+    ],
+    "maestros": [],
+    "valores": [
+      { "campoId": "ca331009-0000-0000-0000-00000000000a", "ocurrencia": 0, "valorTexto": "primera" }
+    ]
+  },
+  "esperado": {
+    "errores": [
+      { "seccionClave": "clasificacion", "campoClave": "categoria", "ocurrencia": 0 }
+    ]
+  }
+}

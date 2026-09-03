@@ -1,0 +1,36 @@
+{
+  "nombre": "12-validar-valores-referencia-maestro-invalida",
+  "fn": "validarValores",
+  "descripcion": "ReferenciaMaestro (Equipo): maestro activo del catalogo correcto pasa; inactivo, de otro catalogo e inexistente fallan.",
+  "entrada": {
+    "tipoMovimientoId": "a000000c-0000-0000-0000-000000000001",
+    "asOf": "2026-06-01T00:00:00.000Z",
+    "secciones": [
+      { "id": "5ecc100c-0000-0000-0000-000000000001", "clave": "equipos", "nombre": "Equipos", "cardinalidad": "Repetible", "activa": true, "orden": 1 }
+    ],
+    "campos": [
+      { "id": "ca33100c-0000-0000-0000-00000000000a", "seccionId": "5ecc100c-0000-0000-0000-000000000001", "clave": "equipo", "etiqueta": "Equipo", "tipoCampo": "ReferenciaMaestro", "tipoCatalogoRef": "Equipo", "requerido": false, "configuracion": null, "orden": 1, "vigenteDesde": "2026-01-01T00:00:00.000Z", "vigenteHasta": null }
+    ],
+    "asignaciones": [
+      { "tipoMovimientoId": "a000000c-0000-0000-0000-000000000001", "seccionId": "5ecc100c-0000-0000-0000-000000000001", "vigenteDesde": "2026-01-01T00:00:00.000Z", "vigenteHasta": null, "requerida": false, "orden": 1 }
+    ],
+    "maestros": [
+      { "id": "3aec100c-0000-0000-0000-00000000000a", "tipoCatalogo": "Equipo", "codigo": "EQ-OK", "nombre": "Equipo valido", "activo": true },
+      { "id": "3aec100c-0000-0000-0000-00000000000b", "tipoCatalogo": "Equipo", "codigo": "EQ-OFF", "nombre": "Equipo inactivo", "activo": false },
+      { "id": "3aec100c-0000-0000-0000-00000000000c", "tipoCatalogo": "Producto", "codigo": "PR-XX", "nombre": "Producto", "activo": true }
+    ],
+    "valores": [
+      { "campoId": "ca33100c-0000-0000-0000-00000000000a", "ocurrencia": 0, "valorMaestroId": "3aec100c-0000-0000-0000-00000000000a" },
+      { "campoId": "ca33100c-0000-0000-0000-00000000000a", "ocurrencia": 1, "valorMaestroId": "3aec100c-0000-0000-0000-00000000000b" },
+      { "campoId": "ca33100c-0000-0000-0000-00000000000a", "ocurrencia": 2, "valorMaestroId": "3aec100c-0000-0000-0000-00000000000c" },
+      { "campoId": "ca33100c-0000-0000-0000-00000000000a", "ocurrencia": 3, "valorMaestroId": "3aec100c-0000-0000-0000-0000000000ff" }
+    ]
+  },
+  "esperado": {
+    "errores": [
+      { "seccionClave": "equipos", "campoClave": "equipo", "ocurrencia": 1 },
+      { "seccionClave": "equipos", "campoClave": "equipo", "ocurrencia": 2 },
+      { "seccionClave": "equipos", "campoClave": "equipo", "ocurrencia": 3 }
+    ]
+  }
+}
