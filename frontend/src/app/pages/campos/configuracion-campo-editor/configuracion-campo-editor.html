@@ -1,0 +1,82 @@
+<form nz-form [formGroup]="form" nzLayout="vertical" class="editor">
+  @if (sinConfiguracion) {
+    @if (tipoCampo === 'Fecha' || tipoCampo === 'FechaHora') {
+      <p class="muted">Sin validación de rango — pendiente.</p>
+    } @else {
+      <p class="muted">Este tipo de campo no necesita configuración.</p>
+    }
+  }
+
+  @if (muestra('maxLength')) {
+    <nz-form-item>
+      <nz-form-label>Longitud máxima</nz-form-label>
+      <nz-form-control>
+        <nz-input-number formControlName="maxLength" [nzMin]="1" [nzStep]="1"></nz-input-number>
+      </nz-form-control>
+    </nz-form-item>
+  }
+
+  @if (muestra('regex')) {
+    <nz-form-item>
+      <nz-form-label>Expresión regular</nz-form-label>
+      <nz-form-control [nzValidateStatus]="errorRegex ? 'error' : ''"
+        [nzErrorTip]="'La expresión regular no compila.'">
+        <input nz-input formControlName="regex" placeholder="^[A-Z]{2}\d+$" />
+      </nz-form-control>
+    </nz-form-item>
+  }
+
+  @if (muestra('min')) {
+    <nz-form-item>
+      <nz-form-label>Mínimo</nz-form-label>
+      <nz-form-control [nzValidateStatus]="errorRango ? 'error' : ''"
+        [nzErrorTip]="'El mínimo no puede ser mayor que el máximo.'">
+        <nz-input-number formControlName="min" [nzStep]="1"></nz-input-number>
+      </nz-form-control>
+    </nz-form-item>
+  }
+
+  @if (muestra('max')) {
+    <nz-form-item>
+      <nz-form-label>Máximo</nz-form-label>
+      <nz-form-control>
+        <nz-input-number formControlName="max" [nzStep]="1"></nz-input-number>
+      </nz-form-control>
+    </nz-form-item>
+  }
+
+  @if (muestra('decimales')) {
+    <nz-form-item>
+      <nz-form-label>Decimales</nz-form-label>
+      <nz-form-control>
+        <nz-input-number formControlName="decimales" [nzMin]="0" [nzMax]="10" [nzStep]="1"></nz-input-number>
+      </nz-form-control>
+    </nz-form-item>
+  }
+
+  @if (muestra('unidad')) {
+    <nz-form-item>
+      <nz-form-label>Unidad</nz-form-label>
+      <nz-form-control>
+        <input nz-input formControlName="unidad" placeholder="kg" />
+      </nz-form-control>
+    </nz-form-item>
+  }
+
+  @if (muestra('opciones')) {
+    <nz-form-item>
+      <nz-form-label nzRequired>Opciones</nz-form-label>
+      <nz-form-control [nzValidateStatus]="errorOpciones ? 'error' : ''"
+        [nzErrorTip]="'Un campo Lista necesita al menos una opción.'"
+        nzExtra="Escribí cada opción y presioná Enter.">
+        <nz-select
+          formControlName="opciones"
+          nzMode="tags"
+          [nzTokenSeparators]="[',']"
+          nzPlaceHolder="Agregá opciones"
+          style="width: 100%"
+        ></nz-select>
+      </nz-form-control>
+    </nz-form-item>
+  }
+</form>
