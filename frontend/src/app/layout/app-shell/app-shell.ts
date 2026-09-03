@@ -15,7 +15,7 @@ interface NavItem {
 }
 
 const NAV_ITEMS: NavItem[] = [
-  // `pesaje` salió del menú: la ruta muestra un placeholder hasta slice C.
+  { path: '/pesaje', icon: 'dashboard', label: 'Pesaje' },
   { path: '/basculas', icon: 'desktop', label: 'Básculas' },
   { path: '/tipos-movimiento', icon: 'appstore', label: 'Tipos de movimiento' },
   { path: '/secciones', icon: 'apartment', label: 'Secciones' },
@@ -26,7 +26,7 @@ const NAV_ITEMS: NavItem[] = [
 ];
 
 const PAGE_TITLES: Record<string, string> = {
-  '/pesaje': 'Pesaje (pendiente)',
+  '/pesaje': 'Pesaje',
   '/basculas': 'Básculas',
   '/tipos-movimiento': 'Tipos de movimiento',
   '/secciones': 'Secciones',
