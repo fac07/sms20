@@ -152,6 +152,38 @@
           <nz-descriptions-item nzTitle="Motivo" [nzSpan]="2">{{ d.motivoAnulacion ?? '—' }}</nz-descriptions-item>
         </nz-descriptions>
       }
+
+      @if (d.valores.length > 0) {
+        <div class="seccion valores">
+          <h4 class="valores__titulo">Valores capturados</h4>
+          <nz-table
+            #tablaValores
+            [nzData]="d.valores"
+            [nzShowPagination]="false"
+            nzSize="small"
+            [nzBordered]="true"
+          >
+            <thead>
+              <tr>
+                <th>Sección</th>
+                <th>Campo</th>
+                <th nzAlign="center">Ocurrencia</th>
+                <th>Valor</th>
+              </tr>
+            </thead>
+            <tbody>
+              @for (v of tablaValores.data; track v.campoId + '-' + v.ocurrencia) {
+                <tr>
+                  <td>{{ v.seccionClave }}</td>
+                  <td>{{ v.etiqueta || v.campoClave }}</td>
+                  <td nzAlign="center">{{ v.ocurrencia > 0 ? v.ocurrencia : '—' }}</td>
+                  <td>{{ valorLegible(v) }}</td>
+                </tr>
+              }
+            </tbody>
+          </nz-table>
+        </div>
+      }
     }
   </ng-container>
 </nz-modal>
