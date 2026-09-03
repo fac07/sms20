@@ -18,6 +18,7 @@ const NAV_ITEMS: NavItem[] = [
   { path: '/pesaje', icon: 'dashboard', label: 'Pesaje' },
   { path: '/basculas', icon: 'desktop', label: 'Básculas' },
   { path: '/tipos-movimiento', icon: 'appstore', label: 'Tipos de movimiento' },
+  { path: '/secciones', icon: 'apartment', label: 'Secciones' },
   { path: '/maestros', icon: 'database', label: 'Maestros' },
   { path: '/boletas', icon: 'file-text', label: 'Boletas' },
   { path: '/reportes', icon: 'bar-chart', label: 'Reportes', disabled: true },
@@ -27,6 +28,7 @@ const PAGE_TITLES: Record<string, string> = {
   '/pesaje': 'Pesaje',
   '/basculas': 'Básculas',
   '/tipos-movimiento': 'Tipos de movimiento',
+  '/secciones': 'Secciones',
   '/maestros': 'Maestros',
   '/boletas': 'Boletas',
 };

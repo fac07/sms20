@@ -1,0 +1,203 @@
+<div nz-row [nzGutter]="16" class="stats-row">
+  <div nz-col [nzSpan]="6">
+    <nz-card>
+      <div class="stat-card">
+        <div class="stat-icon" style="background: #B8711F1a; color: #B8711F">
+          <span nz-icon nzType="apartment"></span>
+        </div>
+        <nz-statistic [nzTitle]="'Total'" [nzValue]="stats().total"></nz-statistic>
+      </div>
+    </nz-card>
+  </div>
+  <div nz-col [nzSpan]="6">
+    <nz-card>
+      <div class="stat-card">
+        <div class="stat-icon" style="background: #3F8F6E1a; color: #3F8F6E">
+          <span nz-icon nzType="check-circle" nzTheme="fill"></span>
+        </div>
+        <nz-statistic [nzTitle]="'Activas'" [nzValue]="stats().activas"></nz-statistic>
+      </div>
+    </nz-card>
+  </div>
+  <div nz-col [nzSpan]="6">
+    <nz-card>
+      <div class="stat-card">
+        <div class="stat-icon" style="background: #2F6FED1a; color: #2F6FED">
+          <span nz-icon nzType="lock"></span>
+        </div>
+        <nz-statistic [nzTitle]="'Estándar'" [nzValue]="stats().estandar"></nz-statistic>
+      </div>
+    </nz-card>
+  </div>
+  <div nz-col [nzSpan]="6">
+    <nz-card>
+      <div class="stat-card">
+        <div class="stat-icon" style="background: #8c8c8c1a; color: #8c8c8c">
+          <span nz-icon nzType="edit"></span>
+        </div>
+        <nz-statistic [nzTitle]="'Configurables'" [nzValue]="stats().configurables"></nz-statistic>
+      </div>
+    </nz-card>
+  </div>
+</div>
+
+<nz-card [nzTitle]="'Secciones'" [nzExtra]="extraTpl" [nzBodyStyle]="{ padding: '0' }">
+  <ng-template #extraTpl>
+    <button nz-button nzType="primary" (click)="abrirModalCrear()">
+      <span nz-icon nzType="plus"></span>
+      Nueva sección
+    </button>
+  </ng-template>
+
+  <nz-table #tabla [nzData]="lista()" [nzLoading]="cargando()" [nzPageSize]="10">
+    <thead>
+      <tr>
+        <th>Clave</th>
+        <th>Nombre</th>
+        <th>Cardinalidad</th>
+        <th nzAlign="center">Reportable</th>
+        <th nzAlign="center">Orden</th>
+        <th nzAlign="center">Activa</th>
+        <th nzAlign="center">Estándar</th>
+        <th></th>
+      </tr>
+    </thead>
+    <tbody>
+      @for (seccion of tabla.data; track seccion.id) {
+        <tr>
+          <td class="clave">{{ seccion.clave }}</td>
+          <td>{{ seccion.nombre }}</td>
+          <td>{{ seccion.cardinalidad }}</td>
+          <td nzAlign="center">
+            @if (seccion.reportable) {
+              <span nz-icon nzType="check-circle" nzTheme="fill" style="color: #3F8F6E"></span>
+            } @else {
+              <span class="dash">—</span>
+            }
+          </td>
+          <td nzAlign="center">{{ seccion.orden }}</td>
+          <td nzAlign="center">
+            @if (seccion.activa) {
+              <nz-tag nzColor="success">Activa</nz-tag>
+            } @else {
+              <nz-tag>Inactiva</nz-tag>
+            }
+          </td>
+          <td nzAlign="center">
+            @if (seccion.estandar) {
+              <nz-tag nzColor="blue">
+                <span nz-icon nzType="lock"></span>
+                Estándar
+              </nz-tag>
+            } @else {
+              <nz-tag>Configurable</nz-tag>
+            }
+          </td>
+          <td class="acciones">
+            <button
+              nz-button
+              nzType="text"
+              nz-tooltip
+              nzTooltipTitle="Editar"
+              (click)="abrirModalEditar(seccion)"
+            >
+              <span nz-icon nzType="edit"></span>
+            </button>
+            @if (seccion.estandar) {
+              <button
+                nz-button
+                nzType="text"
+                nzDanger
+                disabled
+                nz-tooltip
+                [nzTooltipTitle]="lockTooltip"
+              >
+                <span nz-icon nzType="delete"></span>
+              </button>
+            } @else {
+              <button
+                nz-button
+                nzType="text"
+                nzDanger
+                nz-tooltip
+                nzTooltipTitle="Eliminar"
+                nz-popconfirm
+                nzPopconfirmTitle="¿Eliminar esta sección?"
+                nzPopconfirmDescription="Solo se elimina si no está referenciada por ninguna boleta ni tipo de movimiento."
+                (nzOnConfirm)="eliminar(seccion)"
+              >
+                <span nz-icon nzType="delete"></span>
+              </button>
+            }
+          </td>
+        </tr>
+      }
+    </tbody>
+  </nz-table>
+</nz-card>
+
+<nz-modal
+  [nzTitle]="editando() ? 'Editar sección' : 'Nueva sección'"
+  [nzVisible]="modalAbierto()"
+  [nzOkLoading]="guardando()"
+  nzOkText="Guardar"
+  nzCancelText="Cancelar"
+  (nzOnCancel)="cerrarModal()"
+  (nzOnOk)="guardar()"
+>
+  <ng-container *nzModalContent>
+    <form nz-form [formGroup]="form" nzLayout="vertical">
+      <nz-form-item>
+        <nz-form-label nzRequired>Clave</nz-form-label>
+        <nz-form-control
+          [nzErrorTip]="'Minúsculas, empieza con letra; solo a-z, 0-9 y _ (máx. 50).'"
+          [nzExtra]="
+            editando()?.estandar ? 'Sección estándar — la clave no se puede cambiar.' : ''
+          "
+        >
+          <input nz-input formControlName="clave" placeholder="detalle_fruta" />
+        </nz-form-control>
+      </nz-form-item>
+      <nz-form-item>
+        <nz-form-label nzRequired>Nombre</nz-form-label>
+        <nz-form-control>
+          <input nz-input formControlName="nombre" placeholder="Detalle de fruta" />
+        </nz-form-control>
+      </nz-form-item>
+      <nz-form-item>
+        <nz-form-label nzRequired>Cardinalidad</nz-form-label>
+        <nz-form-control nzExtra="«Repetible» permite varias ocurrencias por boleta.">
+          <nz-select formControlName="cardinalidad">
+            @for (c of cardinalidades; track c) {
+              <nz-option [nzValue]="c" [nzLabel]="c"></nz-option>
+            }
+          </nz-select>
+        </nz-form-control>
+      </nz-form-item>
+      <nz-form-item>
+        <nz-form-label nzRequired>Orden</nz-form-label>
+        <nz-form-control>
+          <nz-input-number formControlName="orden" [nzMin]="0" [nzStep]="1"></nz-input-number>
+        </nz-form-control>
+      </nz-form-item>
+      <nz-form-item class="switch-item">
+        <nz-form-label>Reportable</nz-form-label>
+        <nz-form-control>
+          <nz-switch formControlName="reportable"></nz-switch>
+        </nz-form-control>
+      </nz-form-item>
+      @if (editando()) {
+        <nz-form-item class="switch-item">
+          <nz-form-label>Activa</nz-form-label>
+          <nz-form-control
+            [nzExtra]="
+              editando()?.estandar ? 'Sección estándar — no se puede desactivar.' : ''
+            "
+          >
+            <nz-switch formControlName="activa"></nz-switch>
+          </nz-form-control>
+        </nz-form-item>
+      }
+    </form>
+  </ng-container>
+</nz-modal>
