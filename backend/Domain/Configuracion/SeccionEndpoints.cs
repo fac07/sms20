@@ -9,10 +9,20 @@ public static class SeccionEndpoints
     {
         var group = app.MapGroup("/api/secciones").WithTags("Secciones");
 
-        group.MapGet("/", async (SmsDbContext db, bool incluirInactivas = false) =>
+        group.MapGet("/", async (
+            SmsDbContext db, bool incluirInactivas = false, DateTime? modificadoDesde = null) =>
         {
             var query = db.Secciones.AsNoTracking();
-            if (!incluirInactivas)
+
+            if (modificadoDesde is not null)
+            {
+                // Delta-sync (mismo criterio que /api/maestros): filtro
+                // estrictamente mayor al watermark e inactivas SIEMPRE incluidas,
+                // así una sección desactivada después del watermark llega igual
+                // al caché local.
+                query = query.Where(s => s.FechaModificacion > modificadoDesde);
+            }
+            else if (!incluirInactivas)
             {
                 query = query.Where(s => s.Activa);
             }

@@ -31,5 +31,13 @@ public class SeccionConfiguration : IEntityTypeConfiguration<Seccion>
         // el guardia de secciones estándar — dos secciones con la misma clave
         // rompen esa referencia.
         builder.HasIndex(s => s.Clave).IsUnique();
+
+        // Marca de agua del sync incremental. defaultValueSql sella las filas ya
+        // sembradas cuando corre la migración incremental; el override de
+        // SaveChanges la mantiene al día en cada escritura posterior.
+        builder.Property(s => s.FechaModificacion)
+            .HasColumnType("datetime2")
+            .HasDefaultValueSql("SYSUTCDATETIME()")
+            .IsRequired();
     }
 }

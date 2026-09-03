@@ -5,7 +5,7 @@ namespace SmsBackend.Domain.Configuracion;
 /// las pantallas fijas por transacción del legacy. Estado replicado central→báscula
 /// por marca de agua, igual que Maestro.
 /// </summary>
-public class Seccion
+public class Seccion : IFechaModificable
 {
     public Guid Id { get; set; }
 
@@ -28,4 +28,7 @@ public class Seccion
     public int Orden { get; set; }
 
     public bool Activa { get; set; } = true;
+
+    /// <summary>Marca de agua para el sync incremental hacia las básculas.</summary>
+    public DateTime FechaModificacion { get; set; } = DateTime.UtcNow;
 }

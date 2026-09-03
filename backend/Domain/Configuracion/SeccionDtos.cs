@@ -8,10 +8,12 @@ public record SeccionDto(
     bool Reportable,
     bool Estandar,
     int Orden,
-    bool Activa)
+    bool Activa,
+    DateTime FechaModificacion)
 {
     public static SeccionDto FromEntity(Seccion s) => new(
-        s.Id, s.Clave, s.Nombre, s.Cardinalidad, s.Reportable, s.Estandar, s.Orden, s.Activa);
+        s.Id, s.Clave, s.Nombre, s.Cardinalidad, s.Reportable, s.Estandar, s.Orden, s.Activa,
+        s.FechaModificacion);
 }
 
 /// <summary>

@@ -7,7 +7,7 @@ namespace SmsBackend.Domain.Configuracion;
 /// retroactivamente (desviación aprobada del Esquema v7 §03, que usaba PK de dos
 /// columnas y borrado físico).
 /// </summary>
-public class TipoMovimientoSeccion
+public class TipoMovimientoSeccion : IFechaModificable
 {
     public Guid TipoMovimientoId { get; set; }
 
@@ -21,4 +21,7 @@ public class TipoMovimientoSeccion
     public bool Requerida { get; set; }
 
     public int Orden { get; set; }
+
+    /// <summary>Marca de agua para el sync incremental hacia las básculas.</summary>
+    public DateTime FechaModificacion { get; set; } = DateTime.UtcNow;
 }

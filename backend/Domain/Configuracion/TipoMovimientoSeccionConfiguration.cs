@@ -35,5 +35,11 @@ public class TipoMovimientoSeccionConfiguration : IEntityTypeConfiguration<TipoM
             .WithMany()
             .HasForeignKey(x => x.SeccionId)
             .OnDelete(DeleteBehavior.Restrict);
+
+        // Marca de agua del sync incremental (ver SeccionConfiguration).
+        builder.Property(x => x.FechaModificacion)
+            .HasColumnType("datetime2")
+            .HasDefaultValueSql("SYSUTCDATETIME()")
+            .IsRequired();
     }
 }

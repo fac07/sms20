@@ -14,6 +14,7 @@ public sealed record CampoAplicable(
     Guid SeccionId,
     string SeccionClave,
     string CampoClave,
+    string Etiqueta,
     TipoCampo TipoCampo,
     TipoCatalogo? TipoCatalogoRef,
     bool Requerido,

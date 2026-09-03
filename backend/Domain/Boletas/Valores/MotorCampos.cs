@@ -42,6 +42,7 @@ public sealed class MotorCampos(SmsDbContext db)
                 s.Id,
                 s.Clave,
                 c.Clave,
+                c.Etiqueta,
                 c.TipoCampo,
                 c.TipoCatalogoRef,
                 c.Requerido,
