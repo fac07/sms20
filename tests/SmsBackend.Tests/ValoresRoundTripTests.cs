@@ -14,7 +14,7 @@ namespace SmsBackend.Tests;
 /// <c>ocurrencia</c> (spec "One shared valores representation keyed by CampoId"):
 /// <c>POST /api/boletas</c> y <c>/api/boletas/sync</c> "Crear" producen filas
 /// <c>BoletaValorCampo</c> idénticas; el <c>GET</c> devuelve cada valor con
-/// <c>campoId</c>/<c>seccionClave</c>/<c>campoClave</c>/<c>etiqueta</c>; una
+/// <c>campoId</c>/<c>seccionClave</c>/<c>seccionNombre</c>/<c>campoClave</c>/<c>etiqueta</c>; una
 /// sección <c>Repetible</c> guarda ocurrencias 0 y 1.
 /// </summary>
 [Collection(ApiCollection.Name)]
@@ -99,6 +99,7 @@ public sealed class ValoresRoundTripTests : IAsyncLifetime
         var valor = Assert.Single(recargada.Valores);
         Assert.Equal(nota.Id, valor.CampoId);
         Assert.Equal($"rd_{s}", valor.SeccionClave);
+        Assert.Equal($"Sección rd_{s}", valor.SeccionNombre);
         Assert.Equal("nota", valor.CampoClave);
         Assert.Equal("Etiqueta nota", valor.Etiqueta);
         Assert.Equal("hola", valor.ValorTexto);

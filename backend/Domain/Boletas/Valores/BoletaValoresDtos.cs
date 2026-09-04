@@ -20,12 +20,14 @@ public record ValorCampoDto(
     Guid? ValorMaestroId);
 
 /// <summary>
-/// Proyección de lectura para <c>BoletaDto.Valores</c>. Agrega claves y etiqueta
-/// legibles (para humanos y D365) además del <see cref="CampoId"/> estable.
+/// Proyección de lectura para <c>BoletaDto.Valores</c>. Agrega claves, el nombre
+/// legible de la sección y la etiqueta del campo (para humanos y D365) además del
+/// <see cref="CampoId"/> estable.
 /// </summary>
 public record ValorCampoLeidoDto(
     Guid CampoId,
     string SeccionClave,
+    string SeccionNombre,
     string CampoClave,
     string Etiqueta,
     TipoCampo TipoCampo,

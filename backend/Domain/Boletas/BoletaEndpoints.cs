@@ -499,6 +499,7 @@ public static class BoletaEndpoints
              select new ValorCampoLeidoDto(
                  v.CampoId,
                  s.Clave,
+                 s.Nombre,
                  c.Clave,
                  c.Etiqueta,
                  c.TipoCampo,
