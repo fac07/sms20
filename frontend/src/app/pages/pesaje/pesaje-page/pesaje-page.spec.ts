@@ -18,7 +18,6 @@ import {
 import { calcularAntiguedadSync } from './antiguedad-sync';
 import { agruparSecciones } from './secciones';
 
-const CENTRAL = 'http://localhost:5094';
 const LOCAL = 'http://127.0.0.1:4127';
 
 function campo(parcial: Partial<CampoAplicable> & Pick<CampoAplicable, 'campoId' | 'campoClave'>): CampoAplicable {
@@ -172,28 +171,32 @@ describe('PesajePage (TestBed + HttpTestingController)', () => {
 
   function flushInit(opciones?: {
     tipos?: unknown[];
+    tiposRefresh?: unknown[];
     estado?: unknown;
     configEstado?: { lastConfigSyncAt: string | null };
     boletas?: unknown[];
   }): void {
     component.ngOnInit();
+    const tipos = opciones?.tipos ?? [
+      {
+        id: 'tm-1',
+        codigo: 'ING',
+        nombre: 'Ingreso de fruta',
+        prefijo: 'IF',
+        direccion: 'Entrada',
+        operacionD365: null,
+        generaQR: false,
+        formatoBoletaId: null,
+        activo: true,
+      },
+    ];
+    // Paint desde el espejo local, luego sync eager (POST) y refresco (GET) —
+    // las 3 se flushean acá o `httpMock.verify()` en `afterEach` rompe la suite.
+    httpMock.expectOne(`${LOCAL}/tipos-movimiento`).flush(tipos);
     httpMock
-      .expectOne(`${CENTRAL}/api/tipos-movimiento?incluirInactivos=false`)
-      .flush(
-        opciones?.tipos ?? [
-          {
-            id: 'tm-1',
-            codigo: 'ING',
-            nombre: 'Ingreso de fruta',
-            prefijo: 'IF',
-            direccion: 'Entrada',
-            operacionD365: null,
-            generaQR: false,
-            formatoBoletaId: null,
-            activo: true,
-          },
-        ],
-      );
+      .expectOne(`${LOCAL}/config/sincronizar`)
+      .flush({ secciones: 0, campos: 0, tiposMovimientoSeccion: 0, tiposMovimiento: tipos.length });
+    httpMock.expectOne(`${LOCAL}/tipos-movimiento`).flush(opciones?.tiposRefresh ?? tipos);
     httpMock
       .expectOne(`${LOCAL}/estado`)
       .flush(
@@ -333,6 +336,34 @@ describe('PesajePage (TestBed + HttpTestingController)', () => {
     expect(ctrl.hasError('servidor')).toBe(true);
     expect(component.resumenErrores().length).toBe(1);
     expect(component.resumenErrores()[0].texto).toContain('Acidez');
+  });
+
+  it('el dropdown se sirve del espejo local (127.0.0.1) y dispara el sync eager', () => {
+    flushInit({
+      tipos: [
+        {
+          id: 'tm-1',
+          codigo: 'ING',
+          nombre: 'Ingreso de fruta',
+          prefijo: 'IF',
+          direccion: 'Entrada',
+          operacionD365: null,
+          generaQR: false,
+          formatoBoletaId: null,
+          activo: true,
+        },
+      ],
+    });
+    expect(component.tiposMovimiento().map((t) => t.nombre)).toEqual(['Ingreso de fruta']);
+    expect(component.tiposNoDisponibles()).toBe(false);
+    expect(message.error).not.toHaveBeenCalled();
+  });
+
+  it('espejo nunca sincronizado -> select vacío + alerta offline, sin message.error', () => {
+    flushInit({ tipos: [], tiposRefresh: [] });
+    expect(component.tiposMovimiento()).toEqual([]);
+    expect(component.tiposNoDisponibles()).toBe(true);
+    expect(message.error).not.toHaveBeenCalled();
   });
 
   it('el indicador de staleness es no bloqueante y warna > 24h', () => {

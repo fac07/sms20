@@ -24,8 +24,7 @@ import { NzSelectModule } from 'ng-zorro-antd/select';
 import { NzTableModule } from 'ng-zorro-antd/table';
 import { NzTagModule } from 'ng-zorro-antd/tag';
 import { Observable, catchError, forkJoin, of } from 'rxjs';
-import { CampoAplicable, ErrorCampo } from '../../../api/configuracion.models';
-import { TipoMovimiento, TiposMovimientoService } from '../../../api/tipos-movimiento.service';
+import { CampoAplicable, ErrorCampo, TipoMovimiento } from '../../../api/configuracion.models';
 import {
   BoletaLocal,
   CerrarBoletaInput,
@@ -107,11 +106,15 @@ function esErrorCampoArray(cuerpo: unknown): cuerpo is ErrorCampo[] {
 })
 export class PesajePage implements OnInit, OnDestroy {
   private readonly localServer = inject(LocalServerService);
-  private readonly tiposMovimientoService = inject(TiposMovimientoService);
   private readonly message = inject(NzMessageService);
   private readonly fb = inject(FormBuilder);
 
   readonly tiposMovimiento = signal<TipoMovimiento[]>([]);
+
+  // Se activa solo si, tras intentar un sync eager, el espejo local sigue vacío
+  // (instalación nunca sincronizada). Dispara el aviso de "sin conexión" junto
+  // al select vacío — nunca con una lista poblada.
+  readonly tiposNoDisponibles = signal(false);
 
   readonly lecturaPeso = signal<LecturaPeso>({ peso: null, origen: null });
   readonly estadoLocal = signal<EstadoLocal>({
@@ -192,15 +195,37 @@ export class PesajePage implements OnInit, OnDestroy {
   }
 
   private cargarCatalogos(): void {
-    // TipoMovimiento sigue pegando directo a Central (gap abierto); los campos
-    // configurables sí se resuelven contra el espejo local, offline-capable.
-    this.tiposMovimientoService.listar().subscribe({
-      next: (tipos) => this.tiposMovimiento.set(tipos),
-      error: () =>
-        this.message.error(
-          'No se pudo cargar Tipos de movimiento — ¿el backend central está arriba?',
-        ),
-    });
+    // A4 — paint desde el espejo local primero (instantáneo, offline-safe),
+    // después dispara un sync eager y re-lee la lista cuando termina. La ruta
+    // local ya devuelve solo `Activo = 1`, así que el filtro de activos se
+    // preserva sin lógica extra acá.
+    this.localServer
+      .tiposMovimiento()
+      .pipe(catchError(() => of<TipoMovimiento[]>([])))
+      .subscribe((tipos) => {
+        this.tiposMovimiento.set(tipos);
+        this.dispararSyncEager();
+      });
+  }
+
+  /** Sync eager al entrar a `/pesaje` (A3) + refresco del dropdown al terminar (A4). */
+  private dispararSyncEager(): void {
+    this.localServer
+      .sincronizarConfig()
+      .pipe(catchError(() => of(null)))
+      .subscribe(() => this.refrescarTiposMovimiento());
+  }
+
+  private refrescarTiposMovimiento(): void {
+    this.localServer
+      .tiposMovimiento()
+      .pipe(catchError(() => of<TipoMovimiento[]>([])))
+      .subscribe((tipos) => {
+        this.tiposMovimiento.set(tipos);
+        // Instalación nunca sincronizada: el espejo sigue vacío incluso después
+        // del sync eager → avisá sin bloquear. No usa `message.error`.
+        this.tiposNoDisponibles.set(tipos.length === 0);
+      });
   }
 
   private cargarEstadoLocal(): void {

@@ -289,6 +289,28 @@ const SQL_ESQUEMA_LOCAL = `
     );
 
     CREATE INDEX IF NOT EXISTS IX_Maestro_TipoCatalogo ON Maestro(TipoCatalogo);
+
+    -- Espejo local del catálogo central TipoMovimiento
+    -- (backend/Domain/TiposMovimiento). Column-for-column con el DTO central:
+    -- Id como TEXT (Guid verbatim), Direccion / OperacionD365 (enums) como TEXT,
+    -- GeneraQR / Activo como INTEGER 0/1. Sin FechaModificacion: la entidad
+    -- central no implementa IFechaModificable, así que no hay canal de delta —
+    -- config-sync re-sincroniza la lista entera cada ciclo (catálogo de ~10
+    -- filas). Aditiva: sin bump de EsquemaLocalVersion (esa guardia es solo para
+    -- el reshape destructivo de Boleta). Codigo NO es UNIQUE a propósito: un
+    -- re-upsert full-list de un código renombrado chocaría transitoriamente
+    -- mitad de transacción. Central manda; el espejo es cache de lectura.
+    CREATE TABLE IF NOT EXISTS TipoMovimiento (
+      Id TEXT PRIMARY KEY,
+      Codigo TEXT NOT NULL,
+      Nombre TEXT NOT NULL,
+      Prefijo TEXT NOT NULL,
+      Direccion TEXT NOT NULL,
+      OperacionD365 TEXT,
+      GeneraQR INTEGER NOT NULL,
+      FormatoBoletaId TEXT,
+      Activo INTEGER NOT NULL
+    );
 `
 
 /**
@@ -1234,4 +1256,69 @@ export function obtenerUltimaSincronizacionMaestros(): string | null {
     maximo: string | null
   }
   return row.maximo
+}
+
+// ---------------------------------------------------------------------------
+// TipoMovimiento — espejo local del catálogo central (ver el CREATE TABLE en
+// SQL_ESQUEMA_LOCAL para el porqué de cada columna). El escritor
+// (upsertTipoMovimiento) vive en config-sync.ts, que persiste las filas que ya
+// trae de `GET /api/tipos-movimiento?incluirInactivos=true`. El lector
+// (listarTiposMovimientoLocal) es lo que alimenta el dropdown de Pesaje sin
+// depender de conectividad con Central.
+// ---------------------------------------------------------------------------
+
+/** Fila cruda de `TipoMovimiento` (columnas PascalCase, booleanos 0/1). */
+export interface TipoMovimientoRow {
+  Id: string
+  Codigo: string
+  Nombre: string
+  Prefijo: string
+  Direccion: string
+  OperacionD365: string | null
+  GeneraQR: number
+  FormatoBoletaId: string | null
+  Activo: number
+}
+
+/** Espejo camelCase del TipoMovimientoDto central — shape idéntico al que el dropdown ya consume. */
+export interface TipoMovimientoLocal {
+  id: string
+  codigo: string
+  nombre: string
+  prefijo: string
+  direccion: string
+  operacionD365: string | null
+  generaQR: boolean
+  formatoBoletaId: string | null
+  activo: boolean
+}
+
+function filaATipoMovimientoLocal(row: TipoMovimientoRow): TipoMovimientoLocal {
+  return {
+    id: row.Id,
+    codigo: row.Codigo,
+    nombre: row.Nombre,
+    prefijo: row.Prefijo,
+    direccion: row.Direccion,
+    operacionD365: row.OperacionD365,
+    generaQR: Boolean(row.GeneraQR),
+    formatoBoletaId: row.FormatoBoletaId,
+    activo: Boolean(row.Activo),
+  }
+}
+
+/**
+ * Read path del dropdown de Pesaje — por default filtra `Activo = 1` (igual que
+ * el `incluirInactivos=false` del central y que `listarMaestrosLocal`). El
+ * espejo guarda TODO (incluidos inactivos, sin tombstone); es la ruta local la
+ * que decide qué mostrar. `ORDER BY Nombre` escanea gratis (~10 filas, sin
+ * índice). Espejo vacío → `[]`, nunca lanza.
+ */
+export function listarTiposMovimientoLocal(incluirInactivos = false): TipoMovimientoLocal[] {
+  const rows = incluirInactivos
+    ? (getDb().prepare('SELECT * FROM TipoMovimiento ORDER BY Nombre').all() as TipoMovimientoRow[])
+    : (getDb()
+        .prepare('SELECT * FROM TipoMovimiento WHERE Activo = 1 ORDER BY Nombre')
+        .all() as TipoMovimientoRow[])
+  return rows.map(filaATipoMovimientoLocal)
 }

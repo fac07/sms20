@@ -56,8 +56,19 @@ interface TipoMovimientoSeccionDto {
   fechaModificacion: string
 }
 
+// DTO completo del central (9 campos, camelCase; Direccion / OperacionD365 como
+// string por JsonStringEnumConverter). config-sync ya bajaba esta lista para el
+// fan-out de TipoMovimientoSeccion y descartaba todo salvo `{id, activo}` —
+// ahora persiste las 9 columnas en el espejo local.
 interface TipoMovimientoDto {
   id: string
+  codigo: string
+  nombre: string
+  prefijo: string
+  direccion: string
+  operacionD365: string | null
+  generaQR: boolean
+  formatoBoletaId: string | null
   activo: boolean
 }
 
@@ -65,6 +76,7 @@ export interface ResultadoConfigSync {
   secciones: number
   campos: number
   tiposMovimientoSeccion: number
+  tiposMovimiento: number
 }
 
 /**
@@ -180,6 +192,39 @@ function upsertTipoMovimientoSeccion(
   })
 }
 
+// Espejo local de TipoMovimiento — `ON CONFLICT(Id) DO UPDATE` (full-list
+// replace cada ciclo: soft-delete central, las filas nunca desaparecen). Sin
+// orden especial: no hay FK ni índice único parcial, así que `cerradasPrimero`
+// no aplica.
+function upsertTipoMovimiento(db: Database.Database, t: TipoMovimientoDto): void {
+  db.prepare(
+    `INSERT INTO TipoMovimiento (
+      Id, Codigo, Nombre, Prefijo, Direccion, OperacionD365, GeneraQR, FormatoBoletaId, Activo
+    ) VALUES (
+      @id, @codigo, @nombre, @prefijo, @direccion, @operacionD365, @generaQR, @formatoBoletaId, @activo
+    )
+    ON CONFLICT(Id) DO UPDATE SET
+      Codigo = excluded.Codigo,
+      Nombre = excluded.Nombre,
+      Prefijo = excluded.Prefijo,
+      Direccion = excluded.Direccion,
+      OperacionD365 = excluded.OperacionD365,
+      GeneraQR = excluded.GeneraQR,
+      FormatoBoletaId = excluded.FormatoBoletaId,
+      Activo = excluded.Activo`,
+  ).run({
+    id: t.id,
+    codigo: t.codigo,
+    nombre: t.nombre,
+    prefijo: t.prefijo,
+    direccion: t.direccion,
+    operacionD365: t.operacionD365 ?? null,
+    generaQR: t.generaQR ? 1 : 0,
+    formatoBoletaId: t.formatoBoletaId ?? null,
+    activo: t.activo ? 1 : 0,
+  })
+}
+
 // Las filas cerradas (VigenteHasta != null) primero: al versionar un Campo o una
 // asignación, el central manda en el mismo delta la fila vieja (recién cerrada)
 // y la nueva vigente. Sin este orden, insertar la nueva antes de cerrar la
@@ -230,6 +275,10 @@ export async function sincronizarConfig(
 
   // 2. Persistir el batch completo en una sola transacción.
   const persistir = db.transaction((): void => {
+    // Espejo de TipoMovimiento primero: reusa el array `tipos` que ya se bajó
+    // arriba para el fan-out, sin fetch extra. Va antes que `upsertSeccion`
+    // porque el orden es libre (sin FK).
+    for (const t of tipos) upsertTipoMovimiento(db, t)
     for (const s of secciones) upsertSeccion(db, s)
     for (const c of cerradasPrimero(campos, (c) => c.vigenteHasta)) upsertCampo(db, c)
     for (const t of cerradasPrimero(tms, (x) => x.dto.vigenteHasta)) {
@@ -246,12 +295,26 @@ export async function sincronizarConfig(
     secciones: secciones.length,
     campos: campos.length,
     tiposMovimientoSeccion: tms.length,
+    tiposMovimiento: tipos.length,
   }
 }
 
-/** Wrapper de producción — corre contra la base local real (`getDb()`). */
+// Corrida en vuelo compartida — los disparos eager (arranque de la app en
+// main.ts, entrada a `/pesaje`) y el tick de 60s del interval coalescen sobre
+// esta única promesa, así nunca corren dos syncs a la vez. Se comparte también
+// una rechazada: todos los callers ya la envuelven en `.catch`.
+let enVuelo: Promise<ResultadoConfigSync> | null = null
+
+/**
+ * Wrapper de producción — corre contra la base local real (`getDb()`), con
+ * guardia contra un sync ya en curso (spec: "In-flight guard prevents
+ * collision").
+ */
 export function sincronizarConfigLocal(): Promise<ResultadoConfigSync> {
-  return sincronizarConfig(getDb())
+  enVuelo ??= sincronizarConfig(getDb()).finally(() => {
+    enVuelo = null
+  })
+  return enVuelo
 }
 
 /** Estado del último sync de config para `GET /config/estado` y el indicador de staleness. */

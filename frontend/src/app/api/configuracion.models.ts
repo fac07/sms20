@@ -28,6 +28,31 @@ export type OperacionD365 =
   | 'RecepcionOC'
   | 'SalidaOV';
 
+export type DireccionMovimiento = 'Entrada' | 'Salida' | 'Transferencia';
+
+/**
+ * Tipo de movimiento — espejo del `TipoMovimientoDto` central
+ * (backend/Domain/TiposMovimiento/TipoMovimientoDtos.cs). Vive acá y no en
+ * `tipos-movimiento.service.ts` porque ahora lo consumen dos rutas: la página
+ * de admin (central, vía `TiposMovimientoService`) y el dropdown de Pesaje
+ * (espejo local, vía `LocalServerService`). `tipos-movimiento.service.ts` lo
+ * re-exporta para no romper a sus importadores.
+ */
+export interface TipoMovimiento {
+  id: string;
+  codigo: string;
+  nombre: string;
+  prefijo: string;
+  direccion: DireccionMovimiento;
+  // Reemplaza a los 6 flags habilita* + integracionD365 del contrato legacy:
+  // el motor configurable resuelve qué secciones aplican, y operacionD365
+  // (nullable) reemplaza al bool integracionD365.
+  operacionD365: OperacionD365 | null;
+  generaQR: boolean;
+  formatoBoletaId: string | null;
+  activo: boolean;
+}
+
 // El backend acota Campo.TipoCatalogoRef con el mismo enum TipoCatalogo de
 // Maestros (backend Campo.TipoCatalogoRef es TipoCatalogo?). Se reusa el union
 // ya definido en maestros.service.ts en vez de duplicarlo.

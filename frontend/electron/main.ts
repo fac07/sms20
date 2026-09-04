@@ -57,6 +57,15 @@ app.whenReady().then(() => {
   getDb()
   startLocalServer(LOCAL_SERVER_PORT, !app.isPackaged)
 
+  // Disparo eager al arrancar: siembra el espejo de configuración (incluido
+  // TipoMovimiento) sin esperar el primer tick de 60s — así una instalación
+  // recién abierta online tiene el dropdown de Pesaje poblado en segundos.
+  // Comparte la guardia `enVuelo` con el interval; un fallo nunca bloquea la
+  // creación de boletas.
+  sincronizarConfigLocal().catch((err) =>
+    console.error('Error en el sync de configuración inicial:', err),
+  )
+
   setInterval(() => {
     despacharOutboxPendiente().catch((err) => console.error('Error despachando outbox:', err))
   }, DISPATCH_INTERVAL_MS)
