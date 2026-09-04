@@ -1,29 +1,18 @@
 import { HttpClient } from '@angular/common/http';
 import { Injectable, inject } from '@angular/core';
 import { Observable } from 'rxjs';
-import { CampoAplicable, OperacionD365 } from './configuracion.models';
+import { CampoAplicable, TipoMovimiento } from './configuracion.models';
 
 // Sin .env: no hay secretos acá, y el puerto de dev del backend central es
 // estable (launchSettings.json, perfil "http"). En producción esto va a
 // venir de la config de la báscula post-aprovisionamiento, no de un build-time env.
 const CENTRAL_API_URL = 'http://localhost:5094';
 
-export type DireccionMovimiento = 'Entrada' | 'Salida' | 'Transferencia';
-
-export interface TipoMovimiento {
-  id: string;
-  codigo: string;
-  nombre: string;
-  prefijo: string;
-  direccion: DireccionMovimiento;
-  // Reemplaza a los 6 flags habilita* + integracionD365 del contrato legacy:
-  // el motor configurable resuelve qué secciones aplican, y operacionD365
-  // (nullable) reemplaza al bool integracionD365.
-  operacionD365: OperacionD365 | null;
-  generaQR: boolean;
-  formatoBoletaId: string | null;
-  activo: boolean;
-}
+// `TipoMovimiento` y `DireccionMovimiento` se movieron a `configuracion.models.ts`
+// (los consume también el dropdown de Pesaje vía el espejo local). Se
+// re-exportan acá para no tocar a los importadores (`tipos-movimiento-page.ts`,
+// `tipos-movimiento.service.spec.ts`). `isolatedModules` exige `export type`.
+export type { DireccionMovimiento, TipoMovimiento } from './configuracion.models';
 
 export type GuardarTipoMovimientoInput = Omit<TipoMovimiento, 'id' | 'activo'>;
 

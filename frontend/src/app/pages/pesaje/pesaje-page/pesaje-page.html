@@ -62,6 +62,14 @@
             <nz-option [nzValue]="t.id" [nzLabel]="t.nombre"></nz-option>
           }
         </nz-select>
+        @if (tiposNoDisponibles()) {
+          <nz-alert
+            nzType="warning"
+            nzShowIcon
+            class="alerta-tipos-offline"
+            nzMessage="No se pudo cargar la lista de tipos de movimiento, revisá la conexión"
+          ></nz-alert>
+        }
       </nz-form-control>
     </nz-form-item>
 
