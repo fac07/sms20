@@ -26,8 +26,8 @@ export interface SeccionValores {
  *
  * Una sección se marca `repetible` cuando tiene más de una ocurrencia o alguna
  * ocurrencia > 0, para que la vista dibuje sub-filas diferenciadas por ocurrencia.
- * El encabezado usa la clave titulizada (`ValorCampoLeidoDto` no trae
- * `Seccion.Nombre`; el formulario del renderer sí, vía `CampoAplicable`).
+ * El encabezado usa `seccionNombre` (nombre legible que trae la proyección de
+ * lectura) y cae a la clave titulizada cuando viene vacío.
  */
 export function agruparValores(
   valores: readonly ValorCampoLeidoDto[],
@@ -40,7 +40,7 @@ export function agruparValores(
     if (seccion === undefined) {
       seccion = {
         clave: valor.seccionClave,
-        titulo: titulizarClave(valor.seccionClave),
+        titulo: valor.seccionNombre?.trim() || titulizarClave(valor.seccionClave),
         repetible: false,
         ocurrencias: [],
       };

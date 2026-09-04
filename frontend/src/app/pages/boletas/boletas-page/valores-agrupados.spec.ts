@@ -6,6 +6,7 @@ function valor(
     Pick<ValorCampoLeidoDto, 'campoId' | 'seccionClave' | 'campoClave'>,
 ): ValorCampoLeidoDto {
   return {
+    seccionNombre: '',
     etiqueta: parcial.campoClave,
     tipoCampo: 'Texto',
     ocurrencia: 0,
@@ -29,9 +30,26 @@ describe('agruparValores', () => {
     ]);
   });
 
-  it('tituliza la clave de sección para el encabezado', () => {
+  it('usa seccionNombre para el encabezado cuando viene poblado', () => {
     const [seccion] = agruparValores([
-      valor({ campoId: 'a', seccionClave: 'detalle_fruta', campoClave: 'finca' }),
+      valor({
+        campoId: 'a',
+        seccionClave: 'detalle_fruta',
+        seccionNombre: 'Detalle de la Fruta',
+        campoClave: 'finca',
+      }),
+    ]);
+    expect(seccion.titulo).toBe('Detalle de la Fruta');
+  });
+
+  it('cae a la clave titulizada cuando seccionNombre viene vacío', () => {
+    const [seccion] = agruparValores([
+      valor({
+        campoId: 'a',
+        seccionClave: 'detalle_fruta',
+        seccionNombre: '   ',
+        campoClave: 'finca',
+      }),
     ]);
     expect(seccion.titulo).toBe('Detalle Fruta');
   });

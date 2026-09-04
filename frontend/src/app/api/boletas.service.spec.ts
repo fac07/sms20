@@ -47,6 +47,7 @@ describe('BoletasService', () => {
     const valor: ValorCampoLeidoDto = {
       campoId: 'c-1',
       seccionClave: 'detalle_fruta',
+      seccionNombre: 'Detalle Fruta',
       campoClave: 'finca',
       etiqueta: 'Finca',
       tipoCampo: 'ReferenciaMaestro',
