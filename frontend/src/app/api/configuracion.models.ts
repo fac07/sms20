@@ -75,12 +75,14 @@ export interface ValorCampoDto {
 }
 
 /**
- * Proyección de LECTURA para BoletaDto.valores. Agrega claves y etiqueta
- * legibles además del campoId estable. Espejo de backend ValorCampoLeidoDto.
+ * Proyección de LECTURA para BoletaDto.valores. Agrega claves, el nombre legible
+ * de la sección y la etiqueta del campo además del campoId estable. Espejo de
+ * backend ValorCampoLeidoDto.
  */
 export interface ValorCampoLeidoDto {
   campoId: string;
   seccionClave: string;
+  seccionNombre: string;
   campoClave: string;
   etiqueta: string;
   tipoCampo: TipoCampo;
