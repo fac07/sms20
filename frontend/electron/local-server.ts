@@ -9,6 +9,7 @@ import {
   listarBoletasLocal,
   listarMaestrosLocal,
   listarOutboxLocal,
+  listarTiposMovimientoLocal,
   obtenerBoletaLocal,
   resolverCamposLocal,
   setConfig,
@@ -148,6 +149,16 @@ export function startLocalServer(port: number, esDev: boolean): Server {
   // a central. Devuelve `CampoAplicable[]` (mismo shape camelCase que
   // `GET /api/tipos-movimiento/:id/formulario` del central) resuelto as-of el
   // instante actual — el renderer arma el formulario reactivo con esto.
+  // Tipos de movimiento — read path local del dropdown de Pesaje, servido 100%
+  // del espejo SQLite (sin llamada a central), mismo posture que `GET /maestros`.
+  // Por default solo `Activo = 1` (`?incluirInactivos=true` para traer todos).
+  // Espejo vacío (nunca sincronizado) → `200 []`, nunca 5xx: la UI muestra su
+  // aviso de "sin conexión" sin bloquear.
+  app.get('/tipos-movimiento', (req, res) => {
+    const incluirInactivos = req.query.incluirInactivos === 'true'
+    res.json(listarTiposMovimientoLocal(incluirInactivos))
+  })
+
   app.get('/tipos-movimiento/:id/formulario', (req, res) => {
     res.json(resolverCamposLocal(req.params.id, new Date().toISOString()))
   })

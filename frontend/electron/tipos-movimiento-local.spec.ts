@@ -1,10 +1,12 @@
 import Database from 'better-sqlite3'
+import type { AddressInfo } from 'node:net'
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 import { _inyectarDbParaPruebas, inicializarEsquemaLocal, listarTiposMovimientoLocal } from './db'
+import { startLocalServer, stopLocalServer } from './local-server'
 
-// Espejo local de TipoMovimiento (D1). El espejo guarda TODO (activos +
-// inactivos); el filtro `Activo = 1` es decisión de la capa de lectura, igual
-// que `listarMaestrosLocal` / `GET /maestros`.
+// Espejo local de TipoMovimiento (D1) + ruta de lectura `GET /tipos-movimiento`
+// (D3). El espejo guarda TODO (activos + inactivos); el filtro `Activo = 1` es
+// decisión de la capa de lectura, igual que `listarMaestrosLocal` / `GET /maestros`.
 
 const TM_ACTIVO_A = 'aaaaaaaa-0000-0000-0000-000000000001'
 const TM_ACTIVO_B = 'bbbbbbbb-0000-0000-0000-000000000002'
@@ -27,6 +29,7 @@ beforeEach(() => {
 })
 
 afterEach(() => {
+  stopLocalServer()
   _inyectarDbParaPruebas(null)
   db.close()
 })
@@ -52,5 +55,44 @@ describe('listarTiposMovimientoLocal (D1)', () => {
   it('espejo vacío -> []', () => {
     expect(listarTiposMovimientoLocal()).toEqual([])
     expect(listarTiposMovimientoLocal(true)).toEqual([])
+  })
+})
+
+describe('GET /tipos-movimiento (D3)', () => {
+  let baseUrl: string
+
+  beforeEach(async () => {
+    const server = startLocalServer(0, false)
+    await new Promise<void>((resolve, reject) => {
+      server.once('listening', () => resolve())
+      server.once('error', reject)
+    })
+    const { port } = server.address() as AddressInfo
+    baseUrl = `http://127.0.0.1:${port}`
+  })
+
+  it('por default devuelve solo activos', async () => {
+    sembrarTipo(TM_ACTIVO_A, 'Alfa', true)
+    sembrarTipo(TM_INACTIVO, 'Media', false)
+
+    const res = await fetch(`${baseUrl}/tipos-movimiento`)
+    expect(res.status).toBe(200)
+    const cuerpo = (await res.json()) as Array<{ nombre: string }>
+    expect(cuerpo.map((t) => t.nombre)).toEqual(['Alfa'])
+  })
+
+  it('?incluirInactivos=true devuelve todas', async () => {
+    sembrarTipo(TM_ACTIVO_A, 'Alfa', true)
+    sembrarTipo(TM_INACTIVO, 'Media', false)
+
+    const res = await fetch(`${baseUrl}/tipos-movimiento?incluirInactivos=true`)
+    const cuerpo = (await res.json()) as Array<{ nombre: string }>
+    expect(cuerpo.map((t) => t.nombre)).toEqual(['Alfa', 'Media'])
+  })
+
+  it('espejo nunca sincronizado -> 200 []', async () => {
+    const res = await fetch(`${baseUrl}/tipos-movimiento`)
+    expect(res.status).toBe(200)
+    expect(await res.json()).toEqual([])
   })
 })

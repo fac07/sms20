@@ -1,7 +1,7 @@
 import { HttpClient } from '@angular/common/http';
 import { Injectable, inject } from '@angular/core';
 import { Observable } from 'rxjs';
-import { CampoAplicable, ValorCampoDto } from './configuracion.models';
+import { CampoAplicable, TipoMovimiento, ValorCampoDto } from './configuracion.models';
 
 // Servidor LOCAL de Electron (127.0.0.1:4127) — no confundir con el backend
 // central (http://localhost:5094) que usan los demás servicios de src/app/api.
@@ -68,6 +68,15 @@ export interface EstadoLocal {
 // staleness de la pantalla lo lee sin bloquear la creación de boletas.
 export interface ConfigEstado {
   lastConfigSyncAt: string | null;
+}
+
+// Espejo del resultado de `sincronizarConfig` en frontend/electron/config-sync.ts
+// — cuántas filas tocó el último sync de configuración por tabla.
+export interface ResultadoConfigSync {
+  secciones: number;
+  campos: number;
+  tiposMovimientoSeccion: number;
+  tiposMovimiento: number;
 }
 
 // Espejo del body que espera `POST /boletas` del servidor local tras el
@@ -137,6 +146,21 @@ export class LocalServerService {
   // Nunca falla: si nunca sincronizó, lastConfigSyncAt es null.
   configEstado(): Observable<ConfigEstado> {
     return this.http.get<ConfigEstado>(`${LOCAL_SERVER_URL}/config/estado`);
+  }
+
+  // Tipos de movimiento — read path local del espejo (ver GET /tipos-movimiento
+  // en local-server.ts: solo Activo=1 por default). Contrapartida
+  // offline-capable de TiposMovimientoService.listar(), que pega directo a
+  // Central.
+  tiposMovimiento(): Observable<TipoMovimiento[]> {
+    return this.http.get<TipoMovimiento[]>(`${LOCAL_SERVER_URL}/tipos-movimiento`);
+  }
+
+  // Dispara el sync de configuración (secciones/campos/asignaciones/tipos) sin
+  // esperar el próximo tick de 60s. El servidor coalesce contra un sync en
+  // vuelo; un fallo devuelve 502 y no compromete el caché local.
+  sincronizarConfig(): Observable<ResultadoConfigSync> {
+    return this.http.post<ResultadoConfigSync>(`${LOCAL_SERVER_URL}/config/sincronizar`, {});
   }
 
   listarBoletasEnTransito(): Observable<BoletaLocal[]> {
