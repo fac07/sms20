@@ -171,7 +171,11 @@ export class MaestrosPage {
   }
 
   aprobar(maestro: Maestro): void {
-    this.service.aprobar(maestro.id).subscribe({
+    // TODO(M5a): la cola unificada de provisionales trae el diálogo de aprobación
+    // que pide el código oficial (prefill de siguienteCodigo) + nombre editable.
+    // Hasta entonces este botón por-pestaña queda intencionalmente roto: reenvía
+    // el propio código del provisional (PROV-…) como código oficial.
+    this.service.aprobar(maestro.id, { codigo: maestro.codigo }).subscribe({
       next: () => {
         this.message.success('Ítem oficializado — se distribuye a las básculas en el próximo sync.');
         this.cargar();

@@ -1,3 +1,4 @@
+using System.Text.RegularExpressions;
 using Microsoft.EntityFrameworkCore;
 using SmsBackend.Data;
 
@@ -196,10 +197,36 @@ public static class MaestroEndpoints
             return Results.NoContent();
         });
 
-        // Aprobar: un provisional pasa a Oficial sin fusionarse con nada — se
-        // distribuye tal cual a las básculas en el próximo sync.
-        group.MapPost("/{id:guid}/aprobar", async (Guid id, SmsDbContext db) =>
+        // Sugerencia de código oficial para aprobar un provisional del tipo dado.
+        // Regex-extrae el run de dígitos final de los códigos Oficial activos,
+        // devuelve max+1 zero-padded al ancho más grande observado. Es solo
+        // orientativo (M-D4): no se persiste nada, la unicidad la garantiza el
+        // índice único (TipoCatalogo, Codigo) más el 409 de /aprobar.
+        group.MapGet("/siguiente-codigo", async (TipoCatalogo tipoCatalogo, SmsDbContext db) =>
         {
+            var codigos = await db.Maestros
+                .AsNoTracking()
+                .Where(m => m.TipoCatalogo == tipoCatalogo
+                    && m.Estado == EstadoMaestro.Oficial
+                    && m.Activo)
+                .Select(m => m.Codigo)
+                .ToListAsync();
+
+            var sugerido = SugerirSiguienteCodigo(codigos);
+            return Results.Ok(new SiguienteCodigoResponse(sugerido));
+        });
+
+        // Aprobar: un provisional pasa a Oficial sin fusionarse con nada. El
+        // cuerpo es obligatorio — el admin confirma el código oficial (y puede
+        // corregir el nombre). El PROV-… coinado offline se reemplaza acá por el
+        // código real. Se distribuye a las básculas en el próximo sync.
+        group.MapPost("/{id:guid}/aprobar", async (Guid id, AprobarMaestroRequest request, SmsDbContext db) =>
+        {
+            if (string.IsNullOrWhiteSpace(request.Codigo))
+            {
+                return Results.BadRequest("El código es obligatorio para aprobar un provisional.");
+            }
+
             var maestro = await db.Maestros.FirstOrDefaultAsync(m => m.Id == id);
             if (maestro is null)
             {
@@ -210,7 +237,25 @@ public static class MaestroEndpoints
                 return Results.Conflict("Solo se pueden aprobar ítems en estado Provisional.");
             }
 
+            var codigo = request.Codigo.Trim();
+
+            // Colisión con otra fila del mismo tipo (activa o no): el índice único
+            // (TipoCatalogo, Codigo) tiraría un 500 crudo en SaveChanges — 409 claro.
+            var codigoEnUso = await db.Maestros
+                .AnyAsync(m => m.TipoCatalogo == maestro.TipoCatalogo && m.Codigo == codigo && m.Id != id);
+            if (codigoEnUso)
+            {
+                return Results.Conflict(
+                    $"Ya existe un {maestro.TipoCatalogo} con Codigo '{codigo}'.");
+            }
+
+            maestro.Codigo = codigo;
+            if (!string.IsNullOrWhiteSpace(request.Nombre))
+            {
+                maestro.Nombre = request.Nombre.Trim();
+            }
             maestro.Estado = EstadoMaestro.Oficial;
+            maestro.Activo = true;
             maestro.FechaModificacion = DateTime.UtcNow;
             await db.SaveChangesAsync();
 
@@ -258,5 +303,48 @@ public static class MaestroEndpoints
         });
 
         return group;
+    }
+
+    private static readonly Regex RunDeDigitosFinal = new(@"(\d+)$", RegexOptions.Compiled);
+
+    /// <summary>
+    /// Sugiere el siguiente código a partir del run de dígitos final de los
+    /// <paramref name="codigos"/> existentes: <c>max+1</c> zero-padded al ancho
+    /// más grande observado. Si ningún código termina en dígitos, devuelve el
+    /// fallback <c>"0001"</c>.
+    /// </summary>
+    internal static string SugerirSiguienteCodigo(IEnumerable<string> codigos)
+    {
+        long maximo = -1;
+        var ancho = 0;
+
+        foreach (var codigo in codigos)
+        {
+            if (string.IsNullOrEmpty(codigo))
+            {
+                continue;
+            }
+
+            var match = RunDeDigitosFinal.Match(codigo);
+            if (!match.Success)
+            {
+                continue;
+            }
+
+            var run = match.Groups[1].Value;
+            ancho = Math.Max(ancho, run.Length);
+            if (long.TryParse(run, out var valor) && valor > maximo)
+            {
+                maximo = valor;
+            }
+        }
+
+        if (maximo < 0)
+        {
+            return "0001";
+        }
+
+        var siguiente = (maximo + 1).ToString();
+        return siguiente.Length >= ancho ? siguiente : siguiente.PadLeft(ancho, '0');
     }
 }
