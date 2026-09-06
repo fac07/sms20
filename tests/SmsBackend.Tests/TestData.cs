@@ -250,6 +250,19 @@ public static class TestData
         return dto!;
     }
 
+    public static async Task<(HttpResponseMessage Response, string Body)> AprobarMaestroAsync(
+        HttpClient client, Guid id, string codigo, string? nombre = null)
+    {
+        var resp = await client.PostAsJsonAsync(
+            $"/api/maestros/{id}/aprobar", new AprobarMaestroRequest(codigo, nombre), Json);
+        return (resp, await resp.Content.ReadAsStringAsync());
+    }
+
+    public static Task<SiguienteCodigoResponse> SiguienteCodigoAsync(
+        HttpClient client, TipoCatalogo tipoCatalogo) =>
+        client.GetFromJsonAsync<SiguienteCodigoResponse>(
+            $"/api/maestros/siguiente-codigo?tipoCatalogo={tipoCatalogo}", Json)!;
+
     public static Guid CampoId(IReadOnlyList<CampoAplicable> formulario, string seccionClave, string campoClave) =>
         formulario.Single(c => c.SeccionClave == seccionClave && c.CampoClave == campoClave).CampoId;
 
