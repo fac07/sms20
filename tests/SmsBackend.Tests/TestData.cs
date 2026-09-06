@@ -204,6 +204,52 @@ public static class TestData
         return (resp, await resp.Content.ReadAsStringAsync());
     }
 
+    /// <summary>
+    /// Arma el payload crudo de <c>POST /api/maestros/sync</c> con la misma forma
+    /// que escribirá el Outbox local (<c>{ basculaCodigo, operacion, payload }</c>).
+    /// </summary>
+    public static object SyncMaestroPayload(
+        Guid id,
+        string basculaCodigo,
+        TipoCatalogo tipoCatalogo,
+        string codigo,
+        string nombre,
+        string? datosAdicionales = null,
+        string operacion = "Crear") =>
+        new
+        {
+            basculaCodigo,
+            operacion,
+            payload = new
+            {
+                id,
+                tipoCatalogo = tipoCatalogo.ToString(),
+                codigo,
+                nombre,
+                datosAdicionales,
+                fechaCreacion = DateTime.UtcNow,
+            },
+        };
+
+    public static async Task<(HttpResponseMessage Response, string Body)> SyncMaestroAsync(HttpClient client, object request)
+    {
+        var resp = await client.PostAsJsonAsync("/api/maestros/sync", request, Json);
+        return (resp, await resp.Content.ReadAsStringAsync());
+    }
+
+    public static async Task<(HttpResponseMessage Response, string Body)> FusionarMaestroAsync(
+        HttpClient client, Guid provisionalId, Guid oficialId)
+    {
+        var resp = await client.PostAsync($"/api/maestros/{provisionalId}/fusionar/{oficialId}", content: null);
+        return (resp, await resp.Content.ReadAsStringAsync());
+    }
+
+    public static async Task<MaestroDto> GetMaestroAsync(HttpClient client, Guid id)
+    {
+        var dto = await client.GetFromJsonAsync<MaestroDto>($"/api/maestros/{id}", Json);
+        return dto!;
+    }
+
     public static Guid CampoId(IReadOnlyList<CampoAplicable> formulario, string seccionClave, string campoClave) =>
         formulario.Single(c => c.SeccionClave == seccionClave && c.CampoClave == campoClave).CampoId;
 
