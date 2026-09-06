@@ -54,6 +54,15 @@ export interface GuardarMaestroInput {
   datosAdicionales: string | null;
 }
 
+export interface AprobarMaestroInput {
+  codigo: string;
+  nombre?: string;
+}
+
+export interface SiguienteCodigoResponse {
+  codigoSugerido: string;
+}
+
 @Injectable({ providedIn: 'root' })
 export class MaestrosService {
   private readonly http = inject(HttpClient);
@@ -82,8 +91,14 @@ export class MaestrosService {
     return this.http.delete<void>(`${CENTRAL_API_URL}/api/maestros/${id}`);
   }
 
-  aprobar(id: string): Observable<Maestro> {
-    return this.http.post<Maestro>(`${CENTRAL_API_URL}/api/maestros/${id}/aprobar`, {});
+  siguienteCodigo(tipoCatalogo: TipoCatalogo): Observable<SiguienteCodigoResponse> {
+    return this.http.get<SiguienteCodigoResponse>(
+      `${CENTRAL_API_URL}/api/maestros/siguiente-codigo?tipoCatalogo=${tipoCatalogo}`,
+    );
+  }
+
+  aprobar(id: string, input: AprobarMaestroInput): Observable<Maestro> {
+    return this.http.post<Maestro>(`${CENTRAL_API_URL}/api/maestros/${id}/aprobar`, input);
   }
 
   fusionar(provisionalId: string, oficialId: string): Observable<Maestro> {
