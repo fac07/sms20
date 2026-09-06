@@ -90,6 +90,69 @@ public static class MaestroEndpoints
             return Results.Created($"/api/maestros/{maestro.Id}", MaestroDto.FromEntity(maestro));
         });
 
+        // Ingesta del Outbox local (Electron/SQLite) — el dispatcher reenvía acá
+        // el evento MaestroProvisional/Crear coinado offline en una báscula.
+        // Igual que /api/boletas/sync:
+        //   1. Sin enforcement de flujo — la decisión ya se tomó localmente.
+        //   2. Idempotente por el Guid generado por el cliente: reenviar el
+        //      mismo evento (respuesta perdida) es un no-op exitoso.
+        // Estado y Activo se fuerzan server-side: una báscula nunca puede
+        // acuñar un Oficial ni reactivar un provisional ya fusionado.
+        group.MapPost("/sync", async (SincronizarMaestroRequest request, SmsDbContext db, CancellationToken ct) =>
+        {
+            if (request.Operacion != "Crear")
+            {
+                return Results.BadRequest($"Operación de sync de maestro desconocida: '{request.Operacion}'.");
+            }
+
+            var payload = request.Payload;
+
+            var existente = await db.Maestros.FirstOrDefaultAsync(m => m.Id == payload.Id, ct);
+            if (existente is not null)
+            {
+                // Ya fusionado: resolver hasta el oficial vigente y devolverlo,
+                // sin tocar el provisional (nunca se reactiva).
+                if (existente.FusionadoConId is not null)
+                {
+                    var oficialId = await ResolucionFusion.ResolverMaestroFusionadoAsync(db, existente.Id, ct);
+                    var oficial = await db.Maestros.AsNoTracking().FirstAsync(m => m.Id == oficialId, ct);
+                    return Results.Ok(MaestroDto.FromEntity(oficial));
+                }
+
+                // Reintento del mismo evento — no-op, se devuelve tal cual está.
+                return Results.Ok(MaestroDto.FromEntity(existente));
+            }
+
+            // Colisión (TipoCatalogo, Codigo) con OTRA fila (distinto Guid): el
+            // índice único tiraría un 500 crudo en SaveChanges — se ataja con un
+            // 409 claro. La resolución del choque (código central, reintento) es
+            // una decisión de operación, no de este endpoint.
+            var codigoEnUso = await db.Maestros
+                .AnyAsync(m => m.TipoCatalogo == payload.TipoCatalogo && m.Codigo == payload.Codigo, ct);
+            if (codigoEnUso)
+            {
+                return Results.Conflict(
+                    $"Ya existe un {payload.TipoCatalogo} con Codigo '{payload.Codigo}'.");
+            }
+
+            var maestro = new Maestro
+            {
+                Id = payload.Id,
+                TipoCatalogo = payload.TipoCatalogo,
+                Codigo = payload.Codigo,
+                Nombre = payload.Nombre,
+                DatosAdicionales = payload.DatosAdicionales,
+                Estado = EstadoMaestro.Provisional,
+                FechaModificacion = DateTime.UtcNow,
+                Activo = true,
+            };
+
+            db.Maestros.Add(maestro);
+            await db.SaveChangesAsync(ct);
+
+            return Results.Ok(MaestroDto.FromEntity(maestro));
+        });
+
         group.MapPut("/{id:guid}", async (Guid id, GuardarMaestroRequest request, SmsDbContext db) =>
         {
             var maestro = await db.Maestros.FirstOrDefaultAsync(m => m.Id == id);

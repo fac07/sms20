@@ -3,6 +3,7 @@ using Microsoft.EntityFrameworkCore;
 using SmsBackend.Data;
 using SmsBackend.Domain.Basculas;
 using SmsBackend.Domain.Boletas.Valores;
+using SmsBackend.Domain.Maestros;
 
 namespace SmsBackend.Domain.Boletas;
 
@@ -236,7 +237,14 @@ public static class BoletaEndpoints
                     // clave: un cache de báscula viejo conserva su CampoId
                     // original y así debe quedar almacenado (candado
                     // as-of-creation).
-                    var valores = LeerValores(request.Payload);
+                    // Redirect-on-write: cada ValorMaestroId se resuelve a través
+                    // de FusionadoConId ANTES de correr el motor y ANTES de
+                    // persistir. Así una boleta que sincroniza después de que su
+                    // provisional fue fusionado aterriza directo sobre el oficial
+                    // — el motor nunca ve el id fusionado y la FK real
+                    // (BoletaValorCampo -> Maestro) queda satisfecha. El motor no
+                    // se toca (los vectores de paridad C#/TS quedan intactos).
+                    var valores = await RedirigirMaestrosFusionadosAsync(db, LeerValores(request.Payload), ct);
                     var errores = await motor.ValidarValoresAsync(tipoMovimientoId, fechaHoraIngreso, valores, ct);
                     if (errores.Count > 0)
                     {
@@ -359,6 +367,44 @@ public static class BoletaEndpoints
     }
 
     private static Guid ObtenerGuid(JsonElement payload, string campo) => payload.GetProperty(campo).GetGuid();
+
+    /// <summary>
+    /// Reescribe cada <see cref="ValorCampoDto.ValorMaestroId"/> al oficial
+    /// vigente siguiendo <see cref="SmsBackend.Domain.Maestros.Maestro.FusionadoConId"/>
+    /// (loop acotado + guard de ciclo en
+    /// <see cref="SmsBackend.Domain.Maestros.ResolucionFusion"/>). Un id sin
+    /// fusionar — o desconocido — se deja igual. Cachea por id para no re-resolver
+    /// la misma referencia dentro del mismo payload.
+    /// </summary>
+    private static async Task<IReadOnlyList<ValorCampoDto>> RedirigirMaestrosFusionadosAsync(
+        SmsDbContext db, IReadOnlyList<ValorCampoDto> valores, CancellationToken ct)
+    {
+        if (valores.Count == 0)
+        {
+            return valores;
+        }
+
+        var cache = new Dictionary<Guid, Guid>();
+        var resueltos = new List<ValorCampoDto>(valores.Count);
+        foreach (var v in valores)
+        {
+            if (v.ValorMaestroId is not Guid maestroId)
+            {
+                resueltos.Add(v);
+                continue;
+            }
+
+            if (!cache.TryGetValue(maestroId, out var destino))
+            {
+                destino = await ResolucionFusion.ResolverMaestroFusionadoAsync(db, maestroId, ct);
+                cache[maestroId] = destino;
+            }
+
+            resueltos.Add(destino == maestroId ? v : v with { ValorMaestroId = destino });
+        }
+
+        return resueltos;
+    }
 
     /// <summary>
     /// Convierte el arreglo <c>valores</c> del payload crudo de sync en la
@@ -509,7 +555,18 @@ public static class BoletaEndpoints
                  v.ValorFecha,
                  v.ValorBooleano,
                  v.ValorMaestroId,
-                 db.Maestros.Where(m => m.Id == v.ValorMaestroId).Select(m => m.Codigo).FirstOrDefault(),
-                 db.Maestros.Where(m => m.Id == v.ValorMaestroId).Select(m => m.Nombre).FirstOrDefault()))
+                 // ReferenciaMaestro: un único salto siguiendo FusionadoConId
+                 // (el guard de /fusionar impide cadenas más largas) para mostrar
+                 // el Codigo/Nombre del oficial vigente aun cuando la fila todavía
+                 // apunte al provisional fusionado (ventana de lag antes del
+                 // rewrite físico).
+                 (from m in db.Maestros
+                  where m.Id == v.ValorMaestroId
+                  join o in db.Maestros on (m.FusionadoConId ?? m.Id) equals o.Id
+                  select o.Codigo).FirstOrDefault(),
+                 (from m in db.Maestros
+                  where m.Id == v.ValorMaestroId
+                  join o in db.Maestros on (m.FusionadoConId ?? m.Id) equals o.Id
+                  select o.Nombre).FirstOrDefault()))
             .ToList());
 }
