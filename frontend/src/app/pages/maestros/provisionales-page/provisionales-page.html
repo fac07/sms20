@@ -1,0 +1,66 @@
+<nz-card nzTitle="Cola de provisionales" [nzBodyStyle]="{ padding: '0' }">
+  <nz-table
+    #tabla
+    [nzData]="filas()"
+    [nzLoading]="cargando()"
+    [nzPageSize]="15"
+    [nzNoResult]="sinPendientes"
+  >
+    <thead>
+      <tr>
+        <th>Tipo</th>
+        <th>Código</th>
+        <th>Nombre</th>
+        <th>Báscula de origen</th>
+        <th>Datos adicionales</th>
+        <th></th>
+      </tr>
+    </thead>
+    <tbody>
+      @for (fila of tabla.data; track fila.maestro.id) {
+        <tr>
+          <td><nz-tag>{{ fila.maestro.tipoCatalogo }}</nz-tag></td>
+          <td class="codigo">{{ fila.maestro.codigo }}</td>
+          <td>
+            {{ fila.maestro.nombre }}
+            @if (fila.similar; as similar) {
+              <div class="pista-duplicado">
+                <span nz-icon nzType="swap"></span>
+                posible duplicado de: {{ similar.nombre }} ({{ similar.estado }}) — considerá fusionar
+              </div>
+            }
+          </td>
+          <td class="codigo">{{ fila.bascula }}</td>
+          <td class="datos">{{ datosAdicionalesResumen(fila.maestro) }}</td>
+          <td class="acciones">
+            <button
+              nz-button
+              nzType="text"
+              nz-tooltip
+              nzTooltipTitle="Aprobar"
+              (click)="abrirAprobar(fila.maestro)"
+            >
+              <span nz-icon nzType="check-circle" nzTheme="fill"></span>
+            </button>
+            <button
+              nz-button
+              nzType="text"
+              nz-tooltip
+              nzTooltipTitle="Fusionar con un oficial"
+              (click)="abrirFusionar(fila.maestro)"
+            >
+              <span nz-icon nzType="swap"></span>
+            </button>
+          </td>
+        </tr>
+      }
+    </tbody>
+  </nz-table>
+</nz-card>
+
+<ng-template #sinPendientes>
+  <nz-empty nzNotFoundContent="No hay provisionales pendientes."></nz-empty>
+</ng-template>
+
+<app-aprobar-dialog (resuelto)="alAprobar()"></app-aprobar-dialog>
+<app-fusionar-dialog (resuelto)="alFusionar()"></app-fusionar-dialog>

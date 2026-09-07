@@ -1,0 +1,21 @@
+.codigo {
+  font-family: monospace;
+}
+
+.acciones {
+  text-align: right;
+  white-space: nowrap;
+}
+
+.datos {
+  max-width: 24rem;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.pista-duplicado {
+  margin-top: 0.25rem;
+  font-size: 0.75rem;
+  color: #d46b08;
+}
