@@ -1242,6 +1242,23 @@ export function upsertMaestrosLocal(maestros: MaestroLocal[]): void {
   )
 
   const ejecutar = getDb().transaction((filas: MaestroLocal[]): void => {
+    // Fusiones que llegan nuevas en este batch: el provisional pasa a tener
+    // FusionadoConId donde antes era null o apuntaba a otro. Se detectan ANTES
+    // de upsertar (para comparar contra el estado previo) y se aplican DESPUÉS
+    // (para que resolverOficialLocal vea el espejo ya actualizado). Todo en la
+    // misma transacción: si un rewrite falla, el batch entero se revierte y el
+    // watermark (MAX(FechaModificacion)) no avanza.
+    const fusionesNuevas: Array<{ provisionalId: string; oficialId: string }> = []
+    for (const m of filas) {
+      if (!m.fusionadoConId) continue
+      const previa = getDb()
+        .prepare('SELECT FusionadoConId FROM Maestro WHERE Id = ?')
+        .get(m.id) as { FusionadoConId: string | null } | undefined
+      if (!previa || previa.FusionadoConId !== m.fusionadoConId) {
+        fusionesNuevas.push({ provisionalId: m.id, oficialId: m.fusionadoConId })
+      }
+    }
+
     for (const m of filas) {
       upsert.run({
         id: m.id,
@@ -1254,6 +1271,10 @@ export function upsertMaestrosLocal(maestros: MaestroLocal[]): void {
         fechaModificacion: m.fechaModificacion,
         activo: m.activo ? 1 : 0,
       })
+    }
+
+    for (const fusion of fusionesNuevas) {
+      aplicarFusionMaestroLocal(fusion.provisionalId, fusion.oficialId)
     }
   })
 
@@ -1286,6 +1307,148 @@ export function obtenerUltimaSincronizacionMaestros(): string | null {
 export function obtenerMaestroLocal(id: string): MaestroLocal | null {
   const row = getDb().prepare('SELECT * FROM Maestro WHERE Id = ?').get(id) as MaestroRow | undefined
   return row ? filaAMaestroLocal(row) : null
+}
+
+// ---------------------------------------------------------------------------
+// Merge-apply local (M4b) — cuando el delta de maestros trae un provisional con
+// FusionadoConId seteado, el terminal reescribe TODA referencia local
+// (BoletaValorCampo + payloads de OutboxLocal pendientes) del provisional al
+// oficial, en la MISMA transacción que el upsert del espejo (así el watermark
+// solo avanza si los rewrites persisten). Ver spec "Terminal applies merge on
+// the maestros delta" y M-D7 (nunca string-replace: parse -> walk -> stringify).
+// ---------------------------------------------------------------------------
+
+/** Tope defensivo de saltos siguiendo FusionadoConId en el espejo local. */
+const MAX_SALTOS_FUSION_LOCAL = 5
+
+/**
+ * Sigue `Maestro.FusionadoConId` desde `id` hasta la fila no fusionada (el
+ * oficial vigente) en el espejo local. El guard de `/fusionar` en central impide
+ * crear cadenas nuevas; el loop es defensivo: acota los saltos y corta ante un
+ * ciclo o un id sin fila.
+ */
+function resolverOficialLocal(id: string): string {
+  const visitados = new Set<string>([id])
+  let actual = id
+  for (let salto = 0; salto < MAX_SALTOS_FUSION_LOCAL; salto++) {
+    const row = getDb()
+      .prepare('SELECT FusionadoConId FROM Maestro WHERE Id = ?')
+      .get(actual) as { FusionadoConId: string | null } | undefined
+    const siguiente = row?.FusionadoConId
+    if (!siguiente || visitados.has(siguiente)) return actual
+    visitados.add(siguiente)
+    actual = siguiente
+  }
+  return actual
+}
+
+/**
+ * Aplica localmente la fusión de un provisional en un oficial:
+ *  - `UPDATE BoletaValorCampo SET ValorMaestroId = oficial WHERE = provisional`.
+ *  - Cada payload de `OutboxLocal` en estado `Pendiente` cuyo `valores[]`
+ *    referencie al provisional se reescribe al oficial (parse -> walk ->
+ *    stringify, NUNCA string-replace).
+ *  - Si el propio evento `MaestroProvisional`/`Crear` del provisional sigue
+ *    `Pendiente` (se fusionó antes de sincronizar), se asienta como `Enviado`:
+ *    central ya conoce la fusión, reintentar el Crear no aporta.
+ *
+ * NO abre su propia transacción — se invoca desde dentro de la transacción de
+ * `upsertMaestrosLocal`. Llamarla suelta (tests) también es válido: cada
+ * statement autocommitea.
+ */
+export function aplicarFusionMaestroLocal(provisionalId: string, oficialId: string): void {
+  const oficialFinal = resolverOficialLocal(oficialId)
+
+  getDb()
+    .prepare('UPDATE BoletaValorCampo SET ValorMaestroId = ? WHERE ValorMaestroId = ?')
+    .run(oficialFinal, provisionalId)
+
+  const pendientes = getDb()
+    .prepare(
+      `SELECT Id, TipoEntidad, EntidadId, Payload FROM OutboxLocal WHERE Estado = 'Pendiente'`,
+    )
+    .all() as Array<{ Id: string; TipoEntidad: string; EntidadId: string; Payload: string }>
+
+  const actualizarPayload = getDb().prepare('UPDATE OutboxLocal SET Payload = ? WHERE Id = ?')
+  const asentarEvento = getDb().prepare(
+    `UPDATE OutboxLocal SET Estado = 'Enviado', FechaEnviado = ? WHERE Id = ?`,
+  )
+
+  for (const evento of pendientes) {
+    if (evento.TipoEntidad === 'MaestroProvisional' && evento.EntidadId === provisionalId) {
+      asentarEvento.run(new Date().toISOString(), evento.Id)
+      continue
+    }
+
+    let payload: unknown
+    try {
+      payload = JSON.parse(evento.Payload)
+    } catch {
+      continue
+    }
+    if (typeof payload !== 'object' || payload === null) continue
+    const valores = (payload as { valores?: Array<{ valorMaestroId?: string | null }> }).valores
+    if (!Array.isArray(valores)) continue
+
+    let cambiado = false
+    for (const v of valores) {
+      if (v && v.valorMaestroId === provisionalId) {
+        v.valorMaestroId = oficialFinal
+        cambiado = true
+      }
+    }
+    if (cambiado) {
+      actualizarPayload.run(JSON.stringify(payload), evento.Id)
+    }
+  }
+}
+
+/** Umbral de intentos fallidos tras el cual un provisional trabado dispara alerta (decisión de producto 4). */
+export const UMBRAL_ALERTA_TRABADO = 5
+
+export interface EventoTrabado {
+  entidadId: string
+  tipoCatalogo: string | null
+  nombre: string | null
+  codigo: string | null
+  intentos: number
+  ultimoError: string | null
+}
+
+/**
+ * Eventos `MaestroProvisional` `Pendiente` con `Intentos >= UMBRAL_ALERTA_TRABADO`
+ * — el predicado derivado (sin columna nueva, M-D3) que alimenta el banner del
+ * operador (`GET /outbox/alertas`) y el heartbeat al panel central. Se apaga
+ * solo cuando el evento deja de estar `Pendiente` (lo asienta el dispatcher al
+ * sincronizar, o `aplicarFusionMaestroLocal` si se fusionó antes).
+ */
+export function listarEventosTrabados(): EventoTrabado[] {
+  const rows = getDb()
+    .prepare(
+      `SELECT o.EntidadId, o.Intentos, o.UltimoError, m.TipoCatalogo, m.Nombre, m.Codigo
+       FROM OutboxLocal o
+       LEFT JOIN Maestro m ON m.Id = o.EntidadId
+       WHERE o.TipoEntidad = 'MaestroProvisional'
+         AND o.Estado = 'Pendiente'
+         AND o.Intentos >= ?
+       ORDER BY o.Secuencia ASC`,
+    )
+    .all(UMBRAL_ALERTA_TRABADO) as Array<{
+    EntidadId: string
+    Intentos: number
+    UltimoError: string | null
+    TipoCatalogo: string | null
+    Nombre: string | null
+    Codigo: string | null
+  }>
+  return rows.map((r) => ({
+    entidadId: r.EntidadId,
+    tipoCatalogo: r.TipoCatalogo,
+    nombre: r.Nombre,
+    codigo: r.Codigo,
+    intentos: r.Intentos,
+    ultimoError: r.UltimoError,
+  }))
 }
 
 // ---------------------------------------------------------------------------

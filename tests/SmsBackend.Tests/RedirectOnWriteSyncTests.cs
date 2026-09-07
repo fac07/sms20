@@ -114,16 +114,24 @@ public sealed class RedirectOnWriteSyncTests : IAsyncLifetime
             TestData.SyncMaestroPayload(provisionalId, escenario.BasculaCodigo, TipoCatalogo.Equipo, $"EQP-{s}", $"Equipo prov {s}"));
         Assert.True(ingesta.IsSuccessStatusCode, cuerpoIngesta);
 
-        // La boleta sincroniza ANTES de la fusión: su fila queda apuntando al
-        // provisional (M2 no reescribe BoletaValorCampo central — eso es M3).
         var boletaId = Guid.NewGuid();
         var (resp, body) = await TestData.SyncAsync(_client, TestData.SyncCrearPayload(
             boletaId, escenario, DateTime.UtcNow, new[] { TestData.Referencia(campoId, provisionalId) }));
         Assert.True(resp.IsSuccessStatusCode, body);
         Assert.Equal(provisionalId, await ValorMaestroPersistidoAsync(boletaId));
 
-        var (fusion, cuerpoFusion) = await TestData.FusionarMaestroAsync(_client, provisionalId, oficial.Id);
-        Assert.True(fusion.IsSuccessStatusCode, cuerpoFusion);
+        // Ventana de lag: el provisional queda marcado como fusionado pero SIN
+        // reescribir todavía la fila BoletaValorCampo (el rewrite retroactivo de
+        // /fusionar es M4b). Se simula acá tocando el maestro directo para probar
+        // el salto de lectura de Proyectar de forma aislada del endpoint.
+        using (var scope = _factory.CreateScope())
+        {
+            var db = scope.ServiceProvider.GetRequiredService<SmsDbContext>();
+            var provisional = await db.Maestros.FirstAsync(m => m.Id == provisionalId);
+            provisional.FusionadoConId = oficial.Id;
+            provisional.Activo = false;
+            await db.SaveChangesAsync();
+        }
 
         var recargada = await TestData.GetBoletaAsync(_client, boletaId);
         var valor = Assert.Single(recargada.Valores);

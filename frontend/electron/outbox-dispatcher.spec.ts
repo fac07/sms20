@@ -196,6 +196,54 @@ describe('outbox-dispatcher — routing por TipoEntidad + park dependency-aware 
     expect(eventos[segunda.id].intentos).toBe(0)
   })
 
+  it('al cruzar el 5º intento fallido, POSTea un heartbeat best-effort a /api/maestros/incidencias-sync', async () => {
+    const prov = crearMaestroProvisionalLocal({ tipoCatalogo: 'Transportista', nombre: 'Juan Perez' })
+
+    const llamadas: Llamada[] = []
+    vi.stubGlobal(
+      'fetch',
+      fakeCentral(llamadas, (url) =>
+        url.includes('/api/maestros/sync') ? { ok: false, status: 422 } : { ok: true, status: 204 },
+      ),
+    )
+
+    // 4 ciclos: Intentos llega a 4, todavía sin heartbeat.
+    for (let i = 0; i < 4; i++) await despacharOutboxPendiente()
+    expect(llamadas.some((l) => l.url.includes('/incidencias-sync'))).toBe(false)
+
+    // 5º ciclo: Intentos = 5 -> dispara el heartbeat.
+    await despacharOutboxPendiente()
+    const heartbeat = llamadas.find((l) => l.url.includes('/api/maestros/incidencias-sync'))
+    expect(heartbeat).toBeDefined()
+    expect(heartbeat!.body).toMatchObject({
+      basculaCodigo: 'B1',
+      entidadId: prov.id,
+      tipoCatalogo: 'Transportista',
+      nombre: 'Juan Perez',
+      intentos: 5,
+    })
+  })
+
+  it('un fallo del heartbeat no rompe el dispatch ni bumpea nada de más', async () => {
+    const prov = crearMaestroProvisionalLocal({ tipoCatalogo: 'Transportista', nombre: 'A' })
+
+    vi.stubGlobal(
+      'fetch',
+      fakeCentral([], (url) => {
+        if (url.includes('/api/maestros/sync')) return { ok: false, status: 400 }
+        return 'throw' // el heartbeat explota
+      }),
+    )
+
+    for (let i = 0; i < 6; i++) {
+      await expect(despacharOutboxPendiente()).resolves.toBeDefined()
+    }
+
+    const evento = listarOutboxLocal().find((e) => e.entidadId === prov.id)
+    expect(evento?.estado).toBe('Pendiente')
+    expect(evento?.intentos).toBe(6)
+  })
+
   it('un provisional que 4xx-ea 11 veces sigue Pendiente (nunca Error) con Intentos=11', async () => {
     const prov = crearMaestroProvisionalLocal({ tipoCatalogo: 'Transportista', nombre: 'A' })
 

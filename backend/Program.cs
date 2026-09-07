@@ -40,6 +40,11 @@ builder.Services.AddDbContext<SmsDbContext>(options =>
 // llegan en un WU posterior.
 builder.Services.AddScoped<MotorCampos>();
 
+// Store en memoria de incidencias de sync reportadas por las básculas (evento
+// MaestroProvisional trabado a 5+ intentos). Singleton y volátil por diseño
+// (M-D3): sin tabla, TTL 1h, el terminal re-reporta cada ciclo.
+builder.Services.AddSingleton<IncidenciasSyncStore>();
+
 // /health hace un SELECT 1 real contra SmsCentral — así sirve para probar
 // conectividad de verdad, no solo "el proceso está vivo".
 builder.Services.AddHealthChecks().AddDbContextCheck<SmsDbContext>("database");
