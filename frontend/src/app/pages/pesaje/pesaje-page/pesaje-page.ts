@@ -27,6 +27,7 @@ import { NzTagModule } from 'ng-zorro-antd/tag';
 import { Observable, catchError, forkJoin, of } from 'rxjs';
 import { CampoAplicable, ErrorCampo, TipoMovimiento } from '../../../api/configuracion.models';
 import {
+  AlertasOutbox,
   BoletaLocal,
   CerrarBoletaInput,
   CrearBoletaInput,
@@ -56,6 +57,11 @@ import {
 const USUARIO_PLACEHOLDER = 'operador@naturaceites.com';
 
 const POLL_PESO_MS = 1500;
+
+// El banner de "provisional trabado" se refresca en su propio intervalo lento
+// (~30s) — no hace falta la cadencia de 1.5s del peso y no debe martillar
+// `GET /outbox/alertas`.
+const POLL_ALERTAS_PROVISIONAL_MS = 30_000;
 
 // Slice C3 — sobre C1/C2 agrega:
 //  - mapeo de `ErrorCampo[]` (400 al crear / 422 al cerrar) a cada control con
@@ -159,6 +165,11 @@ export class PesajePage implements OnInit, OnDestroy {
   readonly resumenErrores = signal<LineaResumen[]>([]);
   readonly erroresPorSeccion = signal<Record<string, string[]>>({});
 
+  // Un provisional que no logra sincronizar (>= 5 intentos) enciende un banner
+  // no bloqueante — el operador puede seguir pesando (M4b/M5b). Un poll fallido
+  // se trata como "sin alerta": no se muestra un banner rancio.
+  readonly hayAlertaProvisional = signal(false);
+
   // Indicador de antigüedad del último sync de configuración — nunca bloquea.
   readonly lastConfigSyncAt = signal<string | null>(null);
   readonly antiguedadSync = computed<AntiguedadSync>(() =>
@@ -193,6 +204,7 @@ export class PesajePage implements OnInit, OnDestroy {
   );
 
   private intervalId: ReturnType<typeof setInterval> | null = null;
+  private alertasIntervalId: ReturnType<typeof setInterval> | null = null;
 
   ngOnInit(): void {
     this.cargarCatalogos();
@@ -200,15 +212,28 @@ export class PesajePage implements OnInit, OnDestroy {
     this.cargarConfigEstado();
     this.cargarBoletasEnTransito();
     this.cargarTiposProvisionables();
+    this.cargarAlertasProvisional();
 
     this.tipoMovimientoCtrl.valueChanges.subscribe((id) => this.cargarFormulario(id));
 
     this.actualizarPeso();
     this.intervalId = setInterval(() => this.actualizarPeso(), POLL_PESO_MS);
+    this.alertasIntervalId = setInterval(
+      () => this.cargarAlertasProvisional(),
+      POLL_ALERTAS_PROVISIONAL_MS,
+    );
   }
 
   ngOnDestroy(): void {
     if (this.intervalId !== null) clearInterval(this.intervalId);
+    if (this.alertasIntervalId !== null) clearInterval(this.alertasIntervalId);
+  }
+
+  private cargarAlertasProvisional(): void {
+    this.localServer
+      .alertasOutbox()
+      .pipe(catchError(() => of<AlertasOutbox | null>(null)))
+      .subscribe((alerta) => this.hayAlertaProvisional.set(alerta?.hayAlertaProvisional ?? false));
   }
 
   private cargarCatalogos(): void {

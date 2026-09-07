@@ -5,7 +5,7 @@ import {
 } from '@angular/common/http/testing';
 import { TestBed } from '@angular/core/testing';
 import { NzMessageService } from 'ng-zorro-antd/message';
-import { Maestro, TipoCatalogo } from '../../../api/maestros.service';
+import { IncidenciaSync, Maestro, TipoCatalogo } from '../../../api/maestros.service';
 import { AprobarDialog } from '../dialogs/aprobar-dialog';
 import { FusionarDialog } from '../dialogs/fusionar-dialog';
 import { ProvisionalesPage } from './provisionales-page';
@@ -52,6 +52,9 @@ describe('ProvisionalesPage (TestBed + HttpTestingController)', () => {
   beforeEach(async () => {
     message.error.mockReset();
     message.success.mockReset();
+    // El poll de incidencias usa setInterval — se neutraliza para tests deterministas.
+    vi.spyOn(globalThis, 'setInterval').mockReturnValue(0 as unknown as ReturnType<typeof setInterval>);
+    vi.spyOn(globalThis, 'clearInterval').mockImplementation(() => undefined);
     await TestBed.configureTestingModule({
       imports: [ProvisionalesPage],
       providers: [
@@ -68,7 +71,20 @@ describe('ProvisionalesPage (TestBed + HttpTestingController)', () => {
     vi.restoreAllMocks();
   });
 
-  function crear(provisionales: Maestro[], universo?: Maestro[]) {
+  function incidencia(parcial: Partial<IncidenciaSync> = {}): IncidenciaSync {
+    return {
+      basculaCodigo: 'B01',
+      entidadId: 'prov-1',
+      tipoCatalogo: 'Piloto',
+      nombre: 'Ana',
+      intentos: 6,
+      ultimoError: 'La central rechazó: código PROV-B01-1 ya existe.',
+      visto: false,
+      ...parcial,
+    };
+  }
+
+  function crear(provisionales: Maestro[], universo?: Maestro[], incidencias: IncidenciaSync[] = []) {
     const fixture = TestBed.createComponent(ProvisionalesPage);
     httpMock
       .expectOne(`${CENTRAL}/api/maestros?estado=Provisional&incluirInactivos=false`)
@@ -76,6 +92,7 @@ describe('ProvisionalesPage (TestBed + HttpTestingController)', () => {
     httpMock
       .expectOne(`${CENTRAL}/api/maestros?incluirInactivos=false`)
       .flush(universo ?? provisionales);
+    httpMock.expectOne(`${CENTRAL}/api/maestros/incidencias-sync`).flush(incidencias);
     return fixture.componentInstance;
   }
 
@@ -112,6 +129,56 @@ describe('ProvisionalesPage (TestBed + HttpTestingController)', () => {
     expect(component.filas()[0].similar).toEqual({ nombre: 'Juán Pérez', estado: 'Oficial' });
   });
 
+  it('sin incidencias de sync -> no muestra la alerta del panel', () => {
+    const component = crear([maestro({ id: 'p1' })], undefined, []);
+    expect(component.incidencias()).toEqual([]);
+  });
+
+  it('lista cada provisional trabado con báscula, nombre, intentos y ultimoError verbatim', () => {
+    const errorCrudo = 'SqlException 2627: UNIQUE KEY constraint (TipoCatalogo, Codigo).';
+    const component = crear(
+      [maestro({ id: 'p1' })],
+      undefined,
+      [
+        incidencia({ basculaCodigo: 'B01', entidadId: 'p1', nombre: 'Ana', intentos: 5 }),
+        incidencia({
+          basculaCodigo: 'B02',
+          entidadId: 'p9',
+          nombre: 'La Loma',
+          intentos: 7,
+          ultimoError: errorCrudo,
+        }),
+      ],
+    );
+
+    expect(component.incidencias().length).toBe(2);
+    expect(component.incidencias().map((i) => i.basculaCodigo)).toEqual(['B01', 'B02']);
+    expect(component.incidencias()[1].ultimoError).toBe(errorCrudo);
+  });
+
+  it('un poll de incidencias que falla limpia la alerta (no queda rancia)', () => {
+    const fixture = TestBed.createComponent(ProvisionalesPage);
+    httpMock
+      .expectOne(`${CENTRAL}/api/maestros?estado=Provisional&incluirInactivos=false`)
+      .flush([]);
+    httpMock.expectOne(`${CENTRAL}/api/maestros?incluirInactivos=false`).flush([]);
+    httpMock
+      .expectOne(`${CENTRAL}/api/maestros/incidencias-sync`)
+      .flush('down', { status: 503, statusText: 'Service Unavailable' });
+
+    expect(fixture.componentInstance.incidencias()).toEqual([]);
+  });
+
+  it('resolver una fila re-lee la cola y sincroniza el contador del badge', () => {
+    const component = crear([maestro({ id: 'p1' }), maestro({ id: 'p2' })]);
+    component.alAprobar();
+    httpMock
+      .expectOne(`${CENTRAL}/api/maestros?estado=Provisional&incluirInactivos=false`)
+      .flush([maestro({ id: 'p2' })]);
+    httpMock.expectOne(`${CENTRAL}/api/maestros?incluirInactivos=false`).flush([maestro({ id: 'p2' })]);
+
+    expect(component.provisionales().length).toBe(1);
+  });
 });
 
 describe('AprobarDialog (TestBed + HttpTestingController)', () => {

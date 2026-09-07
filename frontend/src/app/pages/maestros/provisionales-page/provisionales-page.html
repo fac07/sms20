@@ -1,3 +1,30 @@
+@if (incidencias().length > 0) {
+  <nz-alert
+    nzType="error"
+    nzShowIcon
+    class="alerta-incidencias"
+    nzMessage="Hay provisionales que no logran sincronizar — requieren tu intervención"
+    [nzDescription]="tplIncidencias"
+  ></nz-alert>
+  <ng-template #tplIncidencias>
+    <ul class="lista-incidencias">
+      @for (inc of incidencias(); track inc.basculaCodigo + '|' + inc.entidadId) {
+        <li>
+          <strong>Báscula {{ inc.basculaCodigo }}</strong> —
+          {{ inc.tipoCatalogo ?? 'Maestro' }}
+          @if (inc.nombre) {
+            «{{ inc.nombre }}»
+          } @else {
+            <span class="codigo">{{ inc.entidadId }}</span>
+          }
+          · {{ inc.intentos }} intentos
+          <pre class="incidencia-error">{{ inc.ultimoError }}</pre>
+        </li>
+      }
+    </ul>
+  </ng-template>
+}
+
 <nz-card nzTitle="Cola de provisionales" [nzBodyStyle]="{ padding: '0' }">
   <nz-table
     #tabla
