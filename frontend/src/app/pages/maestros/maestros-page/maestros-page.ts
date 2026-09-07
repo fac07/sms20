@@ -1,5 +1,5 @@
 import { CommonModule } from '@angular/common';
-import { Component, computed, inject, signal } from '@angular/core';
+import { Component, computed, inject, signal, viewChild } from '@angular/core';
 import { FormBuilder, FormsModule, ReactiveFormsModule, Validators } from '@angular/forms';
 import { NzButtonModule } from 'ng-zorro-antd/button';
 import { NzCardModule } from 'ng-zorro-antd/card';
@@ -21,6 +21,7 @@ import {
   TIPOS_CATALOGO,
   TipoCatalogo,
 } from '../../../api/maestros.service';
+import { AprobarDialog } from '../dialogs/aprobar-dialog';
 
 @Component({
   imports: [
@@ -39,6 +40,7 @@ import {
     NzTabsModule,
     NzTagModule,
     NzTooltipModule,
+    AprobarDialog,
   ],
   selector: 'app-maestros-page',
   styleUrl: './maestros-page.css',
@@ -57,6 +59,8 @@ export class MaestrosPage {
   readonly guardando = signal(false);
   readonly editando = signal<Maestro | null>(null);
   readonly modalAbierto = signal(false);
+
+  private readonly aprobarDlg = viewChild.required(AprobarDialog);
 
   readonly fusionandoDesde = signal<Maestro | null>(null);
   readonly candidatosFusion = signal<Maestro[]>([]);
@@ -170,18 +174,16 @@ export class MaestrosPage {
     });
   }
 
-  aprobar(maestro: Maestro): void {
-    // TODO(M5a): la cola unificada de provisionales trae el diálogo de aprobación
-    // que pide el código oficial (prefill de siguienteCodigo) + nombre editable.
-    // Hasta entonces este botón por-pestaña queda intencionalmente roto: reenvía
-    // el propio código del provisional (PROV-…) como código oficial.
-    this.service.aprobar(maestro.id, { codigo: maestro.codigo }).subscribe({
-      next: () => {
-        this.message.success('Ítem oficializado — se distribuye a las básculas en el próximo sync.');
-        this.cargar();
-      },
-      error: (err) => this.message.error(err?.error ?? 'No se pudo aprobar.'),
-    });
+  abrirAprobar(maestro: Maestro): void {
+    // El diálogo compartido pide el código oficial (prefill de siguienteCodigo)
+    // + nombre editable y maneja el 409 de colisión. Mismo flujo que la cola
+    // unificada de provisionales.
+    this.aprobarDlg().abrir(maestro);
+  }
+
+  alAprobar(): void {
+    this.message.success('Ítem oficializado — se distribuye a las básculas en el próximo sync.');
+    this.cargar();
   }
 
   abrirFusion(provisional: Maestro): void {
