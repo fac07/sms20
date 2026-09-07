@@ -1,5 +1,5 @@
 import type Database from 'better-sqlite3'
-import { getConfig, getDb } from './db'
+import { getConfig, getDb, guardarConfigIngresoManual } from './db'
 
 // Mismo origen hardcodeado que maestros-sync.ts / outbox-dispatcher.ts — sin
 // .env, sin secretos acá.
@@ -70,6 +70,16 @@ interface TipoMovimientoDto {
   generaQR: boolean
   formatoBoletaId: string | null
   activo: boolean
+}
+
+// Subconjunto del `BasculaDto` central (camelCase) que consume este módulo — la
+// config de ingreso manual de peso de ESTA báscula. El endpoint
+// `GET /api/basculas/{id}` ya existía; S1a le sumó estos 3 campos.
+interface BasculaPropiaDto {
+  id: string
+  permiteIngresoManual: boolean
+  pesoMinimoManual: number | null
+  pesoMaximoManual: number | null
 }
 
 export interface ResultadoConfigSync {
@@ -273,6 +283,31 @@ export async function sincronizarConfig(
     }
   }
 
+  // 1b. Config de ingreso manual de peso de ESTA báscula. La terminal guarda su
+  // `BasculaId` en `ConfiguracionLocal` al aprovisionarse; el endpoint
+  // `GET /api/basculas/{id}` ya existe. Va en su PROPIO try/catch y NUNCA aborta
+  // el sync: a diferencia de secciones/campos, un 404 o un blip de red acá no
+  // puede tumbar la config de la que depende la creación de boletas. Si la
+  // báscula todavía no está aprovisionada (sin `BasculaId`), se saltea en
+  // silencio y la clave queda como estaba (default-deny si nunca se escribió;
+  // último valor conocido si ya se sincronizó una vez).
+  const basculaId = (
+    db.prepare(`SELECT Valor FROM ConfiguracionLocal WHERE Clave = 'BasculaId'`).get() as
+      | { Valor: string | null }
+      | undefined
+  )?.Valor
+  let ingresoManual: BasculaPropiaDto | null = null
+  if (basculaId) {
+    try {
+      const respuesta = await fetcher(`${baseUrl}/api/basculas/${basculaId}`)
+      if (respuesta.ok) {
+        ingresoManual = (await respuesta.json()) as BasculaPropiaDto
+      }
+    } catch {
+      // Degrada a "saltear este tick" — el último valor conocido persiste.
+    }
+  }
+
   // 2. Persistir el batch completo en una sola transacción.
   const persistir = db.transaction((): void => {
     // Espejo de TipoMovimiento primero: reusa el array `tipos` que ya se bajó
@@ -288,6 +323,16 @@ export async function sincronizarConfig(
       `INSERT INTO ConfiguracionLocal (Clave, Valor) VALUES ('LastConfigSyncAt', @valor)
        ON CONFLICT(Clave) DO UPDATE SET Valor = excluded.Valor`,
     ).run({ valor: new Date().toISOString() })
+
+    // Trío de ingreso manual — solo si la báscula respondió arriba. Un tick sin
+    // respuesta deja el último valor conocido intacto.
+    if (ingresoManual) {
+      guardarConfigIngresoManual(db, {
+        permiteIngresoManual: Boolean(ingresoManual.permiteIngresoManual),
+        pesoMinimoManual: ingresoManual.pesoMinimoManual ?? null,
+        pesoMaximoManual: ingresoManual.pesoMaximoManual ?? null,
+      })
+    }
   })
   persistir()
 

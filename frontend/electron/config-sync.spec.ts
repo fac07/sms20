@@ -1,6 +1,6 @@
 import Database from 'better-sqlite3'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import { _inyectarDbParaPruebas, inicializarEsquemaLocal } from './db'
+import { _inyectarDbParaPruebas, inicializarEsquemaLocal, leerConfigIngresoManual } from './db'
 import { sincronizarConfig, sincronizarConfigLocal } from './config-sync'
 import type { Fetcher } from './config-sync'
 
@@ -232,6 +232,124 @@ describe('sincronizarConfig', () => {
     // Re-run idempotente: mismo conteo, sin filas nuevas.
     await sincronizarConfig(db, { fetcher: fakeCentral(data, calls), baseUrl: BASE })
     expect(contar('TipoMovimiento')).toBe(2)
+  })
+})
+
+describe('sincronizarConfig — propagación del ingreso manual de peso (S2a)', () => {
+  const BASCULA_ID = 'ba5c111a-0000-0000-0000-000000000001'
+
+  const baseData = (): FakeData => ({
+    secciones: [seccion('s1', 'peso', T1)],
+    campos: [campo('c1', 's1', 'bruto', T1)],
+    tipos: [tipoMov('tm1')],
+    tms: { tm1: [tmsRow('s1', T1)] },
+  })
+
+  // Fetcher que además responde `GET /api/basculas/{id}` con la config de la
+  // báscula propia; `bascula` null => 404 en esa ruta, `'throw'` => excepción.
+  function fakeCentralConBascula(
+    data: FakeData,
+    calls: string[],
+    bascula: Record<string, unknown> | null | 'throw',
+  ): Fetcher {
+    const base = fakeCentral(data, calls)
+    return async (rawUrl: string) => {
+      const u = new URL(rawUrl)
+      if (u.pathname.startsWith('/api/basculas/')) {
+        calls.push(rawUrl)
+        if (bascula === 'throw') throw new Error('red caída en el GET de la báscula propia')
+        if (bascula === null) return { ok: false, status: 404, json: async () => ({ error: 'no existe' }) }
+        return ok(bascula)
+      }
+      return base(rawUrl)
+    }
+  }
+
+  const seedBasculaId = () =>
+    db.prepare(`INSERT INTO ConfiguracionLocal (Clave, Valor) VALUES ('BasculaId', ?)`).run(BASCULA_ID)
+
+  it('baja la config de la propia báscula y upsertea el trío en ConfiguracionLocal', async () => {
+    seedBasculaId()
+    const calls: string[] = []
+    const fetcher = fakeCentralConBascula(baseData(), calls, {
+      id: BASCULA_ID,
+      permiteIngresoManual: true,
+      pesoMinimoManual: 120.5,
+      pesoMaximoManual: 48000,
+    })
+
+    await sincronizarConfig(db, { fetcher, baseUrl: BASE })
+
+    expect(calls.some((u) => u.endsWith(`/api/basculas/${BASCULA_ID}`))).toBe(true)
+    const cfg = leerConfigIngresoManual(db)
+    expect(cfg.permiteIngresoManual).toBe(true)
+    expect(cfg.pesoMinimoManual).toBe(120.5)
+    expect(cfg.pesoMaximoManual).toBe(48000)
+    expect(cfg.motivosPesoManual).toEqual([
+      'IndicadorSinSenal',
+      'IndicadorEnReparacion',
+      'CorteEnergia',
+      'Otro',
+    ])
+  })
+
+  it('un 404 en el GET de la báscula propia no aborta el sync ni toca el default-deny', async () => {
+    seedBasculaId()
+    const calls: string[] = []
+    const fetcher = fakeCentralConBascula(baseData(), calls, null)
+
+    const resultado = await sincronizarConfig(db, { fetcher, baseUrl: BASE })
+
+    expect(resultado.secciones).toBe(1)
+    expect(contar('Seccion')).toBe(1)
+    expect(leerConfigIngresoManual(db).permiteIngresoManual).toBe(false)
+  })
+
+  it('un throw de red en el GET de la báscula propia no aborta el sync', async () => {
+    seedBasculaId()
+    const calls: string[] = []
+    const fetcher = fakeCentralConBascula(baseData(), calls, 'throw')
+
+    await expect(sincronizarConfig(db, { fetcher, baseUrl: BASE })).resolves.toBeDefined()
+    expect(contar('Seccion')).toBe(1)
+    expect(leerConfigIngresoManual(db).permiteIngresoManual).toBe(false)
+  })
+
+  it('sin BasculaId (no aprovisionada) no pega al endpoint de básculas y queda default-deny', async () => {
+    const calls: string[] = []
+    const fetcher = fakeCentralConBascula(baseData(), calls, { id: 'x', permiteIngresoManual: true })
+
+    await sincronizarConfig(db, { fetcher, baseUrl: BASE })
+
+    expect(calls.some((u) => u.includes('/api/basculas/'))).toBe(false)
+    expect(leerConfigIngresoManual(db).permiteIngresoManual).toBe(false)
+  })
+
+  it('central inalcanzable en un tick posterior: el último valor conocido persiste', async () => {
+    seedBasculaId()
+    const calls: string[] = []
+
+    await sincronizarConfig(db, {
+      fetcher: fakeCentralConBascula(baseData(), calls, {
+        id: BASCULA_ID,
+        permiteIngresoManual: true,
+        pesoMinimoManual: 50,
+        pesoMaximoManual: null,
+      }),
+      baseUrl: BASE,
+    })
+    expect(leerConfigIngresoManual(db).permiteIngresoManual).toBe(true)
+
+    // Tick siguiente: la báscula 404ea, el resto del sync sigue sano.
+    await sincronizarConfig(db, {
+      fetcher: fakeCentralConBascula(baseData(), calls, null),
+      baseUrl: BASE,
+    })
+
+    const cfg = leerConfigIngresoManual(db)
+    expect(cfg.permiteIngresoManual).toBe(true)
+    expect(cfg.pesoMinimoManual).toBe(50)
+    expect(cfg.pesoMaximoManual).toBeNull()
   })
 })
 
