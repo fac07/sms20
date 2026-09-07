@@ -514,15 +514,14 @@ export class PesajePage implements OnInit, OnDestroy {
   private actualizarPeso(): void {
     this.localServer
       .obtenerPeso()
-      .pipe(catchError(() => of(null)))
+      .pipe(catchError(() => of<LecturaPeso | null>(null)))
       .subscribe((lectura) => {
-        if (lectura) this.lecturaPeso.set(lectura);
-        // NOTA (bug pre-existente, fuera de scope): un fallo HTTP cae en
-        // `of(null)` y no toca `lecturaPeso`, así que un servidor local caído
-        // deja un peso stale. La evaluación del fallback usa el valor efectivo
-        // (`lectura?.peso`), no el signal, así que la racha de nulos arranca
-        // igual cuando el servidor devuelve `{ peso: null }`.
-        this.evaluarIngresoManual(lectura?.peso ?? null);
+        // Un fallo HTTP (servidor local caído) se trata igual que una lectura
+        // vacía: se limpia `lecturaPeso` para que `puedeCrear()`, el indicador
+        // y el fallback de ingreso manual no queden con un valor stale.
+        const efectiva: LecturaPeso = lectura ?? { peso: null, origen: null };
+        this.lecturaPeso.set(efectiva);
+        this.evaluarIngresoManual(efectiva.peso);
       });
   }
 
