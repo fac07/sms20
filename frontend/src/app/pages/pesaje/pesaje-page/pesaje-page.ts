@@ -1,6 +1,7 @@
 import { CommonModule } from '@angular/common';
 import { Component, OnDestroy, OnInit, computed, inject, signal } from '@angular/core';
 import {
+  AbstractControl,
   FormArray,
   FormBuilder,
   FormControl,
@@ -132,6 +133,21 @@ export class PesajePage implements OnInit, OnDestroy {
   // local, se recarga cada vez que cambia el tipo de movimiento.
   readonly maestrosPorCatalogo = signal<Record<string, MaestroLocal[]>>({});
 
+  // Tipos de catálogo que la báscula puede coinar como provisional offline (M1)
+  // — controla si un combo `ReferenciaMaestro` ofrece el "+ Crear provisional".
+  readonly tiposProvisionables = signal<string[]>([]);
+
+  // Diálogo mínimo de creación provisional inline: guarda el control del combo
+  // que disparó la creación para poder seleccionar el nuevo provisional al éxito.
+  readonly provisionalDialog = signal<{ control: AbstractControl | null; tipoCatalogo: string } | null>(
+    null,
+  );
+  readonly creandoProvisional = signal(false);
+  readonly nombreProvisionalCtrl = new FormControl<string>('', {
+    nonNullable: true,
+    validators: [Validators.required],
+  });
+
   readonly cargandoTransito = signal(false);
   readonly boletasEnTransito = signal<BoletaLocal[]>([]);
   readonly boletaCerrando = signal<BoletaLocal | null>(null);
@@ -183,6 +199,7 @@ export class PesajePage implements OnInit, OnDestroy {
     this.cargarEstadoLocal();
     this.cargarConfigEstado();
     this.cargarBoletasEnTransito();
+    this.cargarTiposProvisionables();
 
     this.tipoMovimientoCtrl.valueChanges.subscribe((id) => this.cargarFormulario(id));
 
@@ -337,6 +354,69 @@ export class PesajePage implements OnInit, OnDestroy {
     return campo.tipoCatalogoRef !== null
       ? this.maestrosPorCatalogo()[campo.tipoCatalogoRef] ?? []
       : [];
+  }
+
+  private cargarTiposProvisionables(): void {
+    this.localServer
+      .tiposProvisionables()
+      .pipe(catchError(() => of<string[]>([])))
+      .subscribe((tipos) => this.tiposProvisionables.set(tipos));
+  }
+
+  /** El FormGroup de la ocurrencia 0 de una sección Única — contexto del template. */
+  grupoDeSeccion(seccionClave: string): FormGroup {
+    const grupo = this.formSecciones().get(seccionClave);
+    return grupo instanceof FormGroup ? grupo : this.fb.group({});
+  }
+
+  /** ¿El combo de este campo permite coinar un provisional inline (M1)? */
+  puedeCrearProvisional(campo: CampoAplicable): boolean {
+    return (
+      campo.tipoCampo === 'ReferenciaMaestro' &&
+      campo.tipoCatalogoRef !== null &&
+      this.tiposProvisionables().includes(campo.tipoCatalogoRef)
+    );
+  }
+
+  abrirCrearProvisional(campo: CampoAplicable, grupo: FormGroup): void {
+    if (campo.tipoCatalogoRef === null) return;
+    this.nombreProvisionalCtrl.reset('');
+    this.provisionalDialog.set({
+      control: grupo.get(campo.campoId),
+      tipoCatalogo: campo.tipoCatalogoRef,
+    });
+  }
+
+  cerrarCrearProvisional(): void {
+    this.provisionalDialog.set(null);
+  }
+
+  confirmarCrearProvisional(): void {
+    const ctx = this.provisionalDialog();
+    this.nombreProvisionalCtrl.markAsTouched();
+    if (!ctx || this.nombreProvisionalCtrl.invalid) return;
+
+    this.creandoProvisional.set(true);
+    this.localServer
+      .crearMaestroProvisional(ctx.tipoCatalogo, this.nombreProvisionalCtrl.value)
+      .subscribe({
+        next: (maestro) => {
+          this.creandoProvisional.set(false);
+          this.provisionalDialog.set(null);
+
+          const mapa = { ...this.maestrosPorCatalogo() };
+          mapa[ctx.tipoCatalogo] = [...(mapa[ctx.tipoCatalogo] ?? []), maestro];
+          this.maestrosPorCatalogo.set(mapa);
+
+          ctx.control?.setValue(maestro.id);
+          this.message.success(`Provisional ${maestro.codigo} creado.`);
+        },
+        error: (err: unknown) => {
+          this.creandoProvisional.set(false);
+          const cuerpo = (err as { error?: { mensaje?: string } })?.error;
+          this.message.error(cuerpo?.mensaje ?? 'No se pudo crear el registro provisional.');
+        },
+      });
   }
 
   ocurrenciasDe(seccionClave: string): FormGroup[] {

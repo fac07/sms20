@@ -1,6 +1,6 @@
 import { HttpClient } from '@angular/common/http';
 import { Injectable, inject } from '@angular/core';
-import { Observable } from 'rxjs';
+import { Observable, map } from 'rxjs';
 import { CampoAplicable, TipoMovimiento, ValorCampoDto } from './configuracion.models';
 
 // Servidor LOCAL de Electron (127.0.0.1:4127) — no confundir con el backend
@@ -181,6 +181,29 @@ export class LocalServerService {
   listarMaestros(tipoCatalogo?: string): Observable<MaestroLocal[]> {
     const params = tipoCatalogo ? `?tipoCatalogo=${encodeURIComponent(tipoCatalogo)}` : '';
     return this.http.get<MaestroLocal[]>(`${LOCAL_SERVER_URL}/maestros${params}`);
+  }
+
+  // Tipos de catálogo que se pueden coinar como provisional offline (M1). El
+  // combo de Pesaje muestra el "+ Crear provisional" solo para estos.
+  tiposProvisionables(): Observable<string[]> {
+    return this.http
+      .get<{ tipos: string[] }>(`${LOCAL_SERVER_URL}/maestros/tipos-provisionables`)
+      .pipe(map((r) => r.tipos));
+  }
+
+  // Crea un maestro provisional 100% offline: mirror local `Estado=Provisional`
+  // + evento `MaestroProvisional`/`Crear` del OutboxLocal. Devuelve la fila
+  // creada, lista para agregarse al combo y seleccionarse.
+  crearMaestroProvisional(
+    tipoCatalogo: string,
+    nombre: string,
+    datosAdicionales?: string | null,
+  ): Observable<MaestroLocal> {
+    return this.http.post<MaestroLocal>(`${LOCAL_SERVER_URL}/maestros`, {
+      tipoCatalogo,
+      nombre,
+      datosAdicionales: datosAdicionales ?? null,
+    });
   }
 
   aprovisionar(

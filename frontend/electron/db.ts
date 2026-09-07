@@ -313,6 +313,29 @@ const SQL_ESQUEMA_LOCAL = `
     );
 `
 
+// Allow-list configurable de `TipoCatalogo` que la báscula puede coinar como
+// provisional estando offline (decisión de producto 1 / M-D5). Se guarda como
+// una fila CSV de `ConfiguracionLocal` — NO un `const` hardcodeado — así habilitar
+// un quinto tipo más adelante es una edición de valor, no de código. La lista
+// inicial es exactamente Piloto, Transportista, Equipo, Finca.
+const CLAVE_TIPOS_PROVISIONALES_HABILITADOS = 'TiposCatalogoProvisionalHabilitados'
+const TIPOS_PROVISIONALES_HABILITADOS_DEFECTO = 'Piloto,Transportista,Equipo,Finca'
+
+/**
+ * Siembra la configuración local inicial que no depende de central. Hoy solo la
+ * allow-list de tipos provisionales — `INSERT ... ON CONFLICT DO NOTHING`, mismo
+ * patrón idempotente que el sellado de `EsquemaLocalVersion` (nunca pisa un
+ * valor ya editado en esta instalación).
+ */
+function sembrarConfiguracionInicial(database: Database.Database): void {
+  database
+    .prepare(
+      `INSERT INTO ConfiguracionLocal (Clave, Valor) VALUES (?, ?)
+       ON CONFLICT(Clave) DO NOTHING`,
+    )
+    .run(CLAVE_TIPOS_PROVISIONALES_HABILITADOS, TIPOS_PROVISIONALES_HABILITADOS_DEFECTO)
+}
+
 /**
  * Levanta el esquema local completo (idempotente) y aplica la guardia de reshape
  * de Boleta. getDb() la usa en producción; los specs la usan para levantar el
@@ -321,6 +344,7 @@ const SQL_ESQUEMA_LOCAL = `
 export function inicializarEsquemaLocal(database: Database.Database): void {
   database.exec(SQL_ESQUEMA_LOCAL)
   aplicarReshapeEsquemaLocal(database)
+  sembrarConfiguracionInicial(database)
 }
 
 // Un archivo SQLite embebido por instalación de báscula — sin servidor, sin
@@ -1256,6 +1280,121 @@ export function obtenerUltimaSincronizacionMaestros(): string | null {
     maximo: string | null
   }
   return row.maximo
+}
+
+/** Lee una fila puntual del espejo de Maestro por Id (incluye inactivos/provisionales). */
+export function obtenerMaestroLocal(id: string): MaestroLocal | null {
+  const row = getDb().prepare('SELECT * FROM Maestro WHERE Id = ?').get(id) as MaestroRow | undefined
+  return row ? filaAMaestroLocal(row) : null
+}
+
+// ---------------------------------------------------------------------------
+// Maestros provisionales (M1) — la báscula coina un maestro localmente estando
+// offline y emite un evento `MaestroProvisional`/`Crear` del OutboxLocal en la
+// MISMA transacción que el INSERT del mirror, para que el contador global de
+// Secuencia lo ordene antes que cualquier boleta que lo referencie. Ver el
+// diseño (#maestros-provisionales-offline, M-D5) y la spec (Layer B).
+// ---------------------------------------------------------------------------
+
+// Prefijo sintético del contador `Correlativo` para los códigos provisionales —
+// una sola secuencia por instalación (= por báscula), así `PROV-{bascula}-{seq}`
+// nunca choca entre básculas sin coordinación central.
+const PREFIJO_CORRELATIVO_PROVISIONAL = 'PROV'
+
+/**
+ * Tipos de catálogo habilitados para creación provisional offline, leídos de la
+ * fila CSV `ConfiguracionLocal.TiposCatalogoProvisionalHabilitados` (sembrada
+ * por `sembrarConfiguracionInicial`). La ruta `POST /maestros` valida contra
+ * esta lista; `GET /maestros/tipos-provisionables` la expone al renderer.
+ */
+export function tiposProvisionalesHabilitados(): string[] {
+  const row = getDb()
+    .prepare('SELECT Valor FROM ConfiguracionLocal WHERE Clave = ?')
+    .get(CLAVE_TIPOS_PROVISIONALES_HABILITADOS) as { Valor: string | null } | undefined
+  if (!row?.Valor) return []
+  return row.Valor.split(',')
+    .map((t) => t.trim())
+    .filter((t) => t.length > 0)
+}
+
+export interface CrearMaestroProvisionalInput {
+  /**
+   * Guid estable generado por el cliente — opcional. Si se pasa y ya existe un
+   * mirror con ese Id, la operación es un no-op idempotente (ni fila ni evento
+   * duplicados). Si se omite, se genera acá.
+   */
+  id?: string
+  tipoCatalogo: string
+  nombre: string
+  datosAdicionales?: string | null
+}
+
+/**
+ * Coina un maestro provisional 100% offline. En UNA sola transacción SQLite
+ * (mismo patrón que `crearBoletaLocal`): consume el siguiente `PROV` del
+ * `Correlativo`, arma `Codigo = PROV-{BasculaCodigo}-{seq}`, inserta el mirror
+ * `Maestro` (`Estado='Provisional'`, `Activo=1`, `FusionadoConId=NULL`) y
+ * registra el evento `MaestroProvisional`/`Crear` del OutboxLocal con el payload
+ * en la forma `MaestroProvisionalPayload` de central (camelCase). Si cualquiera
+ * de las dos escrituras falla, ninguna queda persistida.
+ *
+ * La validación de la allow-list de `tipoCatalogo` vive en la ruta
+ * (`POST /maestros`), no acá — este helper asume un tipo ya permitido.
+ */
+export function crearMaestroProvisionalLocal(input: CrearMaestroProvisionalInput): MaestroLocal {
+  const codigoBascula = getConfig('BasculaCodigo')
+  if (!codigoBascula) {
+    throw new Error('La báscula no tiene código configurado; no se puede coinar un maestro provisional.')
+  }
+
+  const nombre = input.nombre.trim()
+  if (nombre.length === 0) {
+    throw new Error('El nombre del maestro provisional es requerido.')
+  }
+
+  const datosAdicionales = input.datosAdicionales ?? null
+  const idProvisto = input.id
+
+  const ejecutar = getDb().transaction((): string => {
+    // Reintento idempotente por Guid de cliente: si ya existe, no se toca nada.
+    if (idProvisto) {
+      const existente = getDb().prepare('SELECT Id FROM Maestro WHERE Id = ?').get(idProvisto)
+      if (existente) return idProvisto
+    }
+
+    const id = idProvisto ?? crypto.randomUUID()
+    const secuencial = siguienteCorrelativo(PREFIJO_CORRELATIVO_PROVISIONAL)
+    const codigo = `${PREFIJO_CORRELATIVO_PROVISIONAL}-${codigoBascula}-${secuencial}`
+    const fechaCreacion = new Date().toISOString()
+
+    getDb()
+      .prepare(
+        `INSERT INTO Maestro (
+          Id, TipoCatalogo, Codigo, Nombre, DatosAdicionales, Estado, FusionadoConId, FechaModificacion, Activo
+        ) VALUES (
+          @id, @tipoCatalogo, @codigo, @nombre, @datosAdicionales, 'Provisional', NULL, @fechaCreacion, 1
+        )`,
+      )
+      .run({ id, tipoCatalogo: input.tipoCatalogo, codigo, nombre, datosAdicionales, fechaCreacion })
+
+    // Payload en la forma exacta que consume `POST /api/maestros/sync` en central
+    // (`MaestroProvisionalPayload`, camelCase). El dispatcher (M4a) lo envuelve
+    // en `SincronizarMaestroRequest` con el `basculaCodigo` de la config.
+    const payload = JSON.stringify({
+      id,
+      tipoCatalogo: input.tipoCatalogo,
+      codigo,
+      nombre,
+      datosAdicionales,
+      fechaCreacion,
+    })
+    registrarEventoOutboxLocal('MaestroProvisional', id, 'Crear', payload)
+
+    return id
+  })
+
+  const id = ejecutar()
+  return obtenerMaestroLocal(id)!
 }
 
 // ---------------------------------------------------------------------------

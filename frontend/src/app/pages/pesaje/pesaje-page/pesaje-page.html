@@ -131,7 +131,7 @@
                     <div class="form-grid">
                       @for (campo of seccion.campos; track campo.campoId) {
                         <ng-container
-                          *ngTemplateOutlet="campoField; context: { $implicit: campo }"
+                          *ngTemplateOutlet="campoField; context: { $implicit: campo, grupo: grupo }"
                         ></ng-container>
                       }
                     </div>
@@ -153,7 +153,10 @@
               <div [formGroupName]="seccion.clave" class="form-grid">
                 @for (campo of seccion.campos; track campo.campoId) {
                   <ng-container
-                    *ngTemplateOutlet="campoField; context: { $implicit: campo }"
+                    *ngTemplateOutlet="
+                      campoField;
+                      context: { $implicit: campo, grupo: grupoDeSeccion(seccion.clave) }
+                    "
                   ></ng-container>
                 }
               </div>
@@ -164,7 +167,7 @@
     }
   </form>
 
-  <ng-template #campoField let-campo>
+  <ng-template #campoField let-campo let-grupo="grupo">
     <nz-form-item>
       <nz-form-label [nzRequired]="campo.requerido">{{ campo.etiqueta }}</nz-form-label>
       <nz-form-control [nzErrorTip]="tplErrorCampo">
@@ -224,6 +227,18 @@
                 <nz-option [nzValue]="maestro.id" [nzLabel]="maestro.nombre"></nz-option>
               }
             </nz-select>
+            @if (puedeCrearProvisional(campo)) {
+              <button
+                nz-button
+                nzType="link"
+                nzSize="small"
+                class="btn-crear-provisional"
+                (click)="abrirCrearProvisional(campo, grupo)"
+              >
+                <span nz-icon nzType="plus"></span>
+                Crear provisional
+              </button>
+            }
           }
         }
       </nz-form-control>
@@ -305,5 +320,32 @@
         </nz-tag>
       </div>
     }
+  </ng-container>
+</nz-modal>
+
+<nz-modal
+  [nzTitle]="'Crear ' + (provisionalDialog()?.tipoCatalogo ?? '') + ' provisional'"
+  [nzVisible]="!!provisionalDialog()"
+  nzOkText="Crear"
+  nzCancelText="Cancelar"
+  [nzOkLoading]="creandoProvisional()"
+  (nzOnCancel)="cerrarCrearProvisional()"
+  (nzOnOk)="confirmarCrearProvisional()"
+>
+  <ng-container *nzModalContent>
+    <nz-form-item>
+      <nz-form-label nzRequired>Nombre</nz-form-label>
+      <nz-form-control nzErrorTip="El nombre es requerido.">
+        <input
+          nz-input
+          [formControl]="nombreProvisionalCtrl"
+          placeholder="Nombre del registro provisional"
+        />
+      </nz-form-control>
+    </nz-form-item>
+    <p class="hint-provisional">
+      Se coina con un código temporal (PROV-…) y queda disponible al instante. El administrador
+      lo aprobará o fusionará más tarde.
+    </p>
   </ng-container>
 </nz-modal>
