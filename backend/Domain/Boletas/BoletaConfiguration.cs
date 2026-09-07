@@ -51,6 +51,9 @@ public class BoletaConfiguration : IEntityTypeConfiguration<Boleta>
 
         builder.Property(b => b.MotivoAnulacion).HasMaxLength(500);
 
+        builder.Property(b => b.MotivoPesoManual).HasMaxLength(40);
+        builder.Property(b => b.MotivoPesoManualDetalle).HasMaxLength(500);
+
         builder.Property(b => b.RespuestaD365Id).HasMaxLength(100);
 
         builder.Property(b => b.RowVersion).IsRowVersion();

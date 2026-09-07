@@ -30,6 +30,12 @@ public class BasculaConfiguration : IEntityTypeConfiguration<Bascula>
         builder.Property(b => b.ModoComunicacion).HasMaxLength(50);
         builder.Property(b => b.CodigoAprovisionamiento).HasMaxLength(12);
 
+        // Configuración central de ingreso manual de peso. El default en BD
+        // mantiene a las básculas existentes sin cambios de comportamiento.
+        builder.Property(b => b.PermiteIngresoManual).HasDefaultValue(false);
+        builder.Property(b => b.PesoMinimoManual).HasColumnType("decimal(12,2)");
+        builder.Property(b => b.PesoMaximoManual).HasColumnType("decimal(12,2)");
+
         // FK real hacia Maestro — Restrict, no tiene sentido borrar un
         // centro que todavía tiene básculas apuntándole.
         builder.HasOne<Maestro>()

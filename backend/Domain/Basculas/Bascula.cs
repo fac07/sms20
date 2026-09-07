@@ -49,4 +49,23 @@ public class Bascula
 
     /// <summary>Pasa a verdadero en el primer arranque exitoso — el código ya no sirve después de eso.</summary>
     public bool Aprovisionada { get; set; }
+
+    // --- Ingreso manual de peso (configuración central por báscula) ---
+
+    /// <summary>
+    /// Cuando es verdadero, el operador puede tipear el peso manualmente si el
+    /// indicador no entrega lectura. Default false — ninguna báscula cambia de
+    /// comportamiento hasta que un administrador la habilita explícitamente.
+    /// </summary>
+    public bool PermiteIngresoManual { get; set; }
+
+    /// <summary>
+    /// Cota inferior aceptada para un peso tipeado manualmente, en kg (misma
+    /// unidad que Boleta.PesoIngreso). Null = sin cota inferior; el fallback
+    /// sin cotas solo exige peso &gt; 0.
+    /// </summary>
+    public decimal? PesoMinimoManual { get; set; }
+
+    /// <summary>Cota superior aceptada para un peso tipeado manualmente, en kg. Null = sin cota superior.</summary>
+    public decimal? PesoMaximoManual { get; set; }
 }

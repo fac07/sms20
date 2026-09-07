@@ -15,7 +15,19 @@ public record BasculaDto(
     string? ModoComunicacion,
     bool Activa,
     bool Aprovisionada,
-    bool TieneCodigoVigente);
+    bool TieneCodigoVigente,
+    bool PermiteIngresoManual,
+    decimal? PesoMinimoManual,
+    decimal? PesoMaximoManual);
+
+/// <summary>
+/// Configuración central de ingreso manual para una báscula. La toca solo el
+/// administrador — es config, no una transacción de pesaje.
+/// </summary>
+public record ConfigurarIngresoManualRequest(
+    bool PermiteIngresoManual,
+    decimal? PesoMinimoManual,
+    decimal? PesoMaximoManual);
 
 public record GuardarBasculaRequest(
     string Codigo,
@@ -44,4 +56,7 @@ public record AprovisionamientoDto(
     int? PuertoTcp,
     int? Velocidad,
     int? BitsDatos,
-    string? ModoComunicacion);
+    string? ModoComunicacion,
+    bool PermiteIngresoManual,
+    decimal? PesoMinimoManual,
+    decimal? PesoMaximoManual);
