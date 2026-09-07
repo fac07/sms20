@@ -5,6 +5,7 @@ import {
   anularBoletaLocal,
   cerrarBoletaLocal,
   crearBoletaLocal,
+  crearMaestroProvisionalLocal,
   getConfig,
   listarBoletasLocal,
   listarMaestrosLocal,
@@ -13,6 +14,7 @@ import {
   obtenerBoletaLocal,
   resolverCamposLocal,
   setConfig,
+  tiposProvisionalesHabilitados,
   validarCierreLocal,
   validarValoresLocal,
 } from './db'
@@ -338,6 +340,56 @@ export function startLocalServer(port: number, esDev: boolean): Server {
   app.get('/maestros', (req, res) => {
     const tipoCatalogo = req.query.tipoCatalogo as string | undefined
     res.json(listarMaestrosLocal(tipoCatalogo))
+  })
+
+  // Allow-list de tipos de catálogo que se pueden coinar como provisional
+  // offline (M1 / decisión de producto 1). El renderer la usa para decidir si
+  // muestra el "+ Crear provisional" junto a un combo `ReferenciaMaestro`.
+  app.get('/maestros/tipos-provisionables', (_req, res) => {
+    res.json({ tipos: tiposProvisionalesHabilitados() })
+  })
+
+  // Creación provisional offline (M1): la báscula coina un `Maestro`
+  // `Estado=Provisional` + un evento `MaestroProvisional`/`Crear` del OutboxLocal
+  // en una sola transacción. `tipoCatalogo` se valida contra la allow-list (403
+  // si no está); `nombre` debe ser no vacío (400). El `GET /maestros` de arriba
+  // ya filtra `Activo=1`, así que el nuevo provisional aparece en el combo al
+  // instante.
+  app.post('/maestros', (req, res) => {
+    const body = req.body as {
+      id?: string
+      tipoCatalogo?: string
+      nombre?: string
+      datosAdicionales?: string | null
+    }
+
+    const tipoCatalogo = typeof body.tipoCatalogo === 'string' ? body.tipoCatalogo : ''
+    const nombre = typeof body.nombre === 'string' ? body.nombre.trim() : ''
+
+    if (!tiposProvisionalesHabilitados().includes(tipoCatalogo)) {
+      res.status(403).json({
+        mensaje: `El tipo de catálogo "${tipoCatalogo}" no está habilitado para creación provisional offline.`,
+      })
+      return
+    }
+
+    if (nombre.length === 0) {
+      res.status(400).json({ mensaje: 'El nombre es requerido.' })
+      return
+    }
+
+    if (!getConfig('BasculaCodigo')) {
+      res.status(409).json({ mensaje: 'Esta báscula no tiene código configurado.' })
+      return
+    }
+
+    const maestro = crearMaestroProvisionalLocal({
+      id: typeof body.id === 'string' && body.id.length > 0 ? body.id : undefined,
+      tipoCatalogo,
+      nombre,
+      datosAdicionales: typeof body.datosAdicionales === 'string' ? body.datosAdicionales : null,
+    })
+    res.status(201).json(maestro)
   })
 
   // "Sincronizar ahora" — mismo patrón que POST /outbox/despachar: no
