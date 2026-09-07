@@ -91,4 +91,15 @@ public class Boleta
 
     /// <summary>Rowversion de SQL Server — concurrency token.</summary>
     public byte[]? RowVersion { get; set; }
+
+    /// <summary>
+    /// Motivo por el que el peso se tipeó manualmente en lugar de leerlo del
+    /// indicador. Código de un catálogo fijo (ver capa terminal); null cuando
+    /// el peso vino de la báscula. La validación de obligatoriedad-cuando-Manual
+    /// se agrega en una fase posterior.
+    /// </summary>
+    public string? MotivoPesoManual { get; set; }
+
+    /// <summary>Texto libre opcional que acompaña al motivo — requerido solo cuando el motivo es "Otro".</summary>
+    public string? MotivoPesoManualDetalle { get; set; }
 }
