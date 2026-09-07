@@ -1,0 +1,22 @@
+.pantalla {
+  display: flex;
+  justify-content: center;
+  align-items: flex-start;
+  min-height: 100vh;
+  padding: 15vh 16px 16px;
+  background: #f0f2f5;
+}
+
+.tarjeta {
+  width: 100%;
+  max-width: 420px;
+}
+
+.intro {
+  margin-bottom: 16px;
+  color: rgba(0, 0, 0, 0.65);
+}
+
+.alerta {
+  margin-bottom: 16px;
+}

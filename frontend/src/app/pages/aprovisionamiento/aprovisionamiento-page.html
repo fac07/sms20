@@ -1,0 +1,45 @@
+<div class="pantalla">
+  <nz-card [nzTitle]="'Aprovisionar esta báscula'" class="tarjeta">
+    <p class="intro">
+      Esta terminal todavía no está asociada a una báscula. Ingresá el código de
+      aprovisionamiento que generó el administrador desde la pantalla de Básculas
+      para habilitarla y descargar la configuración inicial.
+    </p>
+
+    @if (error(); as mensaje) {
+      <nz-alert
+        nzType="error"
+        nzShowIcon
+        class="alerta"
+        [nzMessage]="mensaje"
+      ></nz-alert>
+    }
+
+    <form nz-form nzLayout="vertical" (ngSubmit)="aprovisionar()">
+      <nz-form-item>
+        <nz-form-label nzRequired>Código de aprovisionamiento</nz-form-label>
+        <nz-form-control nzErrorTip="Ingresá el código de aprovisionamiento.">
+          <input
+            nz-input
+            [formControl]="codigoCtrl"
+            placeholder="B01-A1B2C3"
+            autocapitalize="characters"
+            autocomplete="off"
+            [disabled]="enviando()"
+          />
+        </nz-form-control>
+      </nz-form-item>
+
+      <button
+        nz-button
+        nzType="primary"
+        nzBlock
+        type="submit"
+        [nzLoading]="enviando()"
+        [disabled]="enviando()"
+      >
+        Aprovisionar esta báscula
+      </button>
+    </form>
+  </nz-card>
+</div>
