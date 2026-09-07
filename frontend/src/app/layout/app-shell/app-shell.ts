@@ -21,6 +21,7 @@ const NAV_ITEMS: NavItem[] = [
   { path: '/secciones', icon: 'apartment', label: 'Secciones' },
   { path: '/campos', icon: 'form', label: 'Campos' },
   { path: '/maestros', icon: 'database', label: 'Maestros' },
+  { path: '/maestros/provisionales', icon: 'inbox', label: 'Provisionales' },
   { path: '/boletas', icon: 'file-text', label: 'Boletas' },
   { path: '/reportes', icon: 'bar-chart', label: 'Reportes', disabled: true },
 ];
@@ -32,6 +33,7 @@ const PAGE_TITLES: Record<string, string> = {
   '/secciones': 'Secciones',
   '/campos': 'Campos',
   '/maestros': 'Maestros',
+  '/maestros/provisionales': 'Cola de provisionales',
   '/boletas': 'Boletas',
 };
 

@@ -79,6 +79,21 @@ export class MaestrosService {
     return this.http.get<Maestro[]>(`${CENTRAL_API_URL}/api/maestros?${params.toString()}`);
   }
 
+  /** Cola unificada del admin: todos los provisionales, sin importar el TipoCatalogo. */
+  listarProvisionales(): Observable<Maestro[]> {
+    return this.listar({ estado: 'Provisional' });
+  }
+
+  /** Universo activo (provisionales + oficiales) para la pista de nombre similar. */
+  listarTodos(): Observable<Maestro[]> {
+    return this.listar({});
+  }
+
+  /** Candidatos válidos de fusión: solo oficiales activos del mismo tipo. */
+  listarOficialesActivos(tipoCatalogo: TipoCatalogo): Observable<Maestro[]> {
+    return this.listar({ tipoCatalogo, estado: 'Oficial' });
+  }
+
   crear(input: GuardarMaestroInput): Observable<Maestro> {
     return this.http.post<Maestro>(`${CENTRAL_API_URL}/api/maestros`, input);
   }

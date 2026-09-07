@@ -41,7 +41,7 @@
           </td>
           <td class="acciones">
             @if (m.estado === 'Provisional') {
-              <button nz-button nzType="text" nz-tooltip nzTooltipTitle="Aprobar" (click)="aprobar(m)">
+              <button nz-button nzType="text" nz-tooltip nzTooltipTitle="Aprobar" (click)="abrirAprobar(m)">
                 <span nz-icon nzType="check-circle" nzTheme="fill"></span>
               </button>
               <button nz-button nzType="text" nz-tooltip nzTooltipTitle="Fusionar con un oficial" (click)="abrirFusion(m)">
@@ -152,3 +152,5 @@
     }
   </ng-container>
 </nz-modal>
+
+<app-aprobar-dialog (resuelto)="alAprobar()"></app-aprobar-dialog>
