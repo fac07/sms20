@@ -9,11 +9,13 @@ import {
   getConfig,
   getDb,
   guardarConfigIngresoManual,
+  leerConfigIngresoManual,
   listarBoletasLocal,
   listarEventosTrabados,
   listarMaestrosLocal,
   listarOutboxLocal,
   listarTiposMovimientoLocal,
+  MOTIVOS_PESO_MANUAL,
   obtenerBoletaLocal,
   obtenerConfigIngresoManual,
   resolverCamposLocal,
@@ -22,7 +24,7 @@ import {
   validarCierreLocal,
   validarValoresLocal,
 } from './db'
-import type { EstadoOutboxLocal, OrigenPesoLocal } from './db'
+import type { EstadoOutboxLocal, MotivoPesoManual, OrigenPesoLocal } from './db'
 import type { ValorCampo } from './motor-campos'
 import { crearPesoProvider, PesoProviderSimulado } from './peso-provider'
 import type { OrigenPeso } from './peso-provider'
@@ -63,6 +65,66 @@ function normalizarValores(crudo: unknown): ValorCampo[] {
     })
   }
   return valores
+}
+
+/**
+ * Espejo local de `ValidarPesoManualTipado` (central, BoletaEndpoints.cs). Se
+ * corre en `POST /boletas` y `POST /boletas/:id/cerrar` cuando el origen del
+ * pesaje es `Manual`. Orden: flag de báscula habilitado → motivo presente y de
+ * catálogo → detalle obligatorio cuando el motivo es `Otro` → rango contra las
+ * cotas locales (o `> 0` si no hay cotas). Toda falla es 422 (diseño D7: no hay
+ * capa de auth, 403 no aplica). Devuelve `null` cuando el pesaje es válido.
+ *
+ * El rango se valida ACÁ, al tipear — central NO lo re-chequea en la ingesta de
+ * sync (diseño D8): los límites pueden editarse centralmente después de una
+ * captura offline y rechazar ahí tiraría boletas ya válidas a ErrorCentral.
+ */
+function validarPesoManualLocal(
+  peso: number,
+  motivo: string | undefined,
+  detalle: string | undefined,
+): { status: number; error: string } | null {
+  const cfg = leerConfigIngresoManual(getDb())
+
+  if (!cfg.permiteIngresoManual) {
+    return {
+      status: 422,
+      error: 'Esta báscula no tiene habilitado el ingreso manual de peso.',
+    }
+  }
+
+  if (typeof motivo !== 'string' || !(MOTIVOS_PESO_MANUAL as readonly string[]).includes(motivo)) {
+    return {
+      status: 422,
+      error:
+        'Un peso de origen Manual requiere un motivo del catálogo: ' +
+        'IndicadorSinSenal, IndicadorEnReparacion, CorteEnergia u Otro.',
+    }
+  }
+
+  if (motivo === 'Otro' && (typeof detalle !== 'string' || detalle.trim() === '')) {
+    return {
+      status: 422,
+      error: "El motivo 'Otro' requiere un detalle que explique el ingreso manual del peso.",
+    }
+  }
+
+  const min = cfg.pesoMinimoManual
+  const max = cfg.pesoMaximoManual
+  if (min === null && max === null) {
+    if (peso <= 0) {
+      return { status: 422, error: 'El peso manual debe ser mayor que cero.' }
+    }
+  } else if ((min !== null && peso < min) || (max !== null && peso > max)) {
+    return {
+      status: 422,
+      error:
+        `El peso manual ${peso} kg está fuera del rango permitido ` +
+        `(${min ?? 'sin cota'} – ${max ?? 'sin cota'} kg).`,
+    }
+  }
+
+  return null
 }
 
 /**
@@ -208,12 +270,31 @@ export function startLocalServer(port: number, esDev: boolean): Server {
       origenPesoIngreso?: OrigenPesoLocal
       usuarioIngreso?: string
       creadaOffline?: boolean
+      motivoPesoManual?: string
+      motivoPesoManualDetalle?: string
       valores?: unknown
     }
 
     if (typeof body.pesoIngreso !== 'number' || !Number.isFinite(body.pesoIngreso)) {
       res.status(400).json({ error: 'El peso debe ser un número finito.' })
       return
+    }
+
+    const origenPesoIngreso = body.origenPesoIngreso ?? 'Bascula'
+
+    // Gate de ingreso manual (diseño D7): flag → motivo/catálogo → Otro⇒detalle →
+    // rango, todo 422, antes de la validación de `valores` (400). Solo aplica al
+    // pesaje Manual; el automático pasa de largo.
+    if (origenPesoIngreso === 'Manual') {
+      const errorManual = validarPesoManualLocal(
+        body.pesoIngreso,
+        body.motivoPesoManual,
+        body.motivoPesoManualDetalle,
+      )
+      if (errorManual) {
+        res.status(errorManual.status).json({ error: errorManual.error })
+        return
+      }
     }
 
     const tipoMovimientoId = body.tipoMovimientoId ?? ''
@@ -237,10 +318,16 @@ export function startLocalServer(port: number, esDev: boolean): Server {
       codigoBascula: body.codigoBascula ?? '',
       tipoMovimientoId,
       pesoIngreso: body.pesoIngreso,
-      origenPesoIngreso: body.origenPesoIngreso ?? 'Bascula',
+      origenPesoIngreso,
       fechaHoraIngreso,
       usuarioIngreso: body.usuarioIngreso ?? '',
       creadaOffline: body.creadaOffline ?? false,
+      motivoPesoManual:
+        origenPesoIngreso === 'Manual'
+          ? (body.motivoPesoManual as MotivoPesoManual)
+          : null,
+      motivoPesoManualDetalle:
+        origenPesoIngreso === 'Manual' ? (body.motivoPesoManualDetalle ?? null) : null,
       valores,
     })
 
@@ -248,11 +335,20 @@ export function startLocalServer(port: number, esDev: boolean): Server {
   })
 
   app.post('/boletas/:id/cerrar', (req, res) => {
-    const { pesoSalida, origenPesoSalida, usuarioSalida, basculaSalidaId } = req.body as {
+    const {
+      pesoSalida,
+      origenPesoSalida,
+      usuarioSalida,
+      basculaSalidaId,
+      motivoPesoManual,
+      motivoPesoManualDetalle,
+    } = req.body as {
       pesoSalida?: number
       origenPesoSalida?: OrigenPesoLocal
       usuarioSalida?: string
       basculaSalidaId?: string | null
+      motivoPesoManual?: string
+      motivoPesoManualDetalle?: string
     }
 
     const boleta = obtenerBoletaLocal(req.params.id)
@@ -273,6 +369,22 @@ export function startLocalServer(port: number, esDev: boolean): Server {
       return
     }
 
+    const origenSalida = origenPesoSalida ?? 'Bascula'
+
+    // Gate de ingreso manual en el segundo pesaje (mismo criterio que en
+    // `POST /boletas`): flag → motivo/catálogo → Otro⇒detalle → rango, todo 422.
+    if (origenSalida === 'Manual') {
+      const errorManual = validarPesoManualLocal(
+        pesoSalida,
+        motivoPesoManual,
+        motivoPesoManualDetalle,
+      )
+      if (errorManual) {
+        res.status(errorManual.status).json({ error: errorManual.error })
+        return
+      }
+    }
+
     // Bloqueo duro de cierre (sin ruta de override): el motor valida contra el
     // conjunto resuelto a asOf = fechaHoraIngreso. Si hay errores → 422 y la
     // boleta se queda EnTransito.
@@ -288,9 +400,13 @@ export function startLocalServer(port: number, esDev: boolean): Server {
 
     const cerrada = cerrarBoletaLocal(boleta.id, {
       pesoSalida,
-      origenPesoSalida: origenPesoSalida ?? 'Bascula',
+      origenPesoSalida: origenSalida,
       usuarioSalida: usuarioSalida ?? '',
       basculaSalidaId,
+      motivoPesoManual:
+        origenSalida === 'Manual' ? (motivoPesoManual as MotivoPesoManual) : null,
+      motivoPesoManualDetalle:
+        origenSalida === 'Manual' ? (motivoPesoManualDetalle ?? null) : null,
     })
     res.json(cerrada)
   })
