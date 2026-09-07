@@ -1,5 +1,7 @@
 import { Routes } from '@angular/router';
 import { AppShell } from './layout/app-shell/app-shell';
+import { AprovisionamientoPage } from './pages/aprovisionamiento/aprovisionamiento-page';
+import { aprovisionamientoGuard } from './pages/aprovisionamiento/aprovisionamiento.guard';
 import { BasculasPage } from './pages/basculas/basculas-page/basculas-page';
 import { BoletasPage } from './pages/boletas/boletas-page/boletas-page';
 import { CamposPage } from './pages/campos/campos-page/campos-page';
@@ -10,9 +12,16 @@ import { SeccionesPage } from './pages/secciones/secciones-page/secciones-page';
 import { TiposMovimientoPage } from './pages/tipos-movimiento/tipos-movimiento-page/tipos-movimiento-page';
 
 export const routes: Routes = [
+  // Ruta suelta, fuera del shell — compuerta de primer arranque.
+  {
+    path: 'aprovisionamiento',
+    component: AprovisionamientoPage,
+    canActivate: [aprovisionamientoGuard],
+  },
   {
     path: '',
     component: AppShell,
+    canActivate: [aprovisionamientoGuard],
     children: [
       { path: 'pesaje', component: PesajePage },
       { path: 'basculas', component: BasculasPage },
