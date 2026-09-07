@@ -17,10 +17,26 @@ import { despacharOutboxPendiente } from './outbox-dispatcher'
 // dependen de él sin contarlo como intento. Transporte / 5xx / 4xx-en-Boleta
 // mantienen el `break` histórico.
 
+const SECCION_ID = '22222222-2222-2222-2222-222222222222'
+const CAMPO_REF_ID = '33333333-3333-3333-3333-333333333333'
 const TM_ID = '11111111-1111-1111-1111-111111111111'
+const T0 = '2020-01-01T00:00:00.000Z'
 const AHORA = '2026-09-06T12:00:00.000Z'
 
 let db: Database.Database
+
+/** Siembra una sección Única con un campo `ReferenciaMaestro` para colgarle un `valorMaestroId`. */
+function sembrarCampoReferencia(): void {
+  db.prepare(
+    `INSERT INTO Seccion (Id, Clave, Nombre, Cardinalidad, Reportable, Estandar, Orden, Activa, FechaModificacion)
+     VALUES (?, 'transporte', 'Transporte', 'Unica', 0, 0, 1, 1, ?)`,
+  ).run(SECCION_ID, T0)
+
+  db.prepare(
+    `INSERT INTO Campo (Id, SeccionId, Clave, Etiqueta, TipoCampo, TipoCatalogoRef, Requerido, Configuracion, Orden, VigenteDesde, VigenteHasta, FechaModificacion)
+     VALUES (?, ?, 'transportista', 'Transportista', 'ReferenciaMaestro', 'Transportista', 0, NULL, 1, ?, NULL, ?)`,
+  ).run(CAMPO_REF_ID, SECCION_ID, T0, T0)
+}
 
 function crearBoleta(valores: readonly ValorCampo[]): { id: string } {
   return crearBoletaLocal({
@@ -96,6 +112,44 @@ describe('outbox-dispatcher — routing por TipoEntidad + park dependency-aware 
       operacion: 'Crear',
       payload: { nombre: 'Juan Perez', tipoCatalogo: 'Transportista' },
     })
+  })
+
+  it('un 4xx en un provisional lo parquea (Pendiente, Intentos+1), saltea la boleta dependiente sin intento, y sigue despachando una boleta no relacionada', async () => {
+    sembrarCampoReferencia()
+    const prov = crearMaestroProvisionalLocal({ tipoCatalogo: 'Transportista', nombre: 'Juan' })
+    const dependiente = crearBoleta([
+      { campoId: CAMPO_REF_ID, ocurrencia: 0, valorMaestroId: prov.id },
+    ])
+    const noRelacionada = crearBoleta([])
+
+    const llamadas: Llamada[] = []
+    vi.stubGlobal(
+      'fetch',
+      fakeCentral(llamadas, (url) =>
+        url.includes('/api/maestros/sync') ? { ok: false, status: 422 } : { ok: true, status: 200 },
+      ),
+    )
+
+    const res = await despacharOutboxPendiente()
+
+    const eventos = porEntidad()
+
+    // provisional: intento fallido, sigue reintentable
+    expect(eventos[prov.id].estado).toBe('Pendiente')
+    expect(eventos[prov.id].intentos).toBe(1)
+
+    // boleta dependiente: salteada, intacta (un salteo no es un intento)
+    expect(eventos[dependiente.id].estado).toBe('Pendiente')
+    expect(eventos[dependiente.id].intentos).toBe(0)
+
+    // boleta no relacionada: se despachó igual
+    expect(eventos[noRelacionada.id].estado).toBe('Enviado')
+
+    // el dispatcher no POSTeó el evento dependiente; sí el no relacionado
+    const boletasPosteadas = llamadas.filter((l) => l.url.includes('/api/boletas/sync'))
+    expect(boletasPosteadas).toHaveLength(1)
+
+    expect(res.enviados).toBe(1)
   })
 
   it('un 5xx corta todo el ciclo (break), como hoy', async () => {
