@@ -2,6 +2,7 @@ import {
   getConfig,
   listarOutboxLocal,
   marcarOutboxLocalResultado,
+  UMBRAL_ALERTA_TRABADO,
   type OutboxLocalEvento,
 } from './db'
 
@@ -106,6 +107,9 @@ export async function despacharOutboxPendiente(): Promise<{ enviados: number; fa
         marcarOutboxLocalResultado(evento.id, { estado: 'Pendiente', ultimoError: mensaje })
         bloqueados.add(evento.entidadId)
         fallidos++
+        // Heartbeat best-effort al panel central si este intento cruzó el
+        // umbral de alerta. Nunca corta el dispatch ni bumpea nada.
+        await reportarIncidenciaSync(basculaCodigo, evento, evento.intentos + 1, mensaje)
         continue
       }
 
@@ -142,6 +146,49 @@ export async function despacharOutboxPendiente(): Promise<{ enviados: number; fa
 function estadoTrasFallo(evento: OutboxLocalEvento): 'Pendiente' | 'Error' {
   if (evento.tipoEntidad === 'MaestroProvisional') return 'Pendiente'
   return evento.intentos + 1 >= MAX_INTENTOS ? 'Error' : 'Pendiente'
+}
+
+/**
+ * Heartbeat best-effort a `POST /api/maestros/incidencias-sync` cuando un
+ * provisional cruza `UMBRAL_ALERTA_TRABADO` intentos fallidos. Nunca lanza ni
+ * bloquea el dispatch — si el POST falla, el próximo ciclo lo reintenta (el
+ * store central tiene TTL, así que re-reportar es lo correcto). `tipoCatalogo` y
+ * `nombre` salen del payload del propio evento.
+ */
+async function reportarIncidenciaSync(
+  basculaCodigo: string,
+  evento: OutboxLocalEvento,
+  intentos: number,
+  ultimoError: string,
+): Promise<void> {
+  if (intentos < UMBRAL_ALERTA_TRABADO) return
+
+  let tipoCatalogo: string | null = null
+  let nombre: string | null = null
+  try {
+    const p = JSON.parse(evento.payload) as { tipoCatalogo?: string; nombre?: string }
+    tipoCatalogo = p.tipoCatalogo ?? null
+    nombre = p.nombre ?? null
+  } catch {
+    /* payload no parseable -> se reporta sin esos campos */
+  }
+
+  try {
+    await fetch(`${CENTRAL_API_URL}/api/maestros/incidencias-sync`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        basculaCodigo,
+        entidadId: evento.entidadId,
+        tipoCatalogo,
+        nombre,
+        intentos,
+        ultimoError,
+      }),
+    })
+  } catch {
+    /* best-effort: un fallo del heartbeat nunca compromete el dispatch */
+  }
 }
 
 /**

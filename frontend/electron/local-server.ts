@@ -8,6 +8,7 @@ import {
   crearMaestroProvisionalLocal,
   getConfig,
   listarBoletasLocal,
+  listarEventosTrabados,
   listarMaestrosLocal,
   listarOutboxLocal,
   listarTiposMovimientoLocal,
@@ -331,6 +332,24 @@ export function startLocalServer(port: number, esDev: boolean): Server {
   app.post('/outbox/despachar', async (_req, res) => {
     const resultado = await despacharOutboxPendiente()
     res.json(resultado)
+  })
+
+  // Alerta del operador (M4b / decisión de producto 4): eventos
+  // `MaestroProvisional` trabados a 5+ intentos. La pantalla de pesaje (M5b) lo
+  // consulta en su intervalo y muestra el banner mientras `hayAlertaProvisional`
+  // sea true; el pesaje sigue habilitado bajo el banner. Predicado derivado de
+  // `OutboxLocal.Intentos` (sin columna nueva, M-D3).
+  app.get('/outbox/alertas', (_req, res) => {
+    const trabados = listarEventosTrabados()
+    res.json({
+      hayAlertaProvisional: trabados.length > 0,
+      eventos: trabados.map((t) => ({
+        entidadId: t.entidadId,
+        tipoCatalogo: t.tipoCatalogo,
+        nombre: t.nombre,
+        intentos: t.intentos,
+      })),
+    })
   })
 
   // Maestros — read path local de los combos de Pesaje (ver
