@@ -1,22 +1,47 @@
-import { getConfig, listarOutboxLocal, marcarOutboxLocalResultado } from './db'
+import {
+  getConfig,
+  listarOutboxLocal,
+  marcarOutboxLocalResultado,
+  type OutboxLocalEvento,
+} from './db'
 
 // Mismo origen hardcodeado que ya usan los servicios Angular — sin .env, sin
 // secretos acá.
 const CENTRAL_API_URL = 'http://localhost:5094'
 
-// Tras este número de fallos consecutivos, el evento pasa a Error terminal —
-// deja de reintentarse solo, necesita intervención manual (mismo espíritu
-// que el Descartado de OutboxD365 en el diseño, aplicado acá porque
+// Tras este número de fallos consecutivos, un evento `Boleta` pasa a Error
+// terminal — deja de reintentarse solo, necesita intervención manual (mismo
+// espíritu que el Descartado de OutboxD365 en el diseño, aplicado acá porque
 // OutboxLocal no tiene ese estado en su enum — solo Pendiente/Enviado/Error).
+//
+// NO aplica a `MaestroProvisional`: por diseño (M-D2 / spec "Provisional sync
+// event never goes terminal") un provisional se reintenta indefinidamente y
+// nunca llega a Error.
 const MAX_INTENTOS = 10
 
+// Ruta de ingesta central por tipo de entidad del Outbox. `MaestroProvisional`
+// estrena endpoint propio en M2; `Boleta` sigue igual que siempre.
+const RUTA_INGESTA: Record<OutboxLocalEvento['tipoEntidad'], string> = {
+  Boleta: '/api/boletas/sync',
+  MaestroProvisional: '/api/maestros/sync',
+}
+
 /**
- * Recorre el OutboxLocal pendiente y lo reenvía al backend central
- * (POST /api/boletas/sync), en orden estricto de Secuencia.
+ * Recorre el OutboxLocal pendiente y lo reenvía al backend central en orden
+ * estricto de Secuencia, ruteando cada evento por `tipoEntidad`
+ * (`Boleta` -> `/api/boletas/sync`, `MaestroProvisional` -> `/api/maestros/sync`).
  *
- * Un solo dispatcher local, secuencial — así se respeta el orden por
- * Secuencia sin necesitar el WHERE NOT EXISTS del diseño, que hace falta
- * solo si hay despacho concurrente, algo que no existe acá.
+ * Un solo dispatcher local, secuencial — así se respeta el orden por Secuencia
+ * sin necesitar el WHERE NOT EXISTS del diseño, que hace falta solo si hay
+ * despacho concurrente, algo que no existe acá.
+ *
+ * Park dependency-aware (M-D2): un 4xx sobre un `MaestroProvisional` NO corta el
+ * ciclo. El evento queda `Pendiente` (nunca `Error`), su `entidadId` entra a un
+ * set `bloqueados` de este ciclo, y el dispatch sigue — salteando cualquier
+ * evento posterior cuyo `entidadId` o cuyo `payload.valores[].valorMaestroId`
+ * esté bloqueado (un salteo no cuenta como intento). Así un provisional trabado
+ * frena solo a las boletas que lo referencian; el resto de la cola sigue
+ * fluyendo. Transporte, 5xx y 4xx-en-`Boleta` mantienen el `break` histórico.
  */
 export async function despacharOutboxPendiente(): Promise<{ enviados: number; fallidos: number }> {
   // Sin BasculaCodigo no hay con quién identificarse ante Central — no tiene
@@ -32,9 +57,20 @@ export async function despacharOutboxPendiente(): Promise<{ enviados: number; fa
   let enviados = 0
   let fallidos = 0
 
+  // `entidadId` de los maestros provisionales cuya ingesta fue rechazada con un
+  // 4xx en este ciclo. Solo vive mientras dura este recorrido.
+  const bloqueados = new Set<string>()
+
   for (const evento of pendientes) {
+    // Salteo dependency-aware: el evento ES un provisional bloqueado, o
+    // REFERENCIA uno (por entidadId directo o por un valorMaestroId de su
+    // payload). Se deja intacto — un salteo no bumpea Intentos.
+    if (dependeDeBloqueado(evento, bloqueados)) {
+      continue
+    }
+
     try {
-      const response = await fetch(`${CENTRAL_API_URL}/api/boletas/sync`, {
+      const response = await fetch(`${CENTRAL_API_URL}${RUTA_INGESTA[evento.tipoEntidad]}`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -60,23 +96,34 @@ export async function despacharOutboxPendiente(): Promise<{ enviados: number; fa
         /* nos quedamos con el mensaje de arriba */
       }
 
+      const es4xx = response.status >= 400 && response.status < 500
+
+      if (es4xx && evento.tipoEntidad === 'MaestroProvisional') {
+        // Park: el POST del provisional falló con 4xx. Cuenta como intento
+        // (Intentos + 1, puede cruzar el umbral de alerta de M4b) pero NUNCA
+        // pasa a Error. El dispatch NO se corta: se bloquea esta entidad y se
+        // sigue con el resto de la cola.
+        marcarOutboxLocalResultado(evento.id, { estado: 'Pendiente', ultimoError: mensaje })
+        bloqueados.add(evento.entidadId)
+        fallidos++
+        continue
+      }
+
+      // 4xx en una `Boleta`, o 5xx en cualquier tipo: se mantiene el `break`
+      // histórico (un `Crear` rechazado no puede dejar pasar su `Cerrar`; un
+      // 5xx significa que Central no va a aceptar nada más este ciclo).
       marcarOutboxLocalResultado(evento.id, {
-        estado: evento.intentos + 1 >= MAX_INTENTOS ? 'Error' : 'Pendiente',
+        estado: estadoTrasFallo(evento),
         ultimoError: mensaje,
       })
       fallidos++
-      // Si un evento falla, los siguientes de la MISMA boleta seguro
-      // dependen de él — y aunque sean de otra boleta, cortar acá es la
-      // forma simple y segura de no mandar eventos fuera de orden si el
-      // fallo fue algo como "Central está caído"; se reintenta todo en el
-      // próximo ciclo.
       break
     } catch (err) {
       // El fetch en sí tiró (red caída, Central inalcanzable) — mismo
-      // tratamiento que una respuesta no-ok, sin dejar que la excepción
-      // se escape de acá.
+      // tratamiento que una respuesta no-ok de transporte, sin dejar que la
+      // excepción se escape de acá.
       marcarOutboxLocalResultado(evento.id, {
-        estado: evento.intentos + 1 >= MAX_INTENTOS ? 'Error' : 'Pendiente',
+        estado: estadoTrasFallo(evento),
         ultimoError: (err as Error).message,
       })
       fallidos++
@@ -85,4 +132,38 @@ export async function despacharOutboxPendiente(): Promise<{ enviados: number; fa
   }
 
   return { enviados, fallidos }
+}
+
+/**
+ * Estado tras un intento fallido que corta el ciclo. Un `MaestroProvisional`
+ * nunca va a `Error` (se reintenta indefinidamente); una `Boleta` pasa a `Error`
+ * al alcanzar `MAX_INTENTOS`.
+ */
+function estadoTrasFallo(evento: OutboxLocalEvento): 'Pendiente' | 'Error' {
+  if (evento.tipoEntidad === 'MaestroProvisional') return 'Pendiente'
+  return evento.intentos + 1 >= MAX_INTENTOS ? 'Error' : 'Pendiente'
+}
+
+/**
+ * `true` si el evento no debe despacharse porque depende de un provisional
+ * bloqueado este ciclo: o su propia `entidadId` está bloqueada, o alguno de los
+ * `valores[].valorMaestroId` de su payload lo está.
+ */
+function dependeDeBloqueado(evento: OutboxLocalEvento, bloqueados: Set<string>): boolean {
+  if (bloqueados.size === 0) return false
+  if (bloqueados.has(evento.entidadId)) return true
+
+  try {
+    const payload = JSON.parse(evento.payload) as {
+      valores?: Array<{ valorMaestroId?: string | null }>
+    }
+    if (Array.isArray(payload.valores)) {
+      return payload.valores.some(
+        (v) => typeof v?.valorMaestroId === 'string' && bloqueados.has(v.valorMaestroId),
+      )
+    }
+  } catch {
+    /* payload no parseable -> no podemos afirmar dependencia, se despacha */
+  }
+  return false
 }
