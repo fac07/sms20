@@ -66,3 +66,32 @@ public record SincronizarMaestroRequest(
     string BasculaCodigo,
     string Operacion,
     MaestroProvisionalPayload Payload);
+
+/// <summary>
+/// Heartbeat que el dispatcher del Outbox local manda a
+/// <c>POST /api/maestros/incidencias-sync</c> cuando un evento
+/// <c>MaestroProvisional</c> lleva 5+ intentos fallidos de sync. Es best-effort:
+/// si falla no bloquea el despacho. Idempotente por <c>(BasculaCodigo, EntidadId)</c>.
+/// </summary>
+public record ReportarIncidenciaSyncRequest(
+    string BasculaCodigo,
+    Guid EntidadId,
+    string? TipoCatalogo,
+    string? Nombre,
+    int Intentos,
+    string? UltimoError);
+
+/// <summary>
+/// Entrada del store en memoria de incidencias de sync (<see cref="IncidenciasSyncStore"/>).
+/// <see cref="UltimoError"/> se expone verbatim al panel del admin (decisión de
+/// producto 9, panel interno sin auth). <see cref="Visto"/> es el instante del
+/// último reporte — la entrada expira 1h después.
+/// </summary>
+public record IncidenciaSync(
+    string BasculaCodigo,
+    Guid EntidadId,
+    string? TipoCatalogo,
+    string? Nombre,
+    int Intentos,
+    string? UltimoError,
+    DateTimeOffset Visto);

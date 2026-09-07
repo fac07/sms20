@@ -262,19 +262,19 @@ public static class MaestroEndpoints
             return Results.Ok(MaestroDto.FromEntity(maestro));
         });
 
-        // Fusionar: el provisional se descarta (Activo=false) y queda
-        // apuntando al oficial vía FusionadoConId. La transferencia de
-        // referencias de transacciones reales (Boleta.*Id → oficialId) queda
-        // pendiente hasta que exista la entidad Boleta — no hay nada que
-        // transferir todavía.
-        group.MapPost("/{id:guid}/fusionar/{oficialId:guid}", async (Guid id, Guid oficialId, SmsDbContext db) =>
+        // Fusionar: el provisional se descarta (Activo=false) y queda apuntando
+        // al oficial vía FusionadoConId. En la MISMA transacción se reescribe
+        // toda referencia central que apuntaba al provisional para que apunte al
+        // oficial (decisión de producto 7 / spec "Merge rewrites every central
+        // reference in one transaction").
+        group.MapPost("/{id:guid}/fusionar/{oficialId:guid}", async (Guid id, Guid oficialId, SmsDbContext db, CancellationToken ct) =>
         {
             if (id == oficialId)
             {
                 return Results.BadRequest("Un ítem no se puede fusionar consigo mismo.");
             }
 
-            var provisional = await db.Maestros.FirstOrDefaultAsync(m => m.Id == id);
+            var provisional = await db.Maestros.FirstOrDefaultAsync(m => m.Id == id, ct);
             if (provisional is null)
             {
                 return Results.NotFound($"No existe el provisional {id}.");
@@ -284,7 +284,7 @@ public static class MaestroEndpoints
                 return Results.Conflict("Solo se pueden fusionar ítems en estado Provisional.");
             }
 
-            var oficial = await db.Maestros.FirstOrDefaultAsync(m => m.Id == oficialId);
+            var oficial = await db.Maestros.FirstOrDefaultAsync(m => m.Id == oficialId, ct);
             if (oficial is null)
             {
                 return Results.NotFound($"No existe el ítem oficial {oficialId}.");
@@ -294,13 +294,54 @@ public static class MaestroEndpoints
                 return Results.Conflict("El provisional y el oficial deben ser del mismo TipoCatalogo.");
             }
 
+            // Decisión de producto 6 / spec "Merge target must be an active
+            // Oficial": el destino tiene que ser un Oficial activo. Con este
+            // guard no se pueden crear cadenas nuevas de FusionadoConId, así que
+            // la resolución de lectura (Proyectar) queda en un solo salto (M-D6).
+            if (oficial.Estado != EstadoMaestro.Oficial || !oficial.Activo)
+            {
+                return Results.Conflict("El destino de la fusión debe ser un maestro Oficial activo.");
+            }
+
+            // Rewrite retroactivo: cada BoletaValorCampo que apunta al provisional
+            // pasa a apuntar al oficial. EF envuelve un único SaveChangesAsync en
+            // una transacción, así que el rewrite y el flag-flip comitean o se
+            // revierten juntos. La FK BoletaValorCampo.ValorMaestroId → Maestro.Id
+            // (Restrict) queda satisfecha porque el oficial ya existe.
+            var referencias = await db.BoletaValores
+                .Where(v => v.ValorMaestroId == provisional.Id)
+                .ToListAsync(ct);
+            foreach (var referencia in referencias)
+            {
+                referencia.ValorMaestroId = oficial.Id;
+            }
+
             provisional.FusionadoConId = oficial.Id;
             provisional.Activo = false;
             provisional.FechaModificacion = DateTime.UtcNow;
-            await db.SaveChangesAsync();
+            await db.SaveChangesAsync(ct);
 
             return Results.Ok(MaestroDto.FromEntity(provisional));
         });
+
+        // Incidencias de sync (M-D3): el dispatcher del Outbox de una báscula
+        // reporta acá un evento MaestroProvisional trabado a 5+ intentos. Store
+        // en memoria, TTL 1h, sin tabla — volátil a propósito (el terminal
+        // re-reporta cada ciclo). Idempotente por (basculaCodigo, entidadId).
+        group.MapPost("/incidencias-sync", (ReportarIncidenciaSyncRequest request, IncidenciasSyncStore store) =>
+        {
+            if (string.IsNullOrWhiteSpace(request.BasculaCodigo) || request.EntidadId == Guid.Empty)
+            {
+                return Results.BadRequest("basculaCodigo y entidadId son obligatorios.");
+            }
+
+            store.Reportar(request);
+            return Results.NoContent();
+        });
+
+        // Lista de incidencias de sync vigentes — la consume el panel del admin
+        // (M5b). `ultimoError` va verbatim (decisión de producto 9).
+        group.MapGet("/incidencias-sync", (IncidenciasSyncStore store) => Results.Ok(store.Listar()));
 
         return group;
     }
