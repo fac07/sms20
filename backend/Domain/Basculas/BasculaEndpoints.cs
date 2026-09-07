@@ -95,6 +95,30 @@ public static class BasculaEndpoints
             return Results.Ok(dto);
         });
 
+        // Configuración central de ingreso manual de peso — la ajusta el
+        // administrador por báscula, junto al toggle. Es config, no un pesaje,
+        // así que un rango inválido devuelve 400 (no 422).
+        group.MapPut("/{id:guid}/ingreso-manual", async (
+            Guid id, ConfigurarIngresoManualRequest request, SmsDbContext db) =>
+        {
+            var bascula = await db.Basculas.FirstOrDefaultAsync(b => b.Id == id);
+            if (bascula is null) return Results.NotFound();
+
+            if (request.PesoMinimoManual is { } min && request.PesoMaximoManual is { } max && min > max)
+            {
+                return Results.BadRequest("PesoMinimoManual no puede ser mayor que PesoMaximoManual.");
+            }
+
+            bascula.PermiteIngresoManual = request.PermiteIngresoManual;
+            bascula.PesoMinimoManual = request.PesoMinimoManual;
+            bascula.PesoMaximoManual = request.PesoMaximoManual;
+            await db.SaveChangesAsync();
+
+            var dto = await ProyectarConCentro(db.Basculas.AsNoTracking().Where(b => b.Id == id), db)
+                .FirstAsync();
+            return Results.Ok(dto);
+        });
+
         // Soft-delete — mismo criterio que TipoMovimiento y Maestro.
         group.MapDelete("/{id:guid}", async (Guid id, SmsDbContext db) =>
         {
@@ -156,7 +180,8 @@ public static class BasculaEndpoints
             return Results.Ok(new AprovisionamientoDto(
                 bascula.Id, bascula.Codigo, bascula.Nombre, bascula.CentroId, bascula.TipoConexion,
                 bascula.Puerto, bascula.Ip, bascula.PuertoTcp, bascula.Velocidad, bascula.BitsDatos,
-                bascula.ModoComunicacion));
+                bascula.ModoComunicacion,
+                bascula.PermiteIngresoManual, bascula.PesoMinimoManual, bascula.PesoMaximoManual));
         });
 
         return group;
@@ -195,7 +220,8 @@ public static class BasculaEndpoints
             b.TipoConexion, b.Puerto, b.Ip, b.PuertoTcp, b.Velocidad, b.BitsDatos, b.ModoComunicacion,
             b.Activa, b.Aprovisionada,
             b.CodigoAprovisionamiento != null && !b.Aprovisionada
-                && b.CodigoAprovisionamientoExpira > DateTime.UtcNow);
+                && b.CodigoAprovisionamientoExpira > DateTime.UtcNow,
+            b.PermiteIngresoManual, b.PesoMinimoManual, b.PesoMaximoManual);
 
     private static string GenerarCodigo()
     {
