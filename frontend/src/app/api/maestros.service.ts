@@ -63,6 +63,19 @@ export interface SiguienteCodigoResponse {
   codigoSugerido: string;
 }
 
+// Incidencia de sync reportada por una báscula: un provisional que lleva >= 5
+// intentos fallidos de sincronizar por una causa que no es conectividad
+// (M4b). Store in-memory con TTL 1h en central; `ultimoError` es verbatim.
+export interface IncidenciaSync {
+  basculaCodigo: string;
+  entidadId: string;
+  tipoCatalogo: string | null;
+  nombre: string | null;
+  intentos: number;
+  ultimoError: string;
+  visto: boolean;
+}
+
 @Injectable({ providedIn: 'root' })
 export class MaestrosService {
   private readonly http = inject(HttpClient);
@@ -121,5 +134,14 @@ export class MaestrosService {
       `${CENTRAL_API_URL}/api/maestros/${provisionalId}/fusionar/${oficialId}`,
       {},
     );
+  }
+
+  /**
+   * Incidencias de sync de provisionales trabados (>= 5 intentos) reportadas
+   * por las básculas. Alimenta la alerta del panel admin en la cola de
+   * provisionales. Lista vacía = no hay nada trabado.
+   */
+  incidenciasSync(): Observable<IncidenciaSync[]> {
+    return this.http.get<IncidenciaSync[]>(`${CENTRAL_API_URL}/api/maestros/incidencias-sync`);
   }
 }

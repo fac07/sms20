@@ -1,4 +1,5 @@
-import { Component, computed, inject, signal, viewChild } from '@angular/core';
+import { Component, OnDestroy, computed, inject, signal, viewChild } from '@angular/core';
+import { NzAlertModule } from 'ng-zorro-antd/alert';
 import { NzButtonModule } from 'ng-zorro-antd/button';
 import { NzCardModule } from 'ng-zorro-antd/card';
 import { NzEmptyModule } from 'ng-zorro-antd/empty';
@@ -7,10 +8,14 @@ import { NzMessageService } from 'ng-zorro-antd/message';
 import { NzTableModule } from 'ng-zorro-antd/table';
 import { NzTagModule } from 'ng-zorro-antd/tag';
 import { NzTooltipModule } from 'ng-zorro-antd/tooltip';
-import { Maestro, MaestrosService } from '../../../api/maestros.service';
+import { IncidenciaSync, Maestro, MaestrosService } from '../../../api/maestros.service';
+import { ProvisionalesStore } from '../../../api/provisionales-store';
 import { AprobarDialog } from '../dialogs/aprobar-dialog';
 import { FusionarDialog } from '../dialogs/fusionar-dialog';
 import { PistaSimilar, basculaDeCodigoProvisional, buscarSimilar } from './similares';
+
+// El panel admin re-lee las incidencias de sync en su propio intervalo lento.
+const POLL_INCIDENCIAS_MS = 45_000;
 
 interface FilaProvisional {
   maestro: Maestro;
@@ -26,6 +31,7 @@ interface FilaProvisional {
  */
 @Component({
   imports: [
+    NzAlertModule,
     NzButtonModule,
     NzCardModule,
     NzEmptyModule,
@@ -40,9 +46,10 @@ interface FilaProvisional {
   styleUrl: './provisionales-page.css',
   templateUrl: './provisionales-page.html',
 })
-export class ProvisionalesPage {
+export class ProvisionalesPage implements OnDestroy {
   private readonly service = inject(MaestrosService);
   private readonly message = inject(NzMessageService);
+  private readonly store = inject(ProvisionalesStore);
 
   private readonly aprobarDlg = viewChild.required(AprobarDialog);
   private readonly fusionarDlg = viewChild.required(FusionarDialog);
@@ -50,6 +57,12 @@ export class ProvisionalesPage {
   readonly provisionales = signal<Maestro[]>([]);
   readonly universo = signal<Maestro[]>([]);
   readonly cargando = signal(false);
+
+  // Provisionales que llevan >= 5 intentos fallidos de sync por una causa que
+  // no es conectividad — la señal para que el admin intervenga.
+  readonly incidencias = signal<IncidenciaSync[]>([]);
+
+  private incidenciasIntervalId: ReturnType<typeof setInterval> | null = null;
 
   readonly filas = computed<FilaProvisional[]>(() =>
     this.provisionales().map((maestro) => ({
@@ -61,6 +74,15 @@ export class ProvisionalesPage {
 
   constructor() {
     this.cargar();
+    this.cargarIncidencias();
+    this.incidenciasIntervalId = setInterval(
+      () => this.cargarIncidencias(),
+      POLL_INCIDENCIAS_MS,
+    );
+  }
+
+  ngOnDestroy(): void {
+    if (this.incidenciasIntervalId !== null) clearInterval(this.incidenciasIntervalId);
   }
 
   cargar(): void {
@@ -68,6 +90,8 @@ export class ProvisionalesPage {
     this.service.listarProvisionales().subscribe({
       next: (rows) => {
         this.provisionales.set(rows);
+        // El badge de la nav decrementa junto con la cola, sin esperar su poll.
+        this.store.fijar(rows.length);
         this.cargando.set(false);
       },
       error: () => {
@@ -79,6 +103,14 @@ export class ProvisionalesPage {
     this.service.listarTodos().subscribe({
       next: (rows) => this.universo.set(rows),
       error: () => this.universo.set([]),
+    });
+  }
+
+  /** Poll best-effort: un fallo limpia la alerta en vez de dejar una rancia. */
+  cargarIncidencias(): void {
+    this.service.incidenciasSync().subscribe({
+      next: (rows) => this.incidencias.set(rows),
+      error: () => this.incidencias.set([]),
     });
   }
 
