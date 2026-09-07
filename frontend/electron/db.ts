@@ -67,14 +67,21 @@ const SQL_CREAR_BOLETA = `
     BoletaOrigenId TEXT,
     BasculaSalidaId TEXT,
     RespuestaD365Id TEXT,
-    CreadaOffline INTEGER NOT NULL
+    CreadaOffline INTEGER NOT NULL,
+    MotivoPesoManual TEXT,
+    MotivoPesoManualDetalle TEXT
   );
 `
 
-// Versión del esquema SQLite local. v2 = Boleta pasa de la forma vieja (FKs de
-// rol a Maestro + Habilita*) al Encabezado EAV, y las tablas de extensión legacy
-// (BoletaCalidad/DetalleFruta/Compostera/Caracteristica) se descartan.
-const ESQUEMA_LOCAL_VERSION = '2'
+// Versión del esquema SQLite local.
+//  v2 = Boleta pasa de la forma vieja (FKs de rol a Maestro + Habilita*) al
+//       Encabezado EAV, y las tablas de extensión legacy
+//       (BoletaCalidad/DetalleFruta/Compostera/Caracteristica) se descartan.
+//  v3 = Boleta gana MotivoPesoManual + MotivoPesoManualDetalle (ambas TEXT
+//       nullable, ingreso-manual-peso S2b). Aditivo: se agregan con
+//       `ALTER TABLE ADD COLUMN` en aplicarReshapeEsquemaLocal — sin recrear la
+//       tabla, sin pérdida de datos (a diferencia del salto v1->v2).
+const ESQUEMA_LOCAL_VERSION = '3'
 
 /**
  * Guardia de versión del esquema local (decisión de diseño D2). SQLite no
@@ -125,6 +132,20 @@ function aplicarReshapeEsquemaLocal(database: Database.Database): void {
       DROP TABLE IF EXISTS BoletaCaracteristica;
     `)
     database.exec(SQL_CREAR_BOLETA)
+  }
+
+  // v2 -> v3 (ingreso-manual-peso S2b): dos columnas aditivas nullable en Boleta
+  // para el motivo del peso manual. `ALTER TABLE ADD COLUMN` es no destructivo;
+  // se hace idempotente inspeccionando PRAGMA table_info porque una instalación
+  // que nació en v3 ya las trae de SQL_CREAR_BOLETA (y el reshape v1->v2 de
+  // arriba también recrea la tabla con la forma nueva).
+  const columnasActuales = database.prepare(`PRAGMA table_info(Boleta)`).all() as { name: string }[]
+  const faltaColumna = (nombre: string): boolean => !columnasActuales.some((c) => c.name === nombre)
+  if (faltaColumna('MotivoPesoManual')) {
+    database.exec(`ALTER TABLE Boleta ADD COLUMN MotivoPesoManual TEXT`)
+  }
+  if (faltaColumna('MotivoPesoManualDetalle')) {
+    database.exec(`ALTER TABLE Boleta ADD COLUMN MotivoPesoManualDetalle TEXT`)
   }
 
   sellarVersion()
@@ -577,6 +598,13 @@ export interface BoletaLocal {
   basculaSalidaId: string | null
   respuestaD365Id: string | null
   creadaOffline: boolean
+  // Justificación del peso manual (ingreso-manual-peso). Un solo par de columnas
+  // como en central (backend/Domain/Boletas/Boleta.cs): lo setea el pesaje que
+  // haya sido Manual; si ambos lo son, el de salida pisa al de ingreso. Null en
+  // una boleta 100% automática. Viaja verbatim (camelCase) en el payload del
+  // Outbox — `POST /api/boletas/sync` lo lee con esa misma clave.
+  motivoPesoManual: MotivoPesoManual | null
+  motivoPesoManualDetalle: string | null
 }
 
 // Forma cruda de la fila tal como sale de better-sqlite3 (columnas
@@ -606,6 +634,8 @@ interface BoletaRow {
   BasculaSalidaId: string | null
   RespuestaD365Id: string | null
   CreadaOffline: number
+  MotivoPesoManual: MotivoPesoManual | null
+  MotivoPesoManualDetalle: string | null
 }
 
 function filaABoletaLocal(row: BoletaRow): BoletaLocal {
@@ -634,6 +664,8 @@ function filaABoletaLocal(row: BoletaRow): BoletaLocal {
     basculaSalidaId: row.BasculaSalidaId,
     respuestaD365Id: row.RespuestaD365Id,
     creadaOffline: Boolean(row.CreadaOffline),
+    motivoPesoManual: row.MotivoPesoManual,
+    motivoPesoManualDetalle: row.MotivoPesoManualDetalle,
   }
 }
 
@@ -808,7 +840,17 @@ export function crearBoletaLocal(
     | 'boletaOrigenId'
     | 'basculaSalidaId'
     | 'respuestaD365Id'
-  > & { prefijo: string; codigoBascula: string; valores?: readonly ValorCampo[] },
+    | 'motivoPesoManual'
+    | 'motivoPesoManualDetalle'
+  > & {
+    prefijo: string
+    codigoBascula: string
+    valores?: readonly ValorCampo[]
+    // Solo se persisten cuando `origenPesoIngreso === 'Manual'`; la ruta HTTP
+    // ya validó motivo+detalle+rango contra la config local antes de llamar acá.
+    motivoPesoManual?: MotivoPesoManual | null
+    motivoPesoManualDetalle?: string | null
+  },
 ): BoletaLocal {
   const id = crypto.randomUUID()
   // asOf de la boleta: se respeta el instante que pasa el llamador (así la
@@ -834,11 +876,13 @@ export function crearBoletaLocal(
         `INSERT INTO Boleta (
           Id, NumeroBoleta, TipoMovimientoId, Estado, EstadoSync,
           PesoIngreso, OrigenPesoIngreso,
-          FechaHoraIngreso, UsuarioIngreso, CreadaOffline
+          FechaHoraIngreso, UsuarioIngreso, CreadaOffline,
+          MotivoPesoManual, MotivoPesoManualDetalle
         ) VALUES (
           @id, @numeroBoleta, @tipoMovimientoId, @estado, @estadoSync,
           @pesoIngreso, @origenPesoIngreso,
-          @fechaHoraIngreso, @usuarioIngreso, @creadaOffline
+          @fechaHoraIngreso, @usuarioIngreso, @creadaOffline,
+          @motivoPesoManual, @motivoPesoManualDetalle
         )`,
       )
       .run({
@@ -852,6 +896,11 @@ export function crearBoletaLocal(
         fechaHoraIngreso,
         usuarioIngreso: input.usuarioIngreso,
         creadaOffline: input.creadaOffline ? 1 : 0,
+        // El motivo solo aplica al pesaje Manual; una boleta automática guarda null.
+        motivoPesoManual:
+          input.origenPesoIngreso === 'Manual' ? (input.motivoPesoManual ?? null) : null,
+        motivoPesoManualDetalle:
+          input.origenPesoIngreso === 'Manual' ? (input.motivoPesoManualDetalle ?? null) : null,
       })
 
     // Filas BoletaValorCampo (EAV tipado) en la MISMA transacción que el
@@ -883,6 +932,10 @@ export function cerrarBoletaLocal(
     origenPesoSalida: OrigenPesoLocal
     usuarioSalida: string
     basculaSalidaId?: string | null
+    // Solo se persisten cuando `origenPesoSalida === 'Manual'`; la ruta HTTP ya
+    // validó motivo+detalle+rango contra la config local antes de llamar acá.
+    motivoPesoManual?: MotivoPesoManual | null
+    motivoPesoManualDetalle?: string | null
   },
 ): BoletaLocal | null {
   const boleta = obtenerBoletaLocal(id)
@@ -893,6 +946,16 @@ export function cerrarBoletaLocal(
 
   const pesoNeto = Math.abs(boleta.pesoIngreso - input.pesoSalida)
   const fechaHoraSalida = new Date().toISOString()
+
+  // Un solo par de columnas para el motivo (igual que central): si la salida es
+  // Manual, su motivo pisa lo que haya quedado del ingreso; si no, se conserva.
+  const esSalidaManual = input.origenPesoSalida === 'Manual'
+  const motivoPesoManual = esSalidaManual
+    ? (input.motivoPesoManual ?? null)
+    : boleta.motivoPesoManual
+  const motivoPesoManualDetalle = esSalidaManual
+    ? (input.motivoPesoManualDetalle ?? null)
+    : boleta.motivoPesoManualDetalle
 
   // Misma razón que en crearBoletaLocal: el UPDATE de Boleta y el evento
   // OutboxLocal 'Cerrar' van en una sola transacción.
@@ -906,6 +969,8 @@ export function cerrarBoletaLocal(
           FechaHoraSalida = @fechaHoraSalida,
           UsuarioSalida = @usuarioSalida,
           BasculaSalidaId = @basculaSalidaId,
+          MotivoPesoManual = @motivoPesoManual,
+          MotivoPesoManualDetalle = @motivoPesoManualDetalle,
           Estado = 'Cerrada'
         WHERE Id = @id`,
       )
@@ -917,6 +982,8 @@ export function cerrarBoletaLocal(
         fechaHoraSalida,
         usuarioSalida: input.usuarioSalida,
         basculaSalidaId: input.basculaSalidaId ?? null,
+        motivoPesoManual,
+        motivoPesoManualDetalle,
       })
 
     // Ver el comentario en crearBoletaLocal sobre el alcance del payload: el

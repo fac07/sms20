@@ -69,6 +69,68 @@ describe('sembrarConfiguracionInicial — trío de ingreso manual', () => {
   })
 })
 
+describe('ESQUEMA_LOCAL_VERSION v3 — columnas de motivo de peso manual', () => {
+  const columnasBoleta = (base: Database.Database): string[] =>
+    (base.prepare('PRAGMA table_info(Boleta)').all() as { name: string }[]).map((c) => c.name)
+
+  const versionSellada = (base: Database.Database): string | undefined =>
+    (
+      base
+        .prepare("SELECT Valor FROM ConfiguracionLocal WHERE Clave = 'EsquemaLocalVersion'")
+        .get() as { Valor: string } | undefined
+    )?.Valor
+
+  it('una DB nueva nace en v3 con Boleta.MotivoPesoManual + Detalle', () => {
+    expect(versionSellada(db)).toBe('3')
+    expect(columnasBoleta(db)).toEqual(
+      expect.arrayContaining(['MotivoPesoManual', 'MotivoPesoManualDetalle']),
+    )
+  })
+
+  it('una instalación en v2 agrega las columnas (ADD COLUMN aditivo) sin perder filas', () => {
+    const dbV2 = new Database(':memory:')
+    dbV2.exec(`
+      CREATE TABLE ConfiguracionLocal (Clave TEXT PRIMARY KEY, Valor TEXT);
+      CREATE TABLE Boleta (
+        Id TEXT PRIMARY KEY,
+        NumeroBoleta TEXT NOT NULL UNIQUE,
+        TipoMovimientoId TEXT NOT NULL,
+        Estado TEXT NOT NULL,
+        EstadoSync TEXT NOT NULL,
+        PesoIngreso REAL NOT NULL,
+        OrigenPesoIngreso TEXT NOT NULL,
+        FechaHoraIngreso TEXT NOT NULL,
+        UsuarioIngreso TEXT NOT NULL,
+        CreadaOffline INTEGER NOT NULL
+      );
+    `)
+    dbV2.prepare("INSERT INTO ConfiguracionLocal (Clave, Valor) VALUES ('EsquemaLocalVersion', '2')").run()
+    dbV2
+      .prepare(
+        `INSERT INTO Boleta (Id, NumeroBoleta, TipoMovimientoId, Estado, EstadoSync,
+          PesoIngreso, OrigenPesoIngreso, FechaHoraIngreso, UsuarioIngreso, CreadaOffline)
+         VALUES ('b1', 'REC-B1-000001', 'tm1', 'EnTransito', 'Local', 1000, 'Bascula',
+          '2026-01-01T00:00:00.000Z', 'operador', 1)`,
+      )
+      .run()
+
+    inicializarEsquemaLocal(dbV2)
+
+    expect(versionSellada(dbV2)).toBe('3')
+    expect(columnasBoleta(dbV2)).toEqual(
+      expect.arrayContaining(['MotivoPesoManual', 'MotivoPesoManualDetalle']),
+    )
+    const fila = dbV2.prepare("SELECT * FROM Boleta WHERE Id = 'b1'").get() as Record<string, unknown>
+    expect(fila.PesoIngreso).toBe(1000)
+    expect(fila.MotivoPesoManual).toBeNull()
+    expect(fila.MotivoPesoManualDetalle).toBeNull()
+
+    // Idempotente: re-inicializar (reinicio de la app) no re-ejecuta el ALTER.
+    expect(() => inicializarEsquemaLocal(dbV2)).not.toThrow()
+    dbV2.close()
+  })
+})
+
 describe('leerConfigIngresoManual', () => {
   it('clave ausente => default-deny y sin cotas', () => {
     db.prepare(
