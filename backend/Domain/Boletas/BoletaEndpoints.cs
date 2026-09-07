@@ -13,12 +13,31 @@ public static class BoletaEndpoints
     {
         var group = app.MapGroup("/api/boletas").WithTags("Boletas");
 
-        group.MapGet("/", async (SmsDbContext db, EstadoBoleta? estado = null) =>
+        group.MapGet("/", async (SmsDbContext db, EstadoBoleta? estado = null, string? origenPeso = null) =>
         {
+            OrigenPeso? origen = null;
+            if (origenPeso is not null)
+            {
+                if (!Enum.TryParse<OrigenPeso>(origenPeso, ignoreCase: true, out var origenParseado)
+                    || !Enum.IsDefined(origenParseado))
+                {
+                    return Results.BadRequest($"origenPeso inválido: '{origenPeso}'. Valores: Bascula, Manual.");
+                }
+
+                origen = origenParseado;
+            }
+
             var query = db.Boletas.AsNoTracking();
             if (estado is not null)
             {
                 query = query.Where(b => b.Estado == estado);
+            }
+
+            if (origen is not null)
+            {
+                // Manual en cualquiera de los dos pesajes cuenta como boleta de
+                // peso manual para la consulta interina.
+                query = query.Where(b => b.OrigenPesoIngreso == origen || b.OrigenPesoSalida == origen);
             }
 
             // El OrderBy va antes de proyectar a BoletaDto — EF Core no puede
@@ -42,6 +61,16 @@ public static class BoletaEndpoints
             var error = await ValidarCreacion(request, db);
             if (error is not null) return error;
 
+            MotivoPesoManual? motivoIngreso = null;
+            if (request.OrigenPesoIngreso == OrigenPeso.Manual)
+            {
+                var bascula = await db.Basculas.AsNoTracking().FirstAsync(b => b.Id == request.BasculaId, ct);
+                var errorManual = ValidarPesoManualTipado(
+                    bascula, request.PesoIngreso,
+                    request.MotivoPesoManual, request.MotivoPesoManualDetalle, out motivoIngreso);
+                if (errorManual is not null) return errorManual;
+            }
+
             var boleta = new Boleta
             {
                 Id = Guid.NewGuid(),
@@ -64,6 +93,10 @@ public static class BoletaEndpoints
                 UsuarioIngreso = request.UsuarioIngreso,
                 UsuarioSalida = null,
                 CreadaOffline = request.CreadaOffline,
+                MotivoPesoManual = motivoIngreso,
+                MotivoPesoManualDetalle = request.OrigenPesoIngreso == OrigenPeso.Manual
+                    ? request.MotivoPesoManualDetalle
+                    : null,
             };
 
             var valores = request.Valores ?? Array.Empty<ValorCampoDto>();
@@ -106,6 +139,23 @@ public static class BoletaEndpoints
             if (errores.Count > 0)
             {
                 return Results.UnprocessableEntity(errores);
+            }
+
+            if (request.OrigenPesoSalida == OrigenPeso.Manual)
+            {
+                var bascula = await db.Basculas.AsNoTracking().FirstOrDefaultAsync(b => b.Id == boleta.BasculaId, ct);
+                if (bascula is null)
+                {
+                    return Results.BadRequest($"No existe la báscula {boleta.BasculaId} de la boleta.");
+                }
+
+                var errorManual = ValidarPesoManualTipado(
+                    bascula, request.PesoSalida,
+                    request.MotivoPesoManual, request.MotivoPesoManualDetalle, out var motivoSalida);
+                if (errorManual is not null) return errorManual;
+
+                boleta.MotivoPesoManual = motivoSalida;
+                boleta.MotivoPesoManualDetalle = request.MotivoPesoManualDetalle;
             }
 
             boleta.PesoSalida = request.PesoSalida;
@@ -217,6 +267,26 @@ public static class BoletaEndpoints
                     var usuarioIngreso = request.Payload.GetProperty("usuarioIngreso").GetString()!;
                     var creadaOffline = request.Payload.GetProperty("creadaOffline").GetBoolean();
 
+                    // Invariante de datos (design D8): una boleta Manual
+                    // sincronizada DEBE traer un motivo de catálogo válido.
+                    // NO se re-valida el rango — los límites pueden haberse
+                    // editado centralmente después de la captura offline y
+                    // rechazar acá tiraría boletas ya válidas a ErrorCentral.
+                    MotivoPesoManual? motivoManual = null;
+                    string? motivoManualDetalle = null;
+                    if (origenPesoIngreso == OrigenPeso.Manual)
+                    {
+                        var motivoTexto = LeerTexto(request.Payload, "motivoPesoManual");
+                        if (!MotivosPesoManual.TryParse(motivoTexto, out var motivoParseado))
+                        {
+                            return Results.UnprocessableEntity(
+                                "El evento Manual sincronizado no trae un motivoPesoManual válido del catálogo.");
+                        }
+
+                        motivoManual = motivoParseado;
+                        motivoManualDetalle = LeerTexto(request.Payload, "motivoPesoManualDetalle");
+                    }
+
                     // Defensivo: no debería pasar (el correlativo es único por
                     // báscula), pero no nos salteamos el chequeo solo porque
                     // el evento venga de un dispatcher de confianza.
@@ -272,6 +342,8 @@ public static class BoletaEndpoints
                         UsuarioIngreso = usuarioIngreso,
                         UsuarioSalida = null,
                         CreadaOffline = creadaOffline,
+                        MotivoPesoManual = motivoManual,
+                        MotivoPesoManualDetalle = motivoManualDetalle,
                     };
 
                     db.Boletas.Add(boleta);
@@ -318,6 +390,24 @@ public static class BoletaEndpoints
                     boleta.PesoSalida = request.Payload.GetProperty("pesoSalida").GetDecimal();
                     boleta.OrigenPesoSalida = Enum.Parse<OrigenPeso>(
                         request.Payload.GetProperty("origenPesoSalida").GetString()!);
+
+                    // Igual que en 'Crear': motivo-cuando-Manual es invariante de
+                    // datos (D8), el rango no se re-chequea en ingesta de sync.
+                    if (boleta.OrigenPesoSalida == OrigenPeso.Manual)
+                    {
+                        var motivoTexto = LeerTexto(request.Payload, "motivoPesoManual");
+                        if (!MotivosPesoManual.TryParse(motivoTexto, out var motivoParseado))
+                        {
+                            boleta.EstadoSync = EstadoSyncBoleta.ErrorCentral;
+                            await db.SaveChangesAsync(ct);
+                            return Results.UnprocessableEntity(
+                                "El cierre Manual sincronizado no trae un motivoPesoManual válido del catálogo.");
+                        }
+
+                        boleta.MotivoPesoManual = motivoParseado;
+                        boleta.MotivoPesoManualDetalle = LeerTexto(request.Payload, "motivoPesoManualDetalle");
+                    }
+
                     boleta.FechaHoraSalida = request.Payload.GetProperty("fechaHoraSalida").GetDateTime();
                     boleta.UsuarioSalida = request.Payload.GetProperty("usuarioSalida").GetString();
                     // BasculaSalidaId es un concepto local (Id de OTRA
@@ -516,6 +606,59 @@ public static class BoletaEndpoints
         return null;
     }
 
+    /// <summary>
+    /// Valida un pesaje tipeado manualmente en la vía central típada (crear /
+    /// cerrar). Orden: flag de báscula habilitado → motivo presente y de
+    /// catálogo → detalle cuando el motivo es <c>Otro</c> → rango contra las
+    /// cotas de la báscula (o &gt; 0 si no hay cotas). Toda falla es 422 — no
+    /// hay capa de autenticación, así que 403 no aplica. Devuelve <c>null</c>
+    /// cuando el pesaje es válido y expone el motivo ya parseado.
+    /// </summary>
+    private static IResult? ValidarPesoManualTipado(
+        Bascula bascula, decimal peso, string? motivo, string? detalle, out MotivoPesoManual? motivoParseado)
+    {
+        motivoParseado = null;
+
+        if (!bascula.PermiteIngresoManual)
+        {
+            return Results.UnprocessableEntity(
+                $"La báscula '{bascula.Codigo}' no tiene habilitado el ingreso manual de peso.");
+        }
+
+        if (!MotivosPesoManual.TryParse(motivo, out var motivoEnum))
+        {
+            return Results.UnprocessableEntity(
+                "Un peso de origen Manual requiere un motivo del catálogo: "
+                + "IndicadorSinSenal, IndicadorEnReparacion, CorteEnergia u Otro.");
+        }
+
+        if (motivoEnum == MotivoPesoManual.Otro && string.IsNullOrWhiteSpace(detalle))
+        {
+            return Results.UnprocessableEntity(
+                "El motivo 'Otro' requiere un detalle que explique el ingreso manual del peso.");
+        }
+
+        var min = bascula.PesoMinimoManual;
+        var max = bascula.PesoMaximoManual;
+        if (min is null && max is null)
+        {
+            if (peso <= 0)
+            {
+                return Results.UnprocessableEntity("El peso manual debe ser mayor que cero.");
+            }
+        }
+        else if ((min is { } cotaInferior && peso < cotaInferior)
+            || (max is { } cotaSuperior && peso > cotaSuperior))
+        {
+            return Results.UnprocessableEntity(
+                $"El peso manual {peso} kg está fuera del rango permitido para la báscula '{bascula.Codigo}'"
+                + $" ({min?.ToString() ?? "sin cota"} – {max?.ToString() ?? "sin cota"} kg).");
+        }
+
+        motivoParseado = motivoEnum;
+        return null;
+    }
+
     private static IQueryable<BoletaDto> Proyectar(IQueryable<Boleta> boletas, SmsDbContext db) =>
         from b in boletas
         join bas in db.Basculas.AsNoTracking() on b.BasculaId equals bas.Id into basculas
@@ -534,6 +677,7 @@ public static class BoletaEndpoints
             b.FechaHoraAnulacion,
             b.BoletaReemplazoId, b.BoletaOrigenId, b.BasculaSalidaId, b.PreIngresoId,
             b.RespuestaD365Id, b.CreadaOffline,
+            b.MotivoPesoManual, b.MotivoPesoManualDetalle,
             // Valores capturados: se unen por el CampoId ALMACENADO (sin filtro
             // VigenteHasta) para que un Campo retirado siga resolviendo. El join
             // a Maestro es un subquery escalar por columna (ReferenciaMaestro).

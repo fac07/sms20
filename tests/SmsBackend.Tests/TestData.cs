@@ -91,15 +91,27 @@ public static class TestData
 
     public static string NumeroBoleta() => $"N-{Guid.NewGuid():N}"[..18];
 
+    /// <summary>Habilita el ingreso manual de peso en una báscula (toggle admin).</summary>
+    public static Task<HttpResponseMessage> HabilitarIngresoManualAsync(
+        HttpClient client, Guid basculaId, decimal? min = null, decimal? max = null) =>
+        client.PutAsJsonAsync(
+            $"/api/basculas/{basculaId}/ingreso-manual",
+            new ConfigurarIngresoManualRequest(true, min, max),
+            Json);
+
     public static async Task<(HttpResponseMessage Response, string Body)> CrearBoletaRawAsync(
         HttpClient client,
         Escenario escenario,
         IEnumerable<ValorCampoDto>? valores = null,
-        OrigenPeso origenPesoIngreso = OrigenPeso.Bascula)
+        OrigenPeso origenPesoIngreso = OrigenPeso.Bascula,
+        decimal pesoIngreso = 1000m,
+        string? motivoPesoManual = null,
+        string? motivoPesoManualDetalle = null)
     {
         var req = new CrearBoletaRequest(
             NumeroBoleta(), escenario.BasculaId, escenario.TipoMovimientoId,
-            1000m, origenPesoIngreso, "tester", false, valores?.ToList());
+            pesoIngreso, origenPesoIngreso, "tester", false, valores?.ToList(),
+            motivoPesoManual, motivoPesoManualDetalle);
         var resp = await client.PostAsJsonAsync("/api/boletas", req, Json);
         return (resp, await resp.Content.ReadAsStringAsync());
     }
@@ -108,18 +120,23 @@ public static class TestData
         HttpClient client,
         Escenario escenario,
         IEnumerable<ValorCampoDto>? valores = null,
-        OrigenPeso origenPesoIngreso = OrigenPeso.Bascula)
+        OrigenPeso origenPesoIngreso = OrigenPeso.Bascula,
+        decimal pesoIngreso = 1000m,
+        string? motivoPesoManual = null,
+        string? motivoPesoManualDetalle = null)
     {
-        var (resp, body) = await CrearBoletaRawAsync(client, escenario, valores, origenPesoIngreso);
+        var (resp, body) = await CrearBoletaRawAsync(
+            client, escenario, valores, origenPesoIngreso, pesoIngreso, motivoPesoManual, motivoPesoManualDetalle);
         Assert.True(resp.IsSuccessStatusCode, $"POST /api/boletas => {(int)resp.StatusCode}: {body}");
         return JsonSerializer.Deserialize<BoletaDto>(body, Json)!;
     }
 
     public static Task<HttpResponseMessage> CerrarAsync(
-        HttpClient client, Guid boletaId, decimal pesoSalida = 900m, OrigenPeso origen = OrigenPeso.Bascula) =>
+        HttpClient client, Guid boletaId, decimal pesoSalida = 900m, OrigenPeso origen = OrigenPeso.Bascula,
+        string? motivoPesoManual = null, string? motivoPesoManualDetalle = null) =>
         client.PostAsJsonAsync(
             $"/api/boletas/{boletaId}/cerrar",
-            new CerrarBoletaRequest(pesoSalida, origen, "tester", null),
+            new CerrarBoletaRequest(pesoSalida, origen, "tester", null, motivoPesoManual, motivoPesoManualDetalle),
             Json);
 
     public static Task<HttpResponseMessage> CerrarRawAsync(HttpClient client, Guid boletaId, string rawJsonBody) =>
@@ -148,7 +165,10 @@ public static class TestData
         Escenario escenario,
         DateTime fechaHoraIngreso,
         IEnumerable<ValorCampoDto> valores,
-        OrigenPeso origenPesoIngreso = OrigenPeso.Bascula) =>
+        OrigenPeso origenPesoIngreso = OrigenPeso.Bascula,
+        decimal pesoIngreso = 1000m,
+        string? motivoPesoManual = null,
+        string? motivoPesoManualDetalle = null) =>
         new
         {
             basculaCodigo = escenario.BasculaCodigo,
@@ -158,11 +178,13 @@ public static class TestData
                 id = boletaId,
                 numeroBoleta = NumeroBoleta(),
                 tipoMovimientoId = escenario.TipoMovimientoId,
-                pesoIngreso = 1000m,
+                pesoIngreso,
                 origenPesoIngreso = origenPesoIngreso.ToString(),
                 fechaHoraIngreso,
                 usuarioIngreso = "tester",
                 creadaOffline = true,
+                motivoPesoManual,
+                motivoPesoManualDetalle,
                 valores = valores.Select(v => new
                 {
                     campoId = v.CampoId,
@@ -182,7 +204,9 @@ public static class TestData
         string basculaCodigo,
         decimal pesoIngreso = 1000m,
         decimal pesoSalida = 850m,
-        OrigenPeso origenPesoSalida = OrigenPeso.Bascula) =>
+        OrigenPeso origenPesoSalida = OrigenPeso.Bascula,
+        string? motivoPesoManual = null,
+        string? motivoPesoManualDetalle = null) =>
         new
         {
             basculaCodigo,
@@ -195,6 +219,8 @@ public static class TestData
                 fechaHoraSalida,
                 usuarioSalida = "tester",
                 pesoNeto = Math.Abs(pesoIngreso - pesoSalida),
+                motivoPesoManual,
+                motivoPesoManualDetalle,
             },
         };
 

@@ -94,11 +94,12 @@ public class Boleta
 
     /// <summary>
     /// Motivo por el que el peso se tipeó manualmente en lugar de leerlo del
-    /// indicador. Código de un catálogo fijo (ver capa terminal); null cuando
-    /// el peso vino de la báscula. La validación de obligatoriedad-cuando-Manual
-    /// se agrega en una fase posterior.
+    /// indicador. Código de un catálogo fijo (<see cref="Boletas.MotivoPesoManual"/>);
+    /// null cuando el peso vino de la báscula. Se persiste como string
+    /// (<c>nvarchar(40)</c>) vía <c>HasConversion</c>. Obligatorio cuando el
+    /// origen del pesaje es <see cref="OrigenPeso.Manual"/>.
     /// </summary>
-    public string? MotivoPesoManual { get; set; }
+    public MotivoPesoManual? MotivoPesoManual { get; set; }
 
     /// <summary>Texto libre opcional que acompaña al motivo — requerido solo cuando el motivo es "Otro".</summary>
     public string? MotivoPesoManualDetalle { get; set; }

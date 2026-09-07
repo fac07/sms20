@@ -30,6 +30,8 @@ public record BoletaDto(
     Guid? PreIngresoId,
     string? RespuestaD365Id,
     bool CreadaOffline,
+    MotivoPesoManual? MotivoPesoManual,
+    string? MotivoPesoManualDetalle,
     IReadOnlyList<ValorCampoLeidoDto> Valores);
 
 /// <summary>
@@ -47,14 +49,20 @@ public record CrearBoletaRequest(
     OrigenPeso OrigenPesoIngreso,
     string UsuarioIngreso,
     bool CreadaOffline,
-    IReadOnlyList<ValorCampoDto>? Valores = null);
+    IReadOnlyList<ValorCampoDto>? Valores = null,
+    // Motivo del catálogo, como string crudo para poder devolver 422 (no 400)
+    // ante un valor fuera de catálogo. Obligatorio cuando OrigenPesoIngreso = Manual.
+    string? MotivoPesoManual = null,
+    string? MotivoPesoManualDetalle = null);
 
 /// <summary>Datos del segundo pesaje — cierra la boleta.</summary>
 public record CerrarBoletaRequest(
     decimal PesoSalida,
     OrigenPeso OrigenPesoSalida,
     string UsuarioSalida,
-    Guid? BasculaSalidaId);
+    Guid? BasculaSalidaId,
+    string? MotivoPesoManual = null,
+    string? MotivoPesoManualDetalle = null);
 
 /// <summary>Doble control — no se anula sin UsuarioAnula y UsuarioAutoriza.</summary>
 public record AnularBoletaRequest(
