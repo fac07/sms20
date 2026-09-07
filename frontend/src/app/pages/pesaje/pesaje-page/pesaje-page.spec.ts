@@ -175,6 +175,12 @@ describe('PesajePage (TestBed + HttpTestingController)', () => {
     httpMock.expectOne(`${LOCAL}/peso`).flush(lectura);
   }
 
+  /** Reejecuta el poll de peso y hace fallar la respuesta de `/peso` (servidor local caído). */
+  function pollPesoError(): void {
+    (component as unknown as Record<string, () => void>)['actualizarPeso']();
+    httpMock.expectOne(`${LOCAL}/peso`).error(new ProgressEvent('error'));
+  }
+
   function flushInit(opciones?: {
     tipos?: unknown[];
     tiposRefresh?: unknown[];
@@ -555,6 +561,24 @@ describe('PesajePage (TestBed + HttpTestingController)', () => {
       expect(component.ingresoManualDisponible()).toBe(false);
       expect(component.modoIngresoManual()).toBe(false);
       expect(component.lecturaPeso().peso).toBe(210);
+    });
+
+    it('un fallo HTTP del poll de peso limpia la lectura (no queda stale)', () => {
+      const now = vi.spyOn(Date, 'now');
+      now.mockReturnValue(6_000_000);
+      flushInit({ peso: { peso: 210, origen: 'Bascula' }, estado: ESTADO_MANUAL });
+      expect(component.lecturaPeso().peso).toBe(210);
+
+      now.mockReturnValue(6_000_000 + 2_000);
+      pollPesoError();
+
+      expect(component.lecturaPeso().peso).toBeNull();
+      expect(component.lecturaPeso().origen).toBeNull();
+
+      // y la racha de nulos arranca desde el fallo -> 16 s después ofrece el ingreso manual
+      now.mockReturnValue(6_000_000 + 18_000);
+      pollPesoError();
+      expect(component.ingresoManualDisponible()).toBe(true);
     });
 
     it('puedeCrear acepta una captura manual válida; "Otro" exige detalle', () => {
