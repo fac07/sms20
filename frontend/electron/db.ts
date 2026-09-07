@@ -321,19 +321,123 @@ const SQL_ESQUEMA_LOCAL = `
 const CLAVE_TIPOS_PROVISIONALES_HABILITADOS = 'TiposCatalogoProvisionalHabilitados'
 const TIPOS_PROVISIONALES_HABILITADOS_DEFECTO = 'Piloto,Transportista,Equipo,Finca'
 
+// Config de ingreso manual de peso, espejada por báscula desde central
+// (`Bascula.PermiteIngresoManual` / `PesoMinimoManual` / `PesoMaximoManual`) por
+// `config-sync.ts` sobre el `GET /api/basculas/{id}` que ya existe, y sembrada
+// en cold-start por `POST /aprovisionamiento`. Se guardan como filas de
+// `ConfiguracionLocal` (mismo precedente que la allow-list de provisionales) —
+// sin bump de `EsquemaLocalVersion`, son aditivas. El flag arranca en `'false'`
+// (default-deny hasta que un admin habilite y el sync propague); las cotas
+// arrancan vacías (`''` == sin cota, se valida solo `> 0`).
+const CLAVE_PERMITE_INGRESO_MANUAL = 'PermiteIngresoManual'
+const CLAVE_PESO_MINIMO_MANUAL = 'PesoMinimoManual'
+const CLAVE_PESO_MAXIMO_MANUAL = 'PesoMaximoManual'
+
 /**
- * Siembra la configuración local inicial que no depende de central. Hoy solo la
- * allow-list de tipos provisionales — `INSERT ... ON CONFLICT DO NOTHING`, mismo
- * patrón idempotente que el sellado de `EsquemaLocalVersion` (nunca pisa un
- * valor ya editado en esta instalación).
+ * Catálogo fijo de motivos de peso manual (decisión de producto #6 / diseño D2).
+ * Lista cerrada en código: sin pantalla admin, sin sync — cambiarla es un
+ * despliegue. Los valores son los nombres del enum central `MotivoPesoManual`
+ * (`backend/Domain/Boletas/MotivoPesoManual.cs`) VERBATIM; la duplicación entre
+ * runtimes está fijada por los tests de ingesta de sync del central. El renderer
+ * mapea cada código a su etiqueta en español ("indicador sin señal", "indicador
+ * en reparación", "corte de energía", "otro"). Viaja al renderer en `GET /estado`.
+ */
+export const MOTIVOS_PESO_MANUAL = [
+  'IndicadorSinSenal',
+  'IndicadorEnReparacion',
+  'CorteEnergia',
+  'Otro',
+] as const
+
+export type MotivoPesoManual = (typeof MOTIVOS_PESO_MANUAL)[number]
+
+/**
+ * Siembra la configuración local inicial que no depende de central: la
+ * allow-list de tipos provisionales y el trío de ingreso manual de peso. Todo
+ * con `INSERT ... ON CONFLICT DO NOTHING`, mismo patrón idempotente que el
+ * sellado de `EsquemaLocalVersion` — nunca pisa un valor ya sincronizado o
+ * editado en esta instalación.
  */
 function sembrarConfiguracionInicial(database: Database.Database): void {
-  database
-    .prepare(
-      `INSERT INTO ConfiguracionLocal (Clave, Valor) VALUES (?, ?)
-       ON CONFLICT(Clave) DO NOTHING`,
-    )
-    .run(CLAVE_TIPOS_PROVISIONALES_HABILITADOS, TIPOS_PROVISIONALES_HABILITADOS_DEFECTO)
+  const sembrar = database.prepare(
+    `INSERT INTO ConfiguracionLocal (Clave, Valor) VALUES (?, ?)
+     ON CONFLICT(Clave) DO NOTHING`,
+  )
+  sembrar.run(CLAVE_TIPOS_PROVISIONALES_HABILITADOS, TIPOS_PROVISIONALES_HABILITADOS_DEFECTO)
+  sembrar.run(CLAVE_PERMITE_INGRESO_MANUAL, 'false')
+  sembrar.run(CLAVE_PESO_MINIMO_MANUAL, '')
+  sembrar.run(CLAVE_PESO_MAXIMO_MANUAL, '')
+}
+
+/** Config de ingreso manual de peso resuelta para esta báscula. */
+export interface ConfigIngresoManualLocal {
+  permiteIngresoManual: boolean
+  pesoMinimoManual: number | null
+  pesoMaximoManual: number | null
+  motivosPesoManual: readonly MotivoPesoManual[]
+}
+
+function parsearCotaManual(valor: string | null | undefined): number | null {
+  if (valor === null || valor === undefined || valor.trim() === '') return null
+  const n = Number(valor)
+  return Number.isFinite(n) ? n : null
+}
+
+/**
+ * Lee la config de ingreso manual desde un handle `db` EXPLÍCITO (no el
+ * singleton `getDb()`) — así `config-sync.ts`, que recibe su `db` por parámetro,
+ * comparte el mismo path que el `:memory:` de los specs. Clave ausente/vacía =>
+ * deny / sin cota (default-deny del diseño D1: nada se acepta hasta que el sync
+ * escriba). `motivosPesoManual` sale siempre del `const` en código.
+ */
+export function leerConfigIngresoManual(database: Database.Database): ConfigIngresoManualLocal {
+  const leer = (clave: string): string | null | undefined =>
+    (
+      database.prepare('SELECT Valor FROM ConfiguracionLocal WHERE Clave = ?').get(clave) as
+        | { Valor: string | null }
+        | undefined
+    )?.Valor
+  return {
+    permiteIngresoManual: leer(CLAVE_PERMITE_INGRESO_MANUAL) === 'true',
+    pesoMinimoManual: parsearCotaManual(leer(CLAVE_PESO_MINIMO_MANUAL)),
+    pesoMaximoManual: parsearCotaManual(leer(CLAVE_PESO_MAXIMO_MANUAL)),
+    motivosPesoManual: MOTIVOS_PESO_MANUAL,
+  }
+}
+
+/** Wrapper de producción sobre el singleton `getDb()` (lo usa `GET /estado`). */
+export function obtenerConfigIngresoManual(): ConfigIngresoManualLocal {
+  return leerConfigIngresoManual(getDb())
+}
+
+/**
+ * Upsertea el trío de ingreso manual en `ConfiguracionLocal` desde un handle
+ * `db` explícito. Lo llaman `config-sync.ts` (dentro de su transacción) y
+ * `POST /aprovisionamiento`. `null` en una cota se guarda como `''` (== sin
+ * cota). A diferencia del sembrado inicial, ESTE sí pisa el valor previo: es la
+ * propagación autoritativa desde central.
+ */
+export function guardarConfigIngresoManual(
+  database: Database.Database,
+  config: {
+    permiteIngresoManual: boolean
+    pesoMinimoManual: number | null
+    pesoMaximoManual: number | null
+  },
+): void {
+  const upsert = database.prepare(
+    `INSERT INTO ConfiguracionLocal (Clave, Valor) VALUES (?, ?)
+     ON CONFLICT(Clave) DO UPDATE SET Valor = excluded.Valor`,
+  )
+  upsert.run(CLAVE_PERMITE_INGRESO_MANUAL, config.permiteIngresoManual ? 'true' : 'false')
+  upsert.run(
+    CLAVE_PESO_MINIMO_MANUAL,
+    config.pesoMinimoManual === null ? '' : String(config.pesoMinimoManual),
+  )
+  upsert.run(
+    CLAVE_PESO_MAXIMO_MANUAL,
+    config.pesoMaximoManual === null ? '' : String(config.pesoMaximoManual),
+  )
 }
 
 /**
