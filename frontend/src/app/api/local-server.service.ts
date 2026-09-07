@@ -2,6 +2,7 @@ import { HttpClient } from '@angular/common/http';
 import { Injectable, inject } from '@angular/core';
 import { Observable, map } from 'rxjs';
 import { CampoAplicable, TipoMovimiento, ValorCampoDto } from './configuracion.models';
+import { MotivoPesoManual } from './motivo-peso-manual';
 
 // Servidor LOCAL de Electron (127.0.0.1:4127) — no confundir con el backend
 // central (http://localhost:5094) que usan los demás servicios de src/app/api.
@@ -61,6 +62,14 @@ export interface EstadoLocal {
   basculaId: string | null;
   basculaCodigo: string | null;
   dev: boolean;
+  // Config de ingreso manual de peso propagada por `config-sync.ts` (slice S2a)
+  // y servida en este mismo `GET /estado` — el renderer no hace un request nuevo.
+  // Ausentes / `permiteIngresoManual` falso => la báscula opera solo con lectura
+  // automática (default-deny hasta el primer sync).
+  permiteIngresoManual?: boolean;
+  pesoMinimoManual?: number | null;
+  pesoMaximoManual?: number | null;
+  motivosPesoManual?: MotivoPesoManual[];
 }
 
 // Estado del último sync de configuración (Seccion/Campo/TipoMovimientoSeccion).
@@ -91,6 +100,11 @@ export interface CrearBoletaInput {
   usuarioIngreso: string;
   creadaOffline: boolean;
   valores: ValorCampoDto[];
+  // Solo cuando `origenPesoIngreso === 'Manual'`: el motivo del catálogo y un
+  // detalle opcional (obligatorio para el motivo `Otro`). El servidor local es
+  // la autoridad de enforcement — devuelve 422 si falta o está fuera de rango.
+  motivoPesoManual?: MotivoPesoManual;
+  motivoPesoManualDetalle?: string | null;
 }
 
 export interface CerrarBoletaInput {
@@ -98,6 +112,9 @@ export interface CerrarBoletaInput {
   origenPesoSalida: OrigenPeso;
   usuarioSalida: string;
   basculaSalidaId?: string | null;
+  // Solo cuando `origenPesoSalida === 'Manual'` (mismo contrato que la creación).
+  motivoPesoManual?: MotivoPesoManual;
+  motivoPesoManualDetalle?: string | null;
 }
 
 // Mismos campos que MaestroLocal en frontend/electron/db.ts — snapshot local

@@ -45,6 +45,11 @@ import {
 } from './aplicar-errores';
 import { AntiguedadSync, calcularAntiguedadSync } from './antiguedad-sync';
 import {
+  LABELS_MOTIVO_PESO_MANUAL,
+  MOTIVO_PESO_MANUAL_OTRO,
+  MotivoPesoManual,
+} from '../../../api/motivo-peso-manual';
+import {
   SeccionRenderizada,
   agruparSecciones,
   limitesNumericos,
@@ -57,6 +62,12 @@ import {
 const USUARIO_PLACEHOLDER = 'operador@naturaceites.com';
 
 const POLL_PESO_MS = 1500;
+
+// Fallback de ingreso manual (decisión de producto #3 / #5, diseño D5): si la
+// báscula habilitada lleva 15 s de reloj sin devolver una lectura, aparece la
+// opción "Ingresar peso manualmente". Se mide por timestamp de la primera
+// lectura nula (no por conteo de polls) para no acoplarse a `POLL_PESO_MS`.
+const MS_ESPERA_INGRESO_MANUAL = 15_000;
 
 // El banner de "provisional trabado" se refresca en su propio intervalo lento
 // (~30s) — no hace falta la cadencia de 1.5s del peso y no debe martillar
@@ -130,6 +141,25 @@ export class PesajePage implements OnInit, OnDestroy {
     basculaCodigo: null,
     dev: false,
   });
+
+  // --- Ingreso manual de peso (fallback tras 15 s sin lectura) ---------------
+  // Timestamp (ms) de la primera lectura nula de la racha actual; se limpia en
+  // cuanto llega una lectura no nula. Campo plano, evaluado dentro del poll
+  // existente — no hay timer nuevo.
+  private primeraLecturaNulaEn: number | null = null;
+
+  // La opción "Ingresar peso manualmente" ya está disponible (racha de nulos
+  // >= 15 s con la báscula habilitada). Una lectura automática la vuelve a
+  // ocultar y saca del modo manual (lo automático tiene prioridad — decisión #3).
+  readonly ingresoManualDisponible = signal(false);
+  // El operador abrió el formulario de captura manual.
+  readonly modoIngresoManual = signal(false);
+
+  readonly pesoManualCtrl = new FormControl<number | null>(null);
+  readonly motivoManualCtrl = new FormControl<MotivoPesoManual | null>(null);
+  readonly detalleManualCtrl = new FormControl<string>('', { nonNullable: true });
+
+  readonly etiquetasMotivo = LABELS_MOTIVO_PESO_MANUAL;
 
   readonly guardando = signal(false);
   readonly cargandoFormulario = signal(false);
@@ -487,7 +517,114 @@ export class PesajePage implements OnInit, OnDestroy {
       .pipe(catchError(() => of(null)))
       .subscribe((lectura) => {
         if (lectura) this.lecturaPeso.set(lectura);
+        // NOTA (bug pre-existente, fuera de scope): un fallo HTTP cae en
+        // `of(null)` y no toca `lecturaPeso`, así que un servidor local caído
+        // deja un peso stale. La evaluación del fallback usa el valor efectivo
+        // (`lectura?.peso`), no el signal, así que la racha de nulos arranca
+        // igual cuando el servidor devuelve `{ peso: null }`.
+        this.evaluarIngresoManual(lectura?.peso ?? null);
       });
+  }
+
+  /**
+   * Evaluado en cada poll de peso (cada 1.5 s). Marca la disponibilidad del
+   * ingreso manual cuando la báscula habilitada acumula >= 15 s sin lectura; una
+   * lectura no nula limpia la racha, oculta la opción y sale del modo manual.
+   */
+  private evaluarIngresoManual(peso: number | null): void {
+    if (peso !== null) {
+      this.primeraLecturaNulaEn = null;
+      if (this.ingresoManualDisponible() || this.modoIngresoManual()) this.salirModoIngresoManual();
+      return;
+    }
+
+    if (!this.permiteIngresoManual()) {
+      this.primeraLecturaNulaEn = null;
+      return;
+    }
+
+    const ahora = Date.now();
+    this.primeraLecturaNulaEn ??= ahora;
+    if (ahora - this.primeraLecturaNulaEn >= MS_ESPERA_INGRESO_MANUAL) {
+      this.ingresoManualDisponible.set(true);
+    }
+  }
+
+  /** ¿La báscula tiene habilitado el ingreso manual (config propagada en `/estado`)? */
+  permiteIngresoManual(): boolean {
+    return this.estadoLocal().permiteIngresoManual === true;
+  }
+
+  motivosPesoManual(): MotivoPesoManual[] {
+    return this.estadoLocal().motivosPesoManual ?? [];
+  }
+
+  private pesoMinimoManual(): number | null {
+    return this.estadoLocal().pesoMinimoManual ?? null;
+  }
+
+  private pesoMaximoManual(): number | null {
+    return this.estadoLocal().pesoMaximoManual ?? null;
+  }
+
+  /** El motivo seleccionado exige un detalle libre obligatorio. */
+  detalleManualRequerido(): boolean {
+    return this.motivoManualCtrl.value === MOTIVO_PESO_MANUAL_OTRO;
+  }
+
+  abrirIngresoManual(): void {
+    this.modoIngresoManual.set(true);
+  }
+
+  /** El operador descarta la captura manual; la opción reaparece si sigue sin lectura. */
+  cancelarIngresoManual(): void {
+    this.salirModoIngresoManual();
+  }
+
+  private salirModoIngresoManual(): void {
+    this.ingresoManualDisponible.set(false);
+    this.modoIngresoManual.set(false);
+    this.pesoManualCtrl.reset(null);
+    this.motivoManualCtrl.reset(null);
+    this.detalleManualCtrl.reset('');
+  }
+
+  /**
+   * ¿La captura manual está completa y dentro de rango? El servidor local sigue
+   * siendo la autoridad (422); esto solo habilita el botón de envío.
+   */
+  entradaManualValida(): boolean {
+    if (!this.permiteIngresoManual() || !this.modoIngresoManual()) return false;
+
+    const peso = this.pesoManualCtrl.value;
+    if (peso === null || !Number.isFinite(peso)) return false;
+
+    const min = this.pesoMinimoManual();
+    const max = this.pesoMaximoManual();
+    if (min === null && max === null) {
+      if (peso <= 0) return false;
+    } else if ((min !== null && peso < min) || (max !== null && peso > max)) {
+      return false;
+    }
+
+    const motivo = this.motivoManualCtrl.value;
+    if (motivo === null || !this.motivosPesoManual().includes(motivo)) return false;
+    if (motivo === MOTIVO_PESO_MANUAL_OTRO && this.detalleManualCtrl.value.trim() === '') return false;
+
+    return true;
+  }
+
+  /** El pesaje se resuelve con la captura manual (no hay lectura automática y la entrada es válida). */
+  private usandoEntradaManual(): boolean {
+    return this.lecturaPeso().peso === null && this.entradaManualValida();
+  }
+
+  private motivoManualPayload(): Pick<CrearBoletaInput, 'motivoPesoManual' | 'motivoPesoManualDetalle'> {
+    const detalle = this.detalleManualCtrl.value.trim();
+    return {
+      motivoPesoManual: this.motivoManualCtrl.value ?? undefined,
+      motivoPesoManualDetalle: detalle === '' ? null : detalle,
+    };
   }
 
   nombreTipoMovimiento(tipoMovimientoId: string): string {
@@ -497,7 +634,7 @@ export class PesajePage implements OnInit, OnDestroy {
   puedeCrear(): boolean {
     return (
       !this.basculaSinCodigo() &&
-      this.lecturaPeso().peso !== null &&
+      (this.lecturaPeso().peso !== null || this.entradaManualValida()) &&
       this.tipoMovimientoCtrl.valid &&
       this.formSecciones().valid &&
       !this.cargandoFormulario() &&
@@ -548,17 +685,21 @@ export class PesajePage implements OnInit, OnDestroy {
     const lectura = this.lecturaPeso();
     const estado = this.estadoLocal();
 
-    if (!tipoMovimiento || lectura.peso === null || !estado.basculaCodigo) return;
+    const manual = this.usandoEntradaManual();
+    const peso = manual ? this.pesoManualCtrl.value : lectura.peso;
+
+    if (!tipoMovimiento || peso === null || !estado.basculaCodigo) return;
 
     const input: CrearBoletaInput = {
       numeroBoletaPrefijo: tipoMovimiento.prefijo,
       codigoBascula: estado.basculaCodigo,
       tipoMovimientoId: this.tipoMovimientoCtrl.value,
-      pesoIngreso: lectura.peso,
-      origenPesoIngreso: lectura.origen ?? 'Bascula',
+      pesoIngreso: peso,
+      origenPesoIngreso: manual ? 'Manual' : lectura.origen ?? 'Bascula',
       usuarioIngreso: USUARIO_PLACEHOLDER,
       creadaOffline: true,
       valores: armarValores(this.capturarControles()),
+      ...(manual ? this.motivoManualPayload() : {}),
     };
 
     this.guardando.set(true);
@@ -623,6 +764,7 @@ export class PesajePage implements OnInit, OnDestroy {
     this.camposAplicables.set([]);
     this.maestrosPorCatalogo.set({});
     this.formSecciones.set(this.fb.group({}));
+    this.salirModoIngresoManual();
   }
 
   abrirCierre(boleta: BoletaLocal): void {
@@ -633,15 +775,23 @@ export class PesajePage implements OnInit, OnDestroy {
     this.boletaCerrando.set(null);
   }
 
+  /** Cierre habilitado: lectura automática disponible o captura manual válida. */
+  puedeCerrar(): boolean {
+    return this.lecturaPeso().peso !== null || this.entradaManualValida();
+  }
+
   confirmarCierre(): void {
     const boleta = this.boletaCerrando();
     const lectura = this.lecturaPeso();
-    if (!boleta || lectura.peso === null) return;
+    const manual = this.usandoEntradaManual();
+    const peso = manual ? this.pesoManualCtrl.value : lectura.peso;
+    if (!boleta || peso === null) return;
 
     const input: CerrarBoletaInput = {
-      pesoSalida: lectura.peso,
-      origenPesoSalida: lectura.origen ?? 'Bascula',
+      pesoSalida: peso,
+      origenPesoSalida: manual ? 'Manual' : lectura.origen ?? 'Bascula',
       usuarioSalida: USUARIO_PLACEHOLDER,
+      ...(manual ? this.motivoManualPayload() : {}),
     };
 
     this.limpiarResumenErrores();
@@ -654,6 +804,7 @@ export class PesajePage implements OnInit, OnDestroy {
         this.cerrando.set(false);
         this.boletaCerrando.set(null);
         this.limpiarResumenErrores();
+        this.salirModoIngresoManual();
         this.cargarBoletasEnTransito();
       },
       error: (err) => {

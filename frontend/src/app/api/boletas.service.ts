@@ -2,6 +2,7 @@ import { HttpClient } from '@angular/common/http';
 import { Injectable, inject } from '@angular/core';
 import { Observable } from 'rxjs';
 import { ValorCampoDto, ValorCampoLeidoDto } from './configuracion.models';
+import { MotivoPesoManual } from './motivo-peso-manual';
 
 const CENTRAL_API_URL = 'http://localhost:5094';
 
@@ -36,6 +37,11 @@ export interface BoletaDto {
   pesoNeto: number | null;
   origenPesoIngreso: OrigenPeso;
   origenPesoSalida: OrigenPeso | null;
+  // Solo cuando alguno de los pesajes fue Manual: el motivo del catálogo y el
+  // detalle libre. Nullable — las boletas 100% báscula y las previas al cambio
+  // los traen en null.
+  motivoPesoManual: MotivoPesoManual | null;
+  motivoPesoManualDetalle: string | null;
   fechaHoraIngreso: string;
   fechaHoraSalida: string | null;
   usuarioIngreso: string;
@@ -73,8 +79,11 @@ export interface CrearBoletaInput {
 export class BoletasService {
   private readonly http = inject(HttpClient);
 
-  listar(estado?: EstadoBoleta): Observable<BoletaDto[]> {
-    const query = estado ? `?estado=${estado}` : '';
+  listar(estado?: EstadoBoleta, origenPeso?: OrigenPeso): Observable<BoletaDto[]> {
+    const params: string[] = [];
+    if (estado) params.push(`estado=${estado}`);
+    if (origenPeso) params.push(`origenPeso=${origenPeso}`);
+    const query = params.length > 0 ? `?${params.join('&')}` : '';
     return this.http.get<BoletaDto[]>(`${CENTRAL_API_URL}/api/boletas${query}`);
   }
 

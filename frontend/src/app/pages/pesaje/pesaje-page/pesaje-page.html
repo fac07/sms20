@@ -58,6 +58,8 @@
     </nz-tag>
   </div>
 
+  <ng-container *ngTemplateOutlet="bloqueIngresoManual"></ng-container>
+
   <form nz-form nzLayout="vertical" class="form-boleta">
     <nz-form-item>
       <nz-form-label nzRequired>Tipo de movimiento</nz-form-label>
@@ -308,7 +310,7 @@
   nzOkText="Confirmar cierre"
   nzCancelText="Cancelar"
   [nzOkLoading]="cerrando()"
-  [nzOkDisabled]="lecturaPeso().peso === null"
+  [nzOkDisabled]="!puedeCerrar()"
   (nzOnCancel)="cerrarModalCierre()"
   (nzOnOk)="confirmarCierre()"
 >
@@ -328,6 +330,8 @@
           {{ lecturaPeso().origen ?? 'sin lectura' }}
         </nz-tag>
       </div>
+
+      <ng-container *ngTemplateOutlet="bloqueIngresoManual"></ng-container>
     }
   </ng-container>
 </nz-modal>
@@ -358,3 +362,77 @@
     </p>
   </ng-container>
 </nz-modal>
+
+<!-- Fallback de ingreso manual (15 s sin lectura) — compartido por la tarjeta de
+     creación y el modal de cierre vía `*ngTemplateOutlet`. Los controles son los
+     mismos en ambos contextos; solo hay un pesaje manual activo a la vez. -->
+<ng-template #bloqueIngresoManual>
+  @if (ingresoManualDisponible() && lecturaPeso().peso === null) {
+    <div class="ingreso-manual">
+      @if (!modoIngresoManual()) {
+        <nz-alert
+          nzType="warning"
+          nzShowIcon
+          class="ingreso-manual__aviso"
+          nzMessage="La báscula no devuelve lectura hace más de 15 segundos."
+        ></nz-alert>
+        <button
+          nz-button
+          nzType="default"
+          class="btn-ingreso-manual"
+          (click)="abrirIngresoManual()"
+        >
+          <span nz-icon nzType="edit"></span>
+          Ingresar peso manualmente
+        </button>
+      } @else {
+        <form nz-form nzLayout="vertical" class="ingreso-manual__form">
+          <nz-form-item>
+            <nz-form-label nzRequired>Peso manual (kg)</nz-form-label>
+            <nz-form-control>
+              <nz-input-number
+                [formControl]="pesoManualCtrl"
+                [nzMin]="0"
+                class="control-full"
+              ></nz-input-number>
+            </nz-form-control>
+          </nz-form-item>
+          <nz-form-item>
+            <nz-form-label nzRequired>Motivo</nz-form-label>
+            <nz-form-control>
+              <nz-select
+                [formControl]="motivoManualCtrl"
+                nzPlaceHolder="Elegí el motivo del ingreso manual"
+              >
+                @for (m of motivosPesoManual(); track m) {
+                  <nz-option [nzValue]="m" [nzLabel]="etiquetasMotivo[m]"></nz-option>
+                }
+              </nz-select>
+            </nz-form-control>
+          </nz-form-item>
+          @if (detalleManualRequerido()) {
+            <nz-form-item>
+              <nz-form-label nzRequired>Detalle</nz-form-label>
+              <nz-form-control>
+                <input
+                  nz-input
+                  [formControl]="detalleManualCtrl"
+                  placeholder="Explicá el motivo del ingreso manual"
+                />
+              </nz-form-control>
+            </nz-form-item>
+          }
+          <button
+            nz-button
+            nzType="link"
+            nzSize="small"
+            class="btn-cancelar-manual"
+            (click)="cancelarIngresoManual()"
+          >
+            Cancelar ingreso manual
+          </button>
+        </form>
+      }
+    </div>
+  }
+</ng-template>
