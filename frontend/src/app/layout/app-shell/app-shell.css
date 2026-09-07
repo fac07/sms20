@@ -32,6 +32,10 @@
   padding-top: 8px;
 }
 
+.nav-badge {
+  margin-left: 8px;
+}
+
 .app-page-title {
   background: #fff;
   border-bottom: 1px solid #f0f0f0;

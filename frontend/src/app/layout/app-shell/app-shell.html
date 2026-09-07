@@ -17,6 +17,14 @@
           >
             <span nz-icon [nzType]="item.icon"></span>
             <span>{{ item.label }}</span>
+            @if (item.path === rutaProvisionales && provisionalesPendientes() > 0) {
+              <nz-badge
+                class="nav-badge"
+                nzStandalone
+                [nzCount]="provisionalesPendientes()"
+                [nzOverflowCount]="99"
+              ></nz-badge>
+            }
           </li>
         }
       </ul>
