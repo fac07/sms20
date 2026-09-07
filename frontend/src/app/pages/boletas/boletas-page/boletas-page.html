@@ -44,7 +44,16 @@
 <nz-card [nzTitle]="'Boletas'" [nzExtra]="extraTpl" [nzBodyStyle]="{ padding: '0' }">
   <ng-template #extraTpl>
     <nz-select
-      style="width: 200px"
+      style="width: 160px"
+      [ngModel]="filtroOrigenPeso()"
+      (ngModelChange)="cambiarFiltroOrigenPeso($event)"
+    >
+      <nz-option [nzValue]="null" nzLabel="Todos los orígenes"></nz-option>
+      <nz-option nzValue="Bascula" nzLabel="Peso de báscula"></nz-option>
+      <nz-option nzValue="Manual" nzLabel="Peso manual"></nz-option>
+    </nz-select>
+    <nz-select
+      style="width: 200px; margin-left: 8px"
       [ngModel]="filtroEstado()"
       (ngModelChange)="cambiarFiltro($event)"
     >
@@ -62,6 +71,7 @@
         <th>N° Boleta</th>
         <th>Báscula</th>
         <th>Tipo movimiento</th>
+        <th>Origen peso</th>
         <th nzAlign="right">Peso ingreso</th>
         <th nzAlign="right">Peso salida</th>
         <th nzAlign="right">Peso neto</th>
@@ -76,6 +86,13 @@
           <td class="codigo">{{ b.numeroBoleta }}</td>
           <td>{{ b.basculaCodigo }}</td>
           <td>{{ b.tipoMovimientoNombre }}</td>
+          <td>
+            @if (b.origenPesoIngreso === 'Manual' || b.origenPesoSalida === 'Manual') {
+              <nz-tag nzColor="warning">Manual</nz-tag>
+            } @else {
+              <nz-tag nzColor="default">Báscula</nz-tag>
+            }
+          </td>
           <td class="pesos">{{ b.pesoIngreso | number: '1.2-2' }}</td>
           <td class="pesos">{{ b.pesoSalida !== null ? (b.pesoSalida | number: '1.2-2') : '—' }}</td>
           <td class="pesos">{{ b.pesoNeto !== null ? (b.pesoNeto | number: '1.2-2') : '—' }}</td>
@@ -137,6 +154,19 @@
         <nz-descriptions-item nzTitle="Origen peso ingreso">{{ d.origenPesoIngreso }}</nz-descriptions-item>
         <nz-descriptions-item nzTitle="Origen peso salida">{{ d.origenPesoSalida ?? '—' }}</nz-descriptions-item>
       </nz-descriptions>
+
+      @if (d.motivoPesoManual !== null) {
+        <nz-descriptions
+          nzTitle="Peso manual"
+          [nzColumn]="1"
+          nzBordered
+          [nzSize]="'small'"
+          class="seccion"
+        >
+          <nz-descriptions-item nzTitle="Motivo">{{ etiquetaMotivo(d.motivoPesoManual) }}</nz-descriptions-item>
+          <nz-descriptions-item nzTitle="Detalle">{{ d.motivoPesoManualDetalle || '—' }}</nz-descriptions-item>
+        </nz-descriptions>
+      }
 
       <nz-descriptions nzTitle="Auditoría" [nzColumn]="2" nzBordered [nzSize]="'small'" class="seccion">
         <nz-descriptions-item nzTitle="Usuario ingreso">{{ d.usuarioIngreso }}</nz-descriptions-item>

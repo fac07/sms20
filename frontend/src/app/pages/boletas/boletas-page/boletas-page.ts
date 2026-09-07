@@ -13,8 +13,9 @@ import { NzStatisticModule } from 'ng-zorro-antd/statistic';
 import { NzTableModule } from 'ng-zorro-antd/table';
 import { NzTagModule } from 'ng-zorro-antd/tag';
 import { NzTooltipModule } from 'ng-zorro-antd/tooltip';
-import { BoletaDto, BoletasService, EstadoBoleta } from '../../../api/boletas.service';
+import { BoletaDto, BoletasService, EstadoBoleta, OrigenPeso } from '../../../api/boletas.service';
 import { ValorCampoLeidoDto } from '../../../api/configuracion.models';
+import { etiquetaMotivoPesoManual } from '../../../api/motivo-peso-manual';
 import { agruparValores } from './valores-agrupados';
 
 @Component({
@@ -44,7 +45,10 @@ export class BoletasPage {
   readonly boletas = signal<BoletaDto[]>([]);
   readonly cargando = signal(false);
   readonly filtroEstado = signal<EstadoBoleta | null>(null);
+  readonly filtroOrigenPeso = signal<OrigenPeso | null>(null);
   readonly detalle = signal<BoletaDto | null>(null);
+
+  readonly etiquetaMotivo = etiquetaMotivoPesoManual;
 
   // Valores del detalle plegados en secciones -> ocurrencias. El backend ya
   // entrega `valores` ordenado por Seccion.Orden, Campo.Orden, Ocurrencia; el
@@ -67,7 +71,9 @@ export class BoletasPage {
 
   private cargar(): void {
     this.cargando.set(true);
-    this.service.listar(this.filtroEstado() ?? undefined).subscribe({
+    this.service
+      .listar(this.filtroEstado() ?? undefined, this.filtroOrigenPeso() ?? undefined)
+      .subscribe({
       next: (boletas) => {
         this.boletas.set(boletas);
         this.cargando.set(false);
@@ -81,6 +87,11 @@ export class BoletasPage {
 
   cambiarFiltro(estado: EstadoBoleta | null): void {
     this.filtroEstado.set(estado);
+    this.cargar();
+  }
+
+  cambiarFiltroOrigenPeso(origen: OrigenPeso | null): void {
+    this.filtroOrigenPeso.set(origen);
     this.cargar();
   }
 

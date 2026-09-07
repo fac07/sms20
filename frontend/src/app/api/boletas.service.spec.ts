@@ -43,6 +43,37 @@ describe('BoletasService', () => {
     req.flush([]);
   });
 
+  it('listar(undefined, origenPeso) issues GET /api/boletas?origenPeso=Manual', () => {
+    service.listar(undefined, 'Manual').subscribe();
+    const req = httpMock.expectOne(`${BASE}?origenPeso=Manual`);
+    expect(req.request.method).toBe('GET');
+    req.flush([]);
+  });
+
+  it('listar(estado, origenPeso) combines both query params', () => {
+    service.listar('Cerrada', 'Manual').subscribe();
+    const req = httpMock.expectOne(`${BASE}?estado=Cerrada&origenPeso=Manual`);
+    expect(req.request.method).toBe('GET');
+    req.flush([]);
+  });
+
+  it('obtener(id) carries the manual-weight motive projection', () => {
+    let recibida: BoletaDto | undefined;
+    service.obtener('b-9').subscribe((b) => (recibida = b));
+
+    const req = httpMock.expectOne(`${BASE}/b-9`);
+    req.flush({
+      id: 'b-9',
+      origenPesoIngreso: 'Manual',
+      motivoPesoManual: 'IndicadorSinSenal',
+      motivoPesoManualDetalle: 'La pantalla no encendía',
+      valores: [],
+    } as unknown as BoletaDto);
+
+    expect(recibida?.motivoPesoManual).toBe('IndicadorSinSenal');
+    expect(recibida?.motivoPesoManualDetalle).toBe('La pantalla no encendía');
+  });
+
   it('obtener(id) issues GET /api/boletas/{id} and carries the typed valores projection', () => {
     const valor: ValorCampoLeidoDto = {
       campoId: 'c-1',
