@@ -29,12 +29,16 @@ public sealed class OrigenPesoTests : IAsyncLifetime
     public async Task Round_trip_por_crear_y_cerrar_tipados()
     {
         var escenario = await TestData.NuevoEscenarioAsync(_client);
+        (await TestData.HabilitarIngresoManualAsync(_client, escenario.BasculaId)).EnsureSuccessStatusCode();
 
         var boleta = await TestData.CrearBoletaAsync(
-            _client, escenario, valores: null, origenPesoIngreso: OrigenPeso.Manual);
+            _client, escenario, valores: null, origenPesoIngreso: OrigenPeso.Manual,
+            motivoPesoManual: nameof(MotivoPesoManual.CorteEnergia));
         Assert.Equal(OrigenPeso.Manual, (await TestData.GetBoletaAsync(_client, boleta.Id)).OrigenPesoIngreso);
 
-        var cierre = await TestData.CerrarAsync(_client, boleta.Id, pesoSalida: 800m, origen: OrigenPeso.Manual);
+        var cierre = await TestData.CerrarAsync(
+            _client, boleta.Id, pesoSalida: 800m, origen: OrigenPeso.Manual,
+            motivoPesoManual: nameof(MotivoPesoManual.IndicadorSinSenal));
         cierre.EnsureSuccessStatusCode();
 
         var recargada = await TestData.GetBoletaAsync(_client, boleta.Id);
@@ -51,7 +55,8 @@ public sealed class OrigenPesoTests : IAsyncLifetime
         var (respCrear, bodyCrear) = await TestData.SyncAsync(
             _client,
             TestData.SyncCrearPayload(
-                id, escenario, DateTime.UtcNow, Array.Empty<ValorCampoDto>(), OrigenPeso.Manual));
+                id, escenario, DateTime.UtcNow, Array.Empty<ValorCampoDto>(), OrigenPeso.Manual,
+                motivoPesoManual: nameof(MotivoPesoManual.IndicadorSinSenal)));
         Assert.True(respCrear.IsSuccessStatusCode, bodyCrear);
         Assert.Equal(OrigenPeso.Manual, (await TestData.GetBoletaAsync(_client, id)).OrigenPesoIngreso);
 
