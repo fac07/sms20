@@ -175,6 +175,7 @@ describe('PesajePage (TestBed + HttpTestingController)', () => {
     estado?: unknown;
     configEstado?: { lastConfigSyncAt: string | null };
     boletas?: unknown[];
+    tiposProvisionables?: { tipos: string[] };
   }): void {
     component.ngOnInit();
     const tipos = opciones?.tipos ?? [
@@ -211,6 +212,9 @@ describe('PesajePage (TestBed + HttpTestingController)', () => {
       .expectOne(`${LOCAL}/config/estado`)
       .flush(opciones?.configEstado ?? { lastConfigSyncAt: new Date().toISOString() });
     httpMock.expectOne(`${LOCAL}/boletas?estado=EnTransito`).flush(opciones?.boletas ?? []);
+    httpMock
+      .expectOne(`${LOCAL}/maestros/tipos-provisionables`)
+      .flush(opciones?.tiposProvisionables ?? { tipos: [] });
     httpMock.expectOne(`${LOCAL}/peso`).flush({ peso: 100, origen: 'Bascula' });
   }
 
@@ -296,6 +300,61 @@ describe('PesajePage (TestBed + HttpTestingController)', () => {
     ]);
 
     expect(component.opcionesMaestro(refCampo).map((m) => m.nombre)).toEqual(['Transporte 1']);
+  });
+
+  it('ofrece "+ Crear provisional" solo para un TipoCatalogoRef habilitado y lo selecciona al crear', () => {
+    flushInit({ tiposProvisionables: { tipos: ['Transportista'] } });
+
+    const refCampo = campo({
+      campoId: 'c1',
+      campoClave: 'transportista',
+      seccionClave: 'transporte',
+      tipoCampo: 'ReferenciaMaestro',
+      tipoCatalogoRef: 'Transportista',
+    });
+    const noHabilitado = campo({
+      campoId: 'c2',
+      campoClave: 'finca',
+      seccionClave: 'transporte',
+      tipoCampo: 'ReferenciaMaestro',
+      tipoCatalogoRef: 'Finca',
+    });
+
+    component.tipoMovimientoCtrl.setValue('tm-1');
+    httpMock.expectOne(`${LOCAL}/tipos-movimiento/tm-1/formulario`).flush([refCampo, noHabilitado]);
+    httpMock.expectOne(`${LOCAL}/maestros?tipoCatalogo=Transportista`).flush([]);
+    httpMock.expectOne(`${LOCAL}/maestros?tipoCatalogo=Finca`).flush([]);
+
+    // Solo el tipo dentro de la allow-list ofrece el "+ Crear provisional".
+    expect(component.puedeCrearProvisional(refCampo)).toBe(true);
+    expect(component.puedeCrearProvisional(noHabilitado)).toBe(false);
+
+    const grupo = component.formSecciones().get('transporte') as FormGroup;
+    component.abrirCrearProvisional(refCampo, grupo);
+    component.nombreProvisionalCtrl.setValue('Nuevo Transportista');
+    component.confirmarCrearProvisional();
+
+    const req = httpMock.expectOne(`${LOCAL}/maestros`);
+    expect(req.request.method).toBe('POST');
+    expect(req.request.body).toEqual({
+      tipoCatalogo: 'Transportista',
+      nombre: 'Nuevo Transportista',
+      datosAdicionales: null,
+    });
+    req.flush({
+      id: 'prov-1',
+      tipoCatalogo: 'Transportista',
+      codigo: 'PROV-B01-1',
+      nombre: 'Nuevo Transportista',
+      datosAdicionales: null,
+      estado: 'Provisional',
+      fusionadoConId: null,
+      fechaModificacion: '',
+      activo: true,
+    });
+
+    expect(grupo.get('c1')!.value).toBe('prov-1');
+    expect(component.opcionesMaestro(refCampo).map((m) => m.id)).toContain('prov-1');
   });
 
   it('ordena secciones por seccionOrden y campos por orden', () => {
