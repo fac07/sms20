@@ -176,6 +176,7 @@ describe('PesajePage (TestBed + HttpTestingController)', () => {
     configEstado?: { lastConfigSyncAt: string | null };
     boletas?: unknown[];
     tiposProvisionables?: { tipos: string[] };
+    alertas?: { hayAlertaProvisional: boolean; eventos: unknown[] };
   }): void {
     component.ngOnInit();
     const tipos = opciones?.tipos ?? [
@@ -215,6 +216,9 @@ describe('PesajePage (TestBed + HttpTestingController)', () => {
     httpMock
       .expectOne(`${LOCAL}/maestros/tipos-provisionables`)
       .flush(opciones?.tiposProvisionables ?? { tipos: [] });
+    httpMock
+      .expectOne(`${LOCAL}/outbox/alertas`)
+      .flush(opciones?.alertas ?? { hayAlertaProvisional: false, eventos: [] });
     httpMock.expectOne(`${LOCAL}/peso`).flush({ peso: 100, origen: 'Bascula' });
   }
 
@@ -432,5 +436,43 @@ describe('PesajePage (TestBed + HttpTestingController)', () => {
 
     component.lastConfigSyncAt.set(new Date(Date.now() - 2 * 3_600_000).toISOString());
     expect(component.antiguedadSync().esViejo).toBe(false);
+  });
+
+  it('enciende el banner de provisional trabado cuando hayAlertaProvisional=true', () => {
+    flushInit({ alertas: { hayAlertaProvisional: true, eventos: [] } });
+    expect(component.hayAlertaProvisional()).toBe(true);
+  });
+
+  it('sin alerta cuando hayAlertaProvisional=false', () => {
+    flushInit({ alertas: { hayAlertaProvisional: false, eventos: [] } });
+    expect(component.hayAlertaProvisional()).toBe(false);
+  });
+
+  it('un poll de alertas que falla se trata como "sin alerta" (no banner rancio)', () => {
+    component.ngOnInit();
+    httpMock.expectOne(`${LOCAL}/tipos-movimiento`).flush([]);
+    httpMock
+      .expectOne(`${LOCAL}/config/sincronizar`)
+      .flush({ secciones: 0, campos: 0, tiposMovimientoSeccion: 0, tiposMovimiento: 0 });
+    httpMock.expectOne(`${LOCAL}/tipos-movimiento`).flush([]);
+    httpMock
+      .expectOne(`${LOCAL}/estado`)
+      .flush({ aprovisionada: true, basculaId: 'b1', basculaCodigo: 'B01', dev: true });
+    httpMock.expectOne(`${LOCAL}/config/estado`).flush({ lastConfigSyncAt: null });
+    httpMock.expectOne(`${LOCAL}/boletas?estado=EnTransito`).flush([]);
+    httpMock.expectOne(`${LOCAL}/maestros/tipos-provisionables`).flush({ tipos: [] });
+    httpMock
+      .expectOne(`${LOCAL}/outbox/alertas`)
+      .flush('boom', { status: 500, statusText: 'Server Error' });
+    httpMock.expectOne(`${LOCAL}/peso`).flush({ peso: 100, origen: 'Bascula' });
+
+    expect(component.hayAlertaProvisional()).toBe(false);
+  });
+
+  it('el banner no bloquea el pesaje — puedeCrear sigue verdadero', () => {
+    flushInit({ alertas: { hayAlertaProvisional: true, eventos: [] } });
+    seleccionarTipo([]);
+    expect(component.hayAlertaProvisional()).toBe(true);
+    expect(component.puedeCrear()).toBe(true);
   });
 });

@@ -8,6 +8,15 @@
     ></nz-alert>
   }
 
+  @if (hayAlertaProvisional()) {
+    <nz-alert
+      nzType="warning"
+      nzShowIcon
+      class="alerta-provisional-trabado"
+      nzMessage="Un registro no pudo sincronizar, podés seguir pesando; avisá al administrador"
+    ></nz-alert>
+  }
+
   <div class="staleness">
     <nz-tag [nzColor]="antiguedadSync().esViejo ? 'warning' : 'default'">
       {{ antiguedadSync().texto }}

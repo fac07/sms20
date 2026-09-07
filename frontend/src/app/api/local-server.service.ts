@@ -115,6 +115,20 @@ export interface MaestroLocal {
   activo: boolean;
 }
 
+// Evento provisional trabado en el Outbox local (>= 5 intentos, aún Pendiente)
+// — mismo shape que devuelve `GET /outbox/alertas` en electron/local-server.ts.
+export interface AlertaProvisionalEvento {
+  entidadId: string;
+  tipoCatalogo: string;
+  nombre: string;
+  intentos: number;
+}
+
+export interface AlertasOutbox {
+  hayAlertaProvisional: boolean;
+  eventos: AlertaProvisionalEvento[];
+}
+
 /**
  * Cliente del servidor local de Electron (127.0.0.1:4127) — contrapartida de
  * los servicios de esta carpeta que hablan con el backend central. Es el
@@ -218,5 +232,12 @@ export class LocalServerService {
 
   sincronizarMaestros(): Observable<{ descargados: number }> {
     return this.http.post<{ descargados: number }>(`${LOCAL_SERVER_URL}/maestros/sincronizar`, {});
+  }
+
+  // Alertas de provisionales trabados en el sync (M4b/M5b) — derivado de
+  // `OutboxLocal` (>= 5 intentos, aún Pendiente). Alimenta el banner no
+  // bloqueante de la pantalla de Pesaje.
+  alertasOutbox(): Observable<AlertasOutbox> {
+    return this.http.get<AlertasOutbox>(`${LOCAL_SERVER_URL}/outbox/alertas`);
   }
 }
