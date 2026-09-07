@@ -169,6 +169,12 @@ describe('PesajePage (TestBed + HttpTestingController)', () => {
     vi.restoreAllMocks();
   });
 
+  /** Reejecuta el poll de peso (privado) y flushea la respuesta de `/peso`. */
+  function pollPeso(lectura: { peso: number | null; origen: string | null }): void {
+    (component as unknown as Record<string, () => void>)['actualizarPeso']();
+    httpMock.expectOne(`${LOCAL}/peso`).flush(lectura);
+  }
+
   function flushInit(opciones?: {
     tipos?: unknown[];
     tiposRefresh?: unknown[];
@@ -177,6 +183,7 @@ describe('PesajePage (TestBed + HttpTestingController)', () => {
     boletas?: unknown[];
     tiposProvisionables?: { tipos: string[] };
     alertas?: { hayAlertaProvisional: boolean; eventos: unknown[] };
+    peso?: unknown;
   }): void {
     component.ngOnInit();
     const tipos = opciones?.tipos ?? [
@@ -219,8 +226,19 @@ describe('PesajePage (TestBed + HttpTestingController)', () => {
     httpMock
       .expectOne(`${LOCAL}/outbox/alertas`)
       .flush(opciones?.alertas ?? { hayAlertaProvisional: false, eventos: [] });
-    httpMock.expectOne(`${LOCAL}/peso`).flush({ peso: 100, origen: 'Bascula' });
+    httpMock.expectOne(`${LOCAL}/peso`).flush(opciones?.peso ?? { peso: 100, origen: 'Bascula' });
   }
+
+  const ESTADO_MANUAL = {
+    aprovisionada: true,
+    basculaId: 'b1',
+    basculaCodigo: 'B01',
+    dev: true,
+    permiteIngresoManual: true,
+    pesoMinimoManual: null,
+    pesoMaximoManual: null,
+    motivosPesoManual: ['IndicadorSinSenal', 'CorteEnergia', 'Otro'],
+  };
 
   function seleccionarTipo(campos: CampoAplicable[]): void {
     component.tipoMovimientoCtrl.setValue('tm-1');
@@ -474,5 +492,145 @@ describe('PesajePage (TestBed + HttpTestingController)', () => {
     seleccionarTipo([]);
     expect(component.hayAlertaProvisional()).toBe(true);
     expect(component.puedeCrear()).toBe(true);
+  });
+
+  describe('ingreso manual de peso (fallback tras 15 s sin lectura)', () => {
+    it('la báscula habilitada muestra la opción tras 15 s de lecturas nulas', () => {
+      const now = vi.spyOn(Date, 'now');
+      now.mockReturnValue(1_000_000);
+      flushInit({ peso: { peso: null, origen: null }, estado: ESTADO_MANUAL });
+
+      expect(component.ingresoManualDisponible()).toBe(false);
+
+      now.mockReturnValue(1_000_000 + 14_000);
+      pollPeso({ peso: null, origen: null });
+      expect(component.ingresoManualDisponible()).toBe(false);
+
+      now.mockReturnValue(1_000_000 + 15_000);
+      pollPeso({ peso: null, origen: null });
+      expect(component.ingresoManualDisponible()).toBe(true);
+    });
+
+    it('una lectura que llega antes de los 15 s nunca dispara la opción', () => {
+      const now = vi.spyOn(Date, 'now');
+      now.mockReturnValue(2_000_000);
+      flushInit({ peso: { peso: null, origen: null }, estado: ESTADO_MANUAL });
+
+      now.mockReturnValue(2_000_000 + 5_000);
+      pollPeso({ peso: 88, origen: 'Bascula' });
+      now.mockReturnValue(2_000_000 + 30_000);
+      pollPeso({ peso: null, origen: null });
+
+      expect(component.ingresoManualDisponible()).toBe(false);
+    });
+
+    it('la báscula deshabilitada nunca muestra la opción', () => {
+      const now = vi.spyOn(Date, 'now');
+      now.mockReturnValue(3_000_000);
+      flushInit({
+        peso: { peso: null, origen: null },
+        estado: { ...ESTADO_MANUAL, permiteIngresoManual: false },
+      });
+
+      now.mockReturnValue(3_000_000 + 40_000);
+      pollPeso({ peso: null, origen: null });
+      expect(component.ingresoManualDisponible()).toBe(false);
+    });
+
+    it('una lectura automática entrante saca del modo manual', () => {
+      const now = vi.spyOn(Date, 'now');
+      now.mockReturnValue(4_000_000);
+      flushInit({ peso: { peso: null, origen: null }, estado: ESTADO_MANUAL });
+
+      now.mockReturnValue(4_000_000 + 16_000);
+      pollPeso({ peso: null, origen: null });
+      component.abrirIngresoManual();
+      component.pesoManualCtrl.setValue(1500);
+      component.motivoManualCtrl.setValue('IndicadorSinSenal');
+      expect(component.modoIngresoManual()).toBe(true);
+
+      now.mockReturnValue(4_000_000 + 18_000);
+      pollPeso({ peso: 210, origen: 'Bascula' });
+
+      expect(component.ingresoManualDisponible()).toBe(false);
+      expect(component.modoIngresoManual()).toBe(false);
+      expect(component.lecturaPeso().peso).toBe(210);
+    });
+
+    it('puedeCrear acepta una captura manual válida; "Otro" exige detalle', () => {
+      const now = vi.spyOn(Date, 'now');
+      now.mockReturnValue(5_000_000);
+      flushInit({ peso: { peso: null, origen: null }, estado: ESTADO_MANUAL });
+      seleccionarTipo([]);
+
+      now.mockReturnValue(5_000_000 + 16_000);
+      pollPeso({ peso: null, origen: null });
+      component.abrirIngresoManual();
+      component.pesoManualCtrl.setValue(1500);
+      component.motivoManualCtrl.setValue('IndicadorSinSenal');
+      expect(component.entradaManualValida()).toBe(true);
+      expect(component.puedeCrear()).toBe(true);
+
+      component.motivoManualCtrl.setValue('Otro');
+      expect(component.entradaManualValida()).toBe(false);
+      component.detalleManualCtrl.setValue('el indicador no encendía');
+      expect(component.entradaManualValida()).toBe(true);
+    });
+
+    it('crearBoleta con captura manual manda origen Manual + motivo + detalle', () => {
+      const now = vi.spyOn(Date, 'now');
+      now.mockReturnValue(6_000_000);
+      flushInit({ peso: { peso: null, origen: null }, estado: ESTADO_MANUAL });
+      seleccionarTipo([]);
+
+      now.mockReturnValue(6_000_000 + 16_000);
+      pollPeso({ peso: null, origen: null });
+      component.abrirIngresoManual();
+      component.pesoManualCtrl.setValue(1500);
+      component.motivoManualCtrl.setValue('Otro');
+      component.detalleManualCtrl.setValue('el indicador no encendía');
+
+      component.crearBoleta();
+
+      const req = httpMock.expectOne(`${LOCAL}/boletas`);
+      expect(req.request.method).toBe('POST');
+      expect(req.request.body.origenPesoIngreso).toBe('Manual');
+      expect(req.request.body.pesoIngreso).toBe(1500);
+      expect(req.request.body.motivoPesoManual).toBe('Otro');
+      expect(req.request.body.motivoPesoManualDetalle).toBe('el indicador no encendía');
+      req.flush({ numeroBoleta: 'IF-1' });
+
+      httpMock.expectOne(`${LOCAL}/boletas?estado=EnTransito`).flush([]);
+      expect(component.modoIngresoManual()).toBe(false);
+    });
+
+    it('el peso fuera de rango deja la captura manual inválida', () => {
+      const now = vi.spyOn(Date, 'now');
+      now.mockReturnValue(7_000_000);
+      flushInit({
+        peso: { peso: null, origen: null },
+        estado: { ...ESTADO_MANUAL, pesoMinimoManual: 500, pesoMaximoManual: 30000 },
+      });
+
+      now.mockReturnValue(7_000_000 + 16_000);
+      pollPeso({ peso: null, origen: null });
+      component.abrirIngresoManual();
+      component.motivoManualCtrl.setValue('IndicadorSinSenal');
+
+      component.pesoManualCtrl.setValue(100);
+      expect(component.entradaManualValida()).toBe(false);
+      component.pesoManualCtrl.setValue(40000);
+      expect(component.entradaManualValida()).toBe(false);
+      component.pesoManualCtrl.setValue(1500);
+      expect(component.entradaManualValida()).toBe(true);
+    });
+
+    it('flushInit sigue flusheando la misma lista fija de requests (sin GET nuevo)', () => {
+      // Si S3 hubiera agregado un request en ngOnInit, httpMock.verify() del
+      // afterEach rompería: este test solo llama flushInit y no espera nada más.
+      flushInit({ estado: ESTADO_MANUAL });
+      expect(component.permiteIngresoManual()).toBe(true);
+      expect(component.motivosPesoManual()).toEqual(['IndicadorSinSenal', 'CorteEnergia', 'Otro']);
+    });
   });
 });

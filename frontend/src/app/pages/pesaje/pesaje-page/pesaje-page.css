@@ -182,3 +182,30 @@
   color: rgba(0, 0, 0, 0.45);
   padding: 24px 0;
 }
+
+.ingreso-manual {
+  margin: 8px 0 16px;
+  padding: 12px;
+  border: 1px dashed #faad14;
+  border-radius: 6px;
+  background: #fffbe6;
+}
+
+.ingreso-manual__aviso {
+  margin-bottom: 12px;
+}
+
+.ingreso-manual__form {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.btn-ingreso-manual {
+  width: 100%;
+}
+
+.btn-cancelar-manual {
+  align-self: flex-start;
+  padding-left: 0;
+}
