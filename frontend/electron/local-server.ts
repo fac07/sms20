@@ -7,12 +7,15 @@ import {
   crearBoletaLocal,
   crearMaestroProvisionalLocal,
   getConfig,
+  getDb,
+  guardarConfigIngresoManual,
   listarBoletasLocal,
   listarEventosTrabados,
   listarMaestrosLocal,
   listarOutboxLocal,
   listarTiposMovimientoLocal,
   obtenerBoletaLocal,
+  obtenerConfigIngresoManual,
   resolverCamposLocal,
   setConfig,
   tiposProvisionalesHabilitados,
@@ -93,10 +96,18 @@ export function startLocalServer(port: number, esDev: boolean): Server {
   app.get('/estado', (_req, res) => {
     const basculaId = getConfig('BasculaId')
     const basculaCodigo = getConfig('BasculaCodigo')
+    // Config de ingreso manual de peso — este es EL canal al renderer: viaja en
+    // el `GET /estado` que `flushInit` ya flushea, así que S3 no agrega ningún
+    // request nuevo en `ngOnInit`. Default-deny si nunca se sincronizó.
+    const ingresoManual = obtenerConfigIngresoManual()
     res.json({
       aprovisionada: Boolean(basculaId),
       basculaId: basculaId ?? null,
       basculaCodigo: basculaCodigo ?? null,
+      permiteIngresoManual: ingresoManual.permiteIngresoManual,
+      pesoMinimoManual: ingresoManual.pesoMinimoManual,
+      pesoMaximoManual: ingresoManual.pesoMaximoManual,
+      motivosPesoManual: [...ingresoManual.motivosPesoManual],
       // Campos de hardware guardados por /aprovisionamiento — sin pantalla
       // que los use todavía, pero acá al lado de basculaCodigo es donde una
       // futura screen de config de hardware va a esperar encontrarlos.
@@ -490,6 +501,9 @@ export function startLocalServer(port: number, esDev: boolean): Server {
       velocidad: number | null
       bitsDatos: number | null
       modoComunicacion: string | null
+      permiteIngresoManual?: boolean
+      pesoMinimoManual?: number | null
+      pesoMaximoManual?: number | null
     }
 
     setConfig('BasculaId', dto.basculaId)
@@ -501,6 +515,15 @@ export function startLocalServer(port: number, esDev: boolean): Server {
     setConfig('BasculaVelocidad', dto.velocidad !== null ? String(dto.velocidad) : '')
     setConfig('BasculaBitsDatos', dto.bitsDatos !== null ? String(dto.bitsDatos) : '')
     setConfig('BasculaModoComunicacion', dto.modoComunicacion ?? '')
+
+    // Cold-start seed del trío de ingreso manual — S1a lo sumó al
+    // `AprovisionamientoDto` central para que la terminal quede correcta al
+    // segundo 0 en vez de esperar hasta 60s al primer tick de config-sync.
+    guardarConfigIngresoManual(getDb(), {
+      permiteIngresoManual: Boolean(dto.permiteIngresoManual),
+      pesoMinimoManual: dto.pesoMinimoManual ?? null,
+      pesoMaximoManual: dto.pesoMaximoManual ?? null,
+    })
 
     // Snapshot inicial completo — a partir de acá el sync incremental
     // (interval de main.ts, o /maestros/sincronizar a mano) toma la posta.
