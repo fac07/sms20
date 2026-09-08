@@ -1,8 +1,10 @@
 import { HttpClient } from '@angular/common/http';
 import { Injectable, inject } from '@angular/core';
 import { Observable } from 'rxjs';
+import { environment } from '../../environments/environment';
 
-const CENTRAL_API_URL = 'http://localhost:5094';
+// URL del backend central, centralizada en `src/environments`.
+const CENTRAL_API_URL = environment.apiUrl;
 
 export type TipoConexion = 'Serial' | 'Ethernet';
 

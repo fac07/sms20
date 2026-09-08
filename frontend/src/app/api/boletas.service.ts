@@ -2,9 +2,11 @@ import { HttpClient } from '@angular/common/http';
 import { Injectable, inject } from '@angular/core';
 import { Observable } from 'rxjs';
 import { ValorCampoDto, ValorCampoLeidoDto } from './configuracion.models';
+import { environment } from '../../environments/environment';
 import { MotivoPesoManual } from './motivo-peso-manual';
 
-const CENTRAL_API_URL = 'http://localhost:5094';
+// URL del backend central, centralizada en `src/environments`.
+const CENTRAL_API_URL = environment.apiUrl;
 
 export type EstadoBoleta = 'EnTransito' | 'Cerrada' | 'Anulada' | 'Reemitida';
 

@@ -10,8 +10,9 @@ import {
   TipoMovimiento,
   TiposMovimientoService,
 } from './tipos-movimiento.service';
+import { environment } from '../../environments/environment';
 
-const BASE = 'http://localhost:5094/api/tipos-movimiento';
+const BASE = `${environment.apiUrl}/api/tipos-movimiento`;
 
 describe('TiposMovimientoService', () => {
   let service: TiposMovimientoService;

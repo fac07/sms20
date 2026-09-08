@@ -4,9 +4,10 @@ import {
   provideHttpClientTesting,
 } from '@angular/common/http/testing';
 import { TestBed } from '@angular/core/testing';
+import { environment } from '../../environments/environment';
 import { ProvisionalesStore } from './provisionales-store';
 
-const CENTRAL = 'http://localhost:5094';
+const CENTRAL = environment.apiUrl;
 
 describe('ProvisionalesStore', () => {
   let store: ProvisionalesStore;
