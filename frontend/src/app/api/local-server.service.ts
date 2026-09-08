@@ -1,13 +1,17 @@
 import { HttpClient } from '@angular/common/http';
 import { Injectable, inject } from '@angular/core';
 import { Observable, map } from 'rxjs';
+import { environment } from '../../environments/environment';
 import { CampoAplicable, TipoMovimiento, ValorCampoDto } from './configuracion.models';
 import { MotivoPesoManual } from './motivo-peso-manual';
 
-// Servidor LOCAL de Electron (127.0.0.1:4127) — no confundir con el backend
-// central (http://localhost:5094) que usan los demás servicios de src/app/api.
-// Ver src/app/layout/peso-simulado-panel para el mismo patrón de acceso.
-const LOCAL_SERVER_URL = 'http://127.0.0.1:4127';
+// Servidor LOCAL de Electron — no confundir con el backend central que usan
+// los demás servicios de src/app/api. La URL sale de `window.sms` (la inyecta
+// electron/preload.ts sólo dentro de Electron), con `environment.localServerUrl`
+// de fallback y un default duro por si acaso. En modo admin no hay servidor
+// local: `modoGuard` deja fuera del modo las pantallas que lo usan.
+const LOCAL_SERVER_URL =
+  window.sms?.localServerUrl ?? environment.localServerUrl ?? 'http://127.0.0.1:4127';
 
 export type OrigenPeso = 'Bascula' | 'Manual';
 

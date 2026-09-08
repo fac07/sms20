@@ -2,10 +2,13 @@ import { CommonModule } from '@angular/common';
 import { HttpClient } from '@angular/common/http';
 import { Component, OnDestroy, OnInit, inject, signal } from '@angular/core';
 import { catchError, of } from 'rxjs';
+import { environment } from '../../../environments/environment';
 
-// Servidor LOCAL de Electron (127.0.0.1:4127) — no confundir con el backend
-// central (http://localhost:5094) que usan los demás servicios de src/app/api.
-const LOCAL_SERVER_URL = 'http://127.0.0.1:4127';
+// Servidor LOCAL de Electron — no confundir con el backend central que usan
+// los demás servicios de src/app/api. La URL sale de `window.sms` (Electron)
+// con `environment.localServerUrl` de fallback y un default duro por si acaso.
+const LOCAL_SERVER_URL =
+  window.sms?.localServerUrl ?? environment.localServerUrl ?? 'http://127.0.0.1:4127';
 
 type OrigenPeso = 'Bascula' | 'Manual';
 
