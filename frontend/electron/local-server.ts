@@ -10,12 +10,13 @@ import {
   getDb,
   guardarConfigIngresoManual,
   leerConfigIngresoManual,
-  listarBoletasLocal,
+  listarBoletasDtoLocal,
   listarEventosTrabados,
   listarMaestrosLocal,
   listarOutboxLocal,
   listarTiposMovimientoLocal,
   MOTIVOS_PESO_MANUAL,
+  obtenerBoletaDtoLocal,
   obtenerBoletaLocal,
   obtenerConfigIngresoManual,
   resolverCamposLocal,
@@ -249,11 +250,12 @@ export function startLocalServer(port: number, esDev: boolean): Server {
   // Outbox y el cliente HTTP del renderer puedan reusar DTOs casi iguales.
   app.get('/boletas', (req, res) => {
     const estado = req.query.estado as string | undefined
-    res.json(listarBoletasLocal(estado))
+    const origenPeso = req.query.origenPeso as string | undefined
+    res.json(listarBoletasDtoLocal(estado, origenPeso))
   })
 
   app.get('/boletas/:id', (req, res) => {
-    const boleta = obtenerBoletaLocal(req.params.id)
+    const boleta = obtenerBoletaDtoLocal(req.params.id)
     if (!boleta) {
       res.status(404).json({ error: 'No existe esa boleta.' })
       return

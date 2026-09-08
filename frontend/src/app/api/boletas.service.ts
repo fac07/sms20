@@ -5,9 +5,6 @@ import { ValorCampoDto, ValorCampoLeidoDto } from './configuracion.models';
 import { environment } from '../../environments/environment';
 import { MotivoPesoManual } from './motivo-peso-manual';
 
-// URL del backend central, centralizada en `src/environments`.
-const CENTRAL_API_URL = environment.apiUrl;
-
 export type EstadoBoleta = 'EnTransito' | 'Cerrada' | 'Anulada' | 'Reemitida';
 
 export type EstadoSyncBoleta =
@@ -81,15 +78,24 @@ export interface CrearBoletaInput {
 export class BoletasService {
   private readonly http = inject(HttpClient);
 
+  /** Autoridad de lectura determinística por build; nunca mezcla ambos scopes. */
+  private get baseUrl(): string {
+    if (environment.modo === 'admin') return `${environment.apiUrl}/api/boletas`;
+    if (!environment.localServerUrl) {
+      throw new Error('localServerUrl is required in bascula mode.');
+    }
+    return `${environment.localServerUrl}/boletas`;
+  }
+
   listar(estado?: EstadoBoleta, origenPeso?: OrigenPeso): Observable<BoletaDto[]> {
     const params: string[] = [];
     if (estado) params.push(`estado=${estado}`);
     if (origenPeso) params.push(`origenPeso=${origenPeso}`);
     const query = params.length > 0 ? `?${params.join('&')}` : '';
-    return this.http.get<BoletaDto[]>(`${CENTRAL_API_URL}/api/boletas${query}`);
+    return this.http.get<BoletaDto[]>(`${this.baseUrl}${query}`);
   }
 
   obtener(id: string): Observable<BoletaDto> {
-    return this.http.get<BoletaDto>(`${CENTRAL_API_URL}/api/boletas/${id}`);
+    return this.http.get<BoletaDto>(`${this.baseUrl}/${id}`);
   }
 }

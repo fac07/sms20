@@ -20,9 +20,13 @@ const HOME_POR_MODO: Record<Modo, string> = {
  */
 export const modoGuard: CanActivateFn = (route): boolean | UrlTree => {
   const router = inject(Router);
-  const requerido = route.data['modo'] as Modo | undefined;
+  const requerido = route.data['modo'] as Modo | Modo[] | undefined;
 
-  if (!requerido || requerido === environment.modo) {
+  if (
+    !requerido ||
+    requerido === environment.modo ||
+    (Array.isArray(requerido) && requerido.includes(environment.modo))
+  ) {
     return true;
   }
   return router.parseUrl(HOME_POR_MODO[environment.modo]);

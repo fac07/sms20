@@ -72,6 +72,71 @@ describe('GET /estado — config de ingreso manual', () => {
   })
 })
 
+describe('GET /boletas — proyección local de consulta', () => {
+  beforeEach(async () => {
+    db.exec(`
+      INSERT INTO ConfiguracionLocal (Clave, Valor) VALUES
+        ('BasculaId', 'ba-1'), ('BasculaCodigo', 'B01')
+      ON CONFLICT(Clave) DO UPDATE SET Valor = excluded.Valor;
+      INSERT INTO TipoMovimiento (Id, Codigo, Nombre, Prefijo, Direccion, OperacionD365, GeneraQR, FormatoBoletaId, Activo)
+        VALUES ('tm-1', 'REC', 'Recepcion', 'REC', 'Entrada', NULL, 0, NULL, 1);
+      INSERT INTO Seccion (Id, Clave, Nombre, Cardinalidad, Reportable, Estandar, Orden, Activa, FechaModificacion)
+        VALUES ('s-1', 'producto', 'Producto', 'Unica', 0, 1, 1, 1, '2026-01-01T00:00:00Z');
+      INSERT INTO Campo (Id, SeccionId, Clave, Etiqueta, TipoCampo, TipoCatalogoRef, Requerido, Configuracion, Orden, VigenteDesde, VigenteHasta, FechaModificacion)
+        VALUES ('c-1', 's-1', 'lote', 'Lote', 'Texto', NULL, 0, NULL, 1, '2026-01-01T00:00:00Z', NULL, '2026-01-01T00:00:00Z');
+      INSERT INTO Boleta (
+        Id, NumeroBoleta, TipoMovimientoId, Estado, EstadoSync, PesoIngreso, PesoSalida, PesoNeto,
+        OrigenPesoIngreso, OrigenPesoSalida, FechaHoraIngreso, FechaHoraSalida, UsuarioIngreso,
+        UsuarioSalida, UsuarioAnula, UsuarioAutoriza, MotivoAnulacion, FechaHoraAnulacion,
+        PreIngresoId, BoletaReemplazoId, BoletaOrigenId, BasculaSalidaId, RespuestaD365Id,
+        CreadaOffline, MotivoPesoManual, MotivoPesoManualDetalle
+      ) VALUES ('b-1', 'REC-B01-000001', 'tm-1', 'Cerrada', 'Local', 1000, 400, 600,
+        'Bascula', 'Manual', '2026-09-08T12:00:00Z', '2026-09-08T13:00:00Z', 'op', 'op',
+        NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, 1, 'Otro', 'Captura autorizada');
+      INSERT INTO BoletaValorCampo (
+        BoletaId, CampoId, Ocurrencia, SeccionId, ValorTexto, ValorNumero,
+        ValorFecha, ValorBooleano, ValorMaestroId
+      ) VALUES ('b-1', 'c-1', 0, 's-1', 'L-42', NULL, NULL, NULL, NULL);
+    `)
+    await arrancarServidor()
+  })
+
+  it('embebe detalle compatible con BoletaDto y aplica ambos filtros', async () => {
+    const res = await fetch(`${baseUrl}/boletas?estado=Cerrada&origenPeso=Manual`)
+    expect(res.status).toBe(200)
+    const cuerpo = (await res.json()) as Array<Record<string, unknown>>
+
+    expect(cuerpo).toHaveLength(1)
+    expect(cuerpo[0]).toMatchObject({
+      id: 'b-1',
+      basculaId: 'ba-1',
+      basculaCodigo: 'B01',
+      tipoMovimientoNombre: 'Recepcion',
+      motivoPesoManual: 'Otro',
+      motivoPesoManualDetalle: 'Captura autorizada',
+    })
+    expect(cuerpo[0]['valores']).toEqual([
+      expect.objectContaining({
+        campoId: 'c-1',
+        seccionClave: 'producto',
+        seccionNombre: 'Producto',
+        campoClave: 'lote',
+        etiqueta: 'Lote',
+        valorTexto: 'L-42',
+      }),
+    ])
+  })
+
+  it('devuelve el mismo detalle por id y conserva el 404', async () => {
+    const encontrado = await fetch(`${baseUrl}/boletas/b-1`)
+    expect(encontrado.status).toBe(200)
+    expect(((await encontrado.json()) as { valores: unknown[] }).valores).toHaveLength(1)
+
+    const ausente = await fetch(`${baseUrl}/boletas/no-existe`)
+    expect(ausente.status).toBe(404)
+  })
+})
+
 describe('POST /aprovisionamiento — cold-start seed del trío', () => {
   beforeEach(arrancarServidor)
 

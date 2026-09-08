@@ -12,6 +12,7 @@ import {
   type FilaValor,
   type MaestroData,
   type SeccionData,
+  type TipoCampo,
   type ValorCampo,
 } from './motor-campos'
 
@@ -607,6 +608,25 @@ export interface BoletaLocal {
   motivoPesoManualDetalle: string | null
 }
 
+/** Proyección de lectura de un valor EAV, compatible con ValorCampoLeidoDto. */
+export interface ValorCampoLeidoLocal extends ValorCampoLocal {
+  seccionClave: string
+  seccionNombre: string
+  campoClave: string
+  etiqueta: string
+  tipoCampo: TipoCampo
+  valorMaestroCodigo: string | null
+  valorMaestroNombre: string | null
+}
+
+/** Contrato HTTP de consulta local, compatible con BoletaDto del backend. */
+export interface BoletaDtoLocal extends BoletaLocal {
+  basculaId: string
+  basculaCodigo: string | null
+  tipoMovimientoNombre: string | null
+  valores: ValorCampoLeidoLocal[]
+}
+
 // Forma cruda de la fila tal como sale de better-sqlite3 (columnas
 // PascalCase, CreadaOffline como 0/1) — nunca se expone fuera de este archivo.
 interface BoletaRow {
@@ -681,6 +701,46 @@ export function listarBoletasLocal(estado?: string): BoletaLocal[] {
         .all(estado) as BoletaRow[])
     : (getDb().prepare('SELECT * FROM Boleta ORDER BY FechaHoraIngreso DESC').all() as BoletaRow[])
   return rows.map(filaABoletaLocal)
+}
+
+function proyectarBoletaLocal(boleta: BoletaLocal): BoletaDtoLocal {
+  const tipoMovimiento = getDb()
+    .prepare('SELECT Nombre FROM TipoMovimiento WHERE Id = ?')
+    .get(boleta.tipoMovimientoId) as { Nombre: string } | undefined
+
+  return {
+    ...boleta,
+    basculaId: getConfig('BasculaId') ?? '',
+    basculaCodigo: getConfig('BasculaCodigo') ?? null,
+    tipoMovimientoNombre: tipoMovimiento?.Nombre ?? null,
+    valores: listarValoresLeidosLocal(boleta.id),
+  }
+}
+
+/** Consulta una boleta local con el mismo shape de lectura que BoletaDto. */
+export function obtenerBoletaDtoLocal(id: string): BoletaDtoLocal | null {
+  const boleta = obtenerBoletaLocal(id)
+  return boleta ? proyectarBoletaLocal(boleta) : null
+}
+
+/** Lista solo boletas de esta terminal; origenPeso coincide en ingreso o salida. */
+export function listarBoletasDtoLocal(estado?: string, origenPeso?: string): BoletaDtoLocal[] {
+  const condiciones: string[] = []
+  const parametros: string[] = []
+  if (estado) {
+    condiciones.push('Estado = ?')
+    parametros.push(estado)
+  }
+  if (origenPeso) {
+    condiciones.push('(OrigenPesoIngreso = ? OR OrigenPesoSalida = ?)')
+    parametros.push(origenPeso, origenPeso)
+  }
+
+  const where = condiciones.length > 0 ? ` WHERE ${condiciones.join(' AND ')}` : ''
+  const rows = getDb()
+    .prepare(`SELECT * FROM Boleta${where} ORDER BY FechaHoraIngreso DESC`)
+    .all(...parametros) as BoletaRow[]
+  return rows.map(filaABoletaLocal).map(proyectarBoletaLocal)
 }
 
 // ---------------------------------------------------------------------------
@@ -1254,6 +1314,59 @@ export function listarValoresLocal(boletaId: string): ValorCampoLocal[] {
     valorFecha: row.ValorFecha,
     valorBooleano: row.ValorBooleano === null ? null : row.ValorBooleano !== 0,
     valorMaestroId: row.ValorMaestroId,
+  }))
+}
+
+interface ValorCampoLeidoRow extends BoletaValorCampoRow {
+  SeccionClave: string
+  SeccionNombre: string
+  CampoClave: string
+  Etiqueta: string
+  TipoCampo: TipoCampo
+  ValorMaestroCodigo: string | null
+  ValorMaestroNombre: string | null
+}
+
+/**
+ * Proyección humana de valores. Une por el Campo almacenado (aunque haya sido
+ * retirado) y sigue FusionadoConId para mostrar el Maestro oficial vigente.
+ */
+export function listarValoresLeidosLocal(boletaId: string): ValorCampoLeidoLocal[] {
+  const rows = getDb()
+    .prepare(
+      `SELECT v.*,
+              s.Clave AS SeccionClave,
+              s.Nombre AS SeccionNombre,
+              c.Clave AS CampoClave,
+              c.Etiqueta AS Etiqueta,
+              c.TipoCampo AS TipoCampo,
+              oficial.Codigo AS ValorMaestroCodigo,
+              oficial.Nombre AS ValorMaestroNombre
+       FROM BoletaValorCampo v
+       JOIN Campo c ON c.Id = v.CampoId
+       JOIN Seccion s ON s.Id = c.SeccionId
+       LEFT JOIN Maestro original ON original.Id = v.ValorMaestroId
+       LEFT JOIN Maestro oficial ON oficial.Id = COALESCE(original.FusionadoConId, original.Id)
+       WHERE v.BoletaId = ?
+       ORDER BY s.Orden, c.Orden, v.Ocurrencia`,
+    )
+    .all(boletaId) as ValorCampoLeidoRow[]
+
+  return rows.map((row) => ({
+    campoId: row.CampoId,
+    seccionClave: row.SeccionClave,
+    seccionNombre: row.SeccionNombre,
+    campoClave: row.CampoClave,
+    etiqueta: row.Etiqueta,
+    tipoCampo: row.TipoCampo,
+    ocurrencia: row.Ocurrencia,
+    valorTexto: row.ValorTexto,
+    valorNumero: row.ValorNumero === null ? null : Number(row.ValorNumero),
+    valorFecha: row.ValorFecha,
+    valorBooleano: row.ValorBooleano === null ? null : row.ValorBooleano !== 0,
+    valorMaestroId: row.ValorMaestroId,
+    valorMaestroCodigo: row.ValorMaestroCodigo,
+    valorMaestroNombre: row.ValorMaestroNombre,
   }))
 }
 

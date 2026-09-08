@@ -40,7 +40,7 @@ export const routes: Routes = [
         path: 'basculas',
         component: BasculasPage,
         canActivate: [modoGuard],
-        data: { modo: 'admin' },
+        data: { modo: ['bascula', 'admin'] },
       },
       {
         path: 'tipos-movimiento',

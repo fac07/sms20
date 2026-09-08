@@ -5,16 +5,24 @@ import {
 } from '@angular/common/http/testing';
 import { TestBed } from '@angular/core/testing';
 import { environment } from '../../environments/environment';
+import { Modo } from '../../environments/environment.model';
 import { BoletaDto, BoletasService } from './boletas.service';
 import { ValorCampoLeidoDto } from './configuracion.models';
 
 const BASE = `${environment.apiUrl}/api/boletas`;
+const LOCAL_BASE = `${environment.localServerUrl}/boletas`;
 
 describe('BoletasService', () => {
   let service: BoletasService;
   let httpMock: HttpTestingController;
+  const modoOriginal = environment.modo;
+
+  function setModo(modo: Modo): void {
+    (environment as { modo: Modo }).modo = modo;
+  }
 
   beforeEach(() => {
+    setModo('admin');
     TestBed.configureTestingModule({
       providers: [
         BoletasService,
@@ -28,6 +36,7 @@ describe('BoletasService', () => {
 
   afterEach(() => {
     httpMock.verify();
+    setModo(modoOriginal);
   });
 
   it('listar() issues GET /api/boletas without a filter', () => {
@@ -96,5 +105,19 @@ describe('BoletasService', () => {
 
     expect(recibida?.valores).toHaveLength(1);
     expect(recibida?.valores[0].valorMaestroNombre).toBe('Finca X');
+  });
+
+  it('modo báscula consulta lista y detalle sólo en el servidor local', () => {
+    setModo('bascula');
+
+    service.listar('Cerrada', 'Manual').subscribe();
+    const lista = httpMock.expectOne(`${LOCAL_BASE}?estado=Cerrada&origenPeso=Manual`);
+    expect(lista.request.method).toBe('GET');
+    lista.flush([]);
+
+    service.obtener('b-local').subscribe();
+    const detalle = httpMock.expectOne(`${LOCAL_BASE}/b-local`);
+    expect(detalle.request.method).toBe('GET');
+    detalle.flush({ id: 'b-local', valores: [] } as unknown as BoletaDto);
   });
 });

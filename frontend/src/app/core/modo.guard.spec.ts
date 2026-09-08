@@ -36,6 +36,11 @@ describe('modoGuard', () => {
     expect(run({ modo: 'bascula' })).toBe(true);
   });
 
+  it('deja pasar cuando el modo del build está entre los modos permitidos', () => {
+    setModo('bascula');
+    expect(run({ modo: ['bascula', 'admin'] })).toBe(true);
+  });
+
   it('en modo báscula bloquea una ruta admin y redirige a /pesaje', () => {
     setModo('bascula');
     expect(run({ modo: 'admin' })).toBe('URLTREE:/pesaje');

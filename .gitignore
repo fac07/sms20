@@ -19,3 +19,5 @@ dist-ssr/
 # Secretos / config local
 *.env
 appsettings.*.local.json
+# Local Pi runtime state
+.atl/
