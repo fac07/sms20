@@ -1,12 +1,12 @@
 import { HttpClient } from '@angular/common/http';
 import { Injectable, inject } from '@angular/core';
 import { Observable } from 'rxjs';
+import { environment } from '../../environments/environment';
 import { CampoAplicable, TipoMovimiento } from './configuracion.models';
 
-// Sin .env: no hay secretos acá, y el puerto de dev del backend central es
-// estable (launchSettings.json, perfil "http"). En producción esto va a
-// venir de la config de la báscula post-aprovisionamiento, no de un build-time env.
-const CENTRAL_API_URL = 'http://localhost:5094';
+// URL del backend central, centralizada en `src/environments`. Mismo host en
+// modo báscula y modo admin por ahora; lo que cambia es `environment.modo`.
+const CENTRAL_API_URL = environment.apiUrl;
 
 // `TipoMovimiento` y `DireccionMovimiento` se movieron a `configuracion.models.ts`
 // (los consume también el dropdown de Pesaje vía el espejo local). Se

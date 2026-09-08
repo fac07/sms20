@@ -9,8 +9,9 @@ import {
   SeccionDto,
   SeccionesService,
 } from './secciones.service';
+import { environment } from '../../environments/environment';
 
-const BASE = 'http://localhost:5094/api/secciones';
+const BASE = `${environment.apiUrl}/api/secciones`;
 
 describe('SeccionesService', () => {
   let service: SeccionesService;

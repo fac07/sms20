@@ -11,8 +11,9 @@ import {
   CrearCampoInput,
   NuevaVersionCampoInput,
 } from './campos.service';
+import { environment } from '../../environments/environment';
 
-const BASE = 'http://localhost:5094/api/campos';
+const BASE = `${environment.apiUrl}/api/campos`;
 
 describe('CamposService', () => {
   let service: CamposService;

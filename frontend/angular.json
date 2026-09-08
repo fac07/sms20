@@ -49,6 +49,27 @@
               "optimization": false,
               "extractLicenses": false,
               "sourceMap": true
+            },
+            "web": {
+              "budgets": [
+                {
+                  "type": "initial",
+                  "maximumWarning": "2MB",
+                  "maximumError": "3MB"
+                },
+                {
+                  "type": "anyComponentStyle",
+                  "maximumWarning": "4kB",
+                  "maximumError": "8kB"
+                }
+              ],
+              "outputHashing": "all",
+              "fileReplacements": [
+                {
+                  "replace": "src/environments/environment.ts",
+                  "with": "src/environments/environment.web.ts"
+                }
+              ]
             }
           },
           "defaultConfiguration": "production"
@@ -61,6 +82,9 @@
             },
             "development": {
               "buildTarget": "frontend-ng:build:development"
+            },
+            "web": {
+              "buildTarget": "frontend-ng:build:web"
             }
           },
           "defaultConfiguration": "development"

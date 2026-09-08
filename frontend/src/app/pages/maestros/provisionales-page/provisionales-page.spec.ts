@@ -10,8 +10,9 @@ import { AprobarDialog } from '../dialogs/aprobar-dialog';
 import { FusionarDialog } from '../dialogs/fusionar-dialog';
 import { ProvisionalesPage } from './provisionales-page';
 import { basculaDeCodigoProvisional, buscarSimilar } from './similares';
+import { environment } from '../../../../environments/environment';
 
-const CENTRAL = 'http://localhost:5094';
+const CENTRAL = environment.apiUrl;
 
 function maestro(parcial: Partial<Maestro> & Pick<Maestro, 'id'>): Maestro {
   return {

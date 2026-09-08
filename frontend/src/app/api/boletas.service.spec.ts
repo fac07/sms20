@@ -4,10 +4,11 @@ import {
   provideHttpClientTesting,
 } from '@angular/common/http/testing';
 import { TestBed } from '@angular/core/testing';
+import { environment } from '../../environments/environment';
 import { BoletaDto, BoletasService } from './boletas.service';
 import { ValorCampoLeidoDto } from './configuracion.models';
 
-const BASE = 'http://localhost:5094/api/boletas';
+const BASE = `${environment.apiUrl}/api/boletas`;
 
 describe('BoletasService', () => {
   let service: BoletasService;
