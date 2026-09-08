@@ -40,7 +40,7 @@ export const routes: Routes = [
         path: 'basculas',
         component: BasculasPage,
         canActivate: [modoGuard],
-        data: { modo: ['bascula', 'admin'] },
+        data: { modo: 'admin' },
       },
       {
         path: 'tipos-movimiento',
@@ -76,7 +76,7 @@ export const routes: Routes = [
         path: 'boletas',
         component: BoletasPage,
         canActivate: [modoGuard],
-        data: { modo: 'admin' },
+        data: { modo: ['bascula', 'admin'] },
       },
       { path: '', pathMatch: 'full', redirectTo: rutaInicio },
       { path: '**', redirectTo: rutaInicio },
