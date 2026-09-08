@@ -6,6 +6,8 @@ import { NzBadgeModule } from 'ng-zorro-antd/badge';
 import { NzIconModule } from 'ng-zorro-antd/icon';
 import { NzLayoutModule } from 'ng-zorro-antd/layout';
 import { NzMenuModule } from 'ng-zorro-antd/menu';
+import { environment } from '../../../environments/environment';
+import { Modo } from '../../../environments/environment.model';
 import { ProvisionalesStore } from '../../api/provisionales-store';
 import { PesoSimuladoPanel } from '../peso-simulado-panel/peso-simulado-panel';
 
@@ -14,19 +16,26 @@ interface NavItem {
   icon: string;
   label: string;
   disabled?: boolean;
+  // Modos donde el ítem aparece. Ausente = ambos. Alineado con `data.modo` de las rutas.
+  modos?: Modo[];
 }
 
 const NAV_ITEMS: NavItem[] = [
-  { path: '/pesaje', icon: 'dashboard', label: 'Pesaje' },
-  { path: '/basculas', icon: 'desktop', label: 'Básculas' },
-  { path: '/tipos-movimiento', icon: 'appstore', label: 'Tipos de movimiento' },
-  { path: '/secciones', icon: 'apartment', label: 'Secciones' },
-  { path: '/campos', icon: 'form', label: 'Campos' },
-  { path: '/maestros', icon: 'database', label: 'Maestros' },
-  { path: '/maestros/provisionales', icon: 'inbox', label: 'Provisionales' },
-  { path: '/boletas', icon: 'file-text', label: 'Boletas' },
-  { path: '/reportes', icon: 'bar-chart', label: 'Reportes', disabled: true },
+  { path: '/pesaje', icon: 'dashboard', label: 'Pesaje', modos: ['bascula'] },
+  { path: '/basculas', icon: 'desktop', label: 'Básculas', modos: ['admin'] },
+  { path: '/tipos-movimiento', icon: 'appstore', label: 'Tipos de movimiento', modos: ['admin'] },
+  { path: '/secciones', icon: 'apartment', label: 'Secciones', modos: ['admin'] },
+  { path: '/campos', icon: 'form', label: 'Campos', modos: ['admin'] },
+  { path: '/maestros', icon: 'database', label: 'Maestros', modos: ['admin'] },
+  { path: '/maestros/provisionales', icon: 'inbox', label: 'Provisionales', modos: ['admin'] },
+  { path: '/boletas', icon: 'file-text', label: 'Boletas', modos: ['admin'] },
+  { path: '/reportes', icon: 'bar-chart', label: 'Reportes', disabled: true, modos: ['admin'] },
 ];
+
+/** Ítems de nav visibles para un modo — filtra por `NavItem.modos`. */
+export function navItemsParaModo(modo: Modo): NavItem[] {
+  return NAV_ITEMS.filter((item) => !item.modos || item.modos.includes(modo));
+}
 
 // Ruta de la cola cuyo badge muestra el conteo de provisionales pendientes.
 const RUTA_PROVISIONALES = '/maestros/provisionales';
@@ -65,7 +74,7 @@ export class AppShell implements OnInit, OnDestroy {
   private readonly router = inject(Router);
   private readonly provisionalesStore = inject(ProvisionalesStore);
 
-  readonly navItems = NAV_ITEMS;
+  readonly navItems = navItemsParaModo(environment.modo);
   readonly rutaProvisionales = RUTA_PROVISIONALES;
 
   /** Conteo de provisionales pendientes para el badge de la nav. */
