@@ -7,6 +7,7 @@ using SmsBackend.Domain.Boletas;
 using SmsBackend.Domain.Boletas.Valores;
 using SmsBackend.Domain.Configuracion;
 using SmsBackend.Domain.Maestros;
+using SmsBackend.Domain.PreIngresos;
 using SmsBackend.Domain.TiposMovimiento;
 
 var builder = WebApplication.CreateBuilder(args);
@@ -85,6 +86,7 @@ app.MapTiposMovimiento();
 app.MapMaestros();
 app.MapBasculas();
 app.MapBoletas();
+app.MapPreIngresos();
 app.MapSecciones();
 app.MapCampos();
 
