@@ -168,7 +168,8 @@ public static class TestData
         OrigenPeso origenPesoIngreso = OrigenPeso.Bascula,
         decimal pesoIngreso = 1000m,
         string? motivoPesoManual = null,
-        string? motivoPesoManualDetalle = null) =>
+        string? motivoPesoManualDetalle = null,
+        Guid? preIngresoId = null) =>
         new
         {
             basculaCodigo = escenario.BasculaCodigo,
@@ -185,6 +186,10 @@ public static class TestData
                 creadaOffline = true,
                 motivoPesoManual,
                 motivoPesoManualDetalle,
+                // Enlace opcional al pre-ingreso — el snapshot que arma
+                // crearBoletaLocal lo incluye cuando el operador seleccionó una
+                // unidad de la cola de transporte (slice 4 lo persiste local).
+                preIngresoId,
                 valores = valores.Select(v => new
                 {
                     campoId = v.CampoId,
