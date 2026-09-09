@@ -68,13 +68,16 @@ public sealed class ApiFactory : WebApplicationFactory<Program>, IAsyncLifetime
     public IServiceScope CreateScope() => Services.CreateScope();
 
     /// <summary>
-    /// Limpia las filas transaccionales (<c>BoletaValorCampo</c> + <c>Boleta</c>)
-    /// entre tests y deja intacto el seed de configuración.
+    /// Limpia las filas transaccionales (<c>PreIngreso</c> + <c>BoletaValorCampo</c>
+    /// + <c>Boleta</c>) entre tests y deja intacto el seed de configuración.
+    /// <c>PreIngreso</c> va primero: su FK real hacia <c>Boleta</c> es
+    /// <c>Restrict</c>.
     /// </summary>
     public async Task ResetAsync()
     {
         using var scope = Services.CreateScope();
         var db = scope.ServiceProvider.GetRequiredService<SmsDbContext>();
+        await db.PreIngresos.ExecuteDeleteAsync();
         await db.BoletaValores.ExecuteDeleteAsync();
         await db.Boletas.ExecuteDeleteAsync();
     }
