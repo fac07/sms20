@@ -4,6 +4,7 @@ using SmsBackend.Domain.Boletas;
 using SmsBackend.Domain.Boletas.Valores;
 using SmsBackend.Domain.Configuracion;
 using SmsBackend.Domain.Maestros;
+using SmsBackend.Domain.PreIngresos;
 using SmsBackend.Domain.TiposMovimiento;
 
 namespace SmsBackend.Data;
@@ -17,6 +18,8 @@ public class SmsDbContext(DbContextOptions<SmsDbContext> options) : DbContext(op
     public DbSet<Bascula> Basculas => Set<Bascula>();
 
     public DbSet<Boleta> Boletas => Set<Boleta>();
+
+    public DbSet<PreIngreso> PreIngresos => Set<PreIngreso>();
 
     public DbSet<Seccion> Secciones => Set<Seccion>();
 
