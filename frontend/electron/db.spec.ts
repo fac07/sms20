@@ -3,15 +3,19 @@ import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 import {
   _inyectarDbParaPruebas,
   MOTIVOS_PESO_MANUAL,
+  crearBoletaLocal,
   guardarConfigIngresoManual,
   inicializarEsquemaLocal,
   leerConfigIngresoManual,
   listarBoletasDtoLocal,
+  listarOutboxLocal,
   listarPreIngresosPendientesLocal,
   marcarBoletasPreIngresoCancelado,
   obtenerBoletaDtoLocal,
+  obtenerBoletaLocal,
   obtenerPreIngresoLocal,
   obtenerUltimaSincronizacionPreIngresos,
+  setConfig,
   upsertPreIngresosLocal,
   type PreIngresoLocal,
 } from './db'
@@ -398,6 +402,73 @@ describe('espejo PreIngreso — helpers de sync', () => {
       { Id: 'b1', MarcaPreIngreso: 'PreIngresoCancelado' },
       { Id: 'b2', MarcaPreIngreso: 'VinculoRechazado' },
     ])
+  })
+})
+
+describe('crearBoletaLocal — carga del enlace de pre-ingreso (cola-transporte slice 4)', () => {
+  beforeEach(() => {
+    setConfig('BasculaCodigo', 'B1')
+    db.prepare(
+      `INSERT INTO TipoMovimiento (Id, Codigo, Nombre, Prefijo, Direccion, OperacionD365, GeneraQR, FormatoBoletaId, Activo)
+       VALUES ('tm-1', 'REC', 'Recepcion', 'REC', 'Entrada', NULL, 0, NULL, 1)`,
+    ).run()
+  })
+
+  const entradaBase = {
+    prefijo: 'REC',
+    codigoBascula: 'B1',
+    tipoMovimientoId: 'tm-1',
+    pesoIngreso: 1000,
+    origenPesoIngreso: 'Bascula' as const,
+    fechaHoraIngreso: '2026-09-09T12:00:00.000Z',
+    usuarioIngreso: 'operador',
+    creadaOffline: true,
+  }
+
+  it('acepta y persiste preIngresoId y el payload Crear del Outbox lo lleva', () => {
+    const boleta = crearBoletaLocal({ ...entradaBase, preIngresoId: 'pre-77' })
+
+    expect(obtenerBoletaLocal(boleta.id)?.preIngresoId).toBe('pre-77')
+
+    const evento = listarOutboxLocal().find(
+      (e) => e.operacion === 'Crear' && e.entidadId === boleta.id,
+    )
+    const payload = JSON.parse(evento!.payload) as { preIngresoId?: string | null }
+    expect(payload.preIngresoId).toBe('pre-77')
+  })
+
+  it('sin pre-ingreso seleccionado guarda preIngresoId null, un solo evento Crear y sin advertencia', () => {
+    const boleta = crearBoletaLocal({ ...entradaBase })
+
+    expect(obtenerBoletaLocal(boleta.id)?.preIngresoId).toBeNull()
+
+    const eventos = listarOutboxLocal()
+    expect(eventos).toHaveLength(1)
+    expect(eventos[0].operacion).toBe('Crear')
+    const payload = JSON.parse(eventos[0].payload) as { preIngresoId?: string | null }
+    expect(payload.preIngresoId).toBeNull()
+  })
+})
+
+describe('marcarBoletasPreIngresoCancelado — marca sin alterar la boleta (cola-transporte slice 4)', () => {
+  it('pone PreIngresoCancelado sin tocar estado, pesos, enlace ni validez', () => {
+    db.prepare(
+      `INSERT INTO Boleta (
+        Id, NumeroBoleta, TipoMovimientoId, Estado, EstadoSync, PesoIngreso, PesoSalida, PesoNeto,
+        OrigenPesoIngreso, FechaHoraIngreso, UsuarioIngreso, CreadaOffline, PreIngresoId
+      ) VALUES ('b9', 'REC-B1-000009', 'tm1', 'Cerrada', 'Local', 20000, 3000, 17000,
+        'Bascula', '2026-09-02T00:00:00Z', 'op', 1, 'p9')`,
+    ).run()
+
+    marcarBoletasPreIngresoCancelado(['p9'])
+
+    const fila = db.prepare(`SELECT * FROM Boleta WHERE Id = 'b9'`).get() as Record<string, unknown>
+    expect(fila.MarcaPreIngreso).toBe('PreIngresoCancelado')
+    expect(fila.Estado).toBe('Cerrada')
+    expect(fila.PreIngresoId).toBe('p9')
+    expect(fila.PesoIngreso).toBe(20000)
+    expect(fila.PesoSalida).toBe(3000)
+    expect(fila.PesoNeto).toBe(17000)
   })
 })
 
