@@ -191,4 +191,50 @@ describe('POST /aprovisionamiento — cold-start seed del trío', () => {
     expect(cfg.pesoMinimoManual).toBe(200)
     expect(cfg.pesoMaximoManual).toBe(55000)
   })
+
+  it('persiste BasculaCentroId desde el AprovisionamientoDto central (prereq del preingreso-sync)', async () => {
+    const realFetch = globalThis.fetch
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async (rawUrl: string | URL, init?: RequestInit) => {
+        const u = new URL(String(rawUrl))
+        if (u.host !== 'localhost:5094') return realFetch(rawUrl as string, init)
+        if (u.pathname === '/api/basculas/aprovisionar' && init?.method === 'POST') {
+          return {
+            ok: true,
+            status: 200,
+            json: async () => ({
+              basculaId: 'ba5c111a-0000-0000-0000-000000000009',
+              basculaCodigo: 'B9',
+              basculaNombre: 'Báscula 9',
+              centroId: 'centro-9',
+              tipoConexion: 'Serial',
+              puerto: null,
+              ip: null,
+              puertoTcp: null,
+              velocidad: null,
+              bitsDatos: null,
+              modoComunicacion: null,
+            }),
+          }
+        }
+        if (u.pathname === '/api/maestros') return { ok: true, status: 200, json: async () => [] }
+        return { ok: false, status: 404, json: async () => ({}) }
+      }) as unknown as typeof fetch,
+    )
+
+    const res = await fetch(`${baseUrl}/aprovisionamiento`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ codigo: 'ABC123' }),
+    })
+    expect(res.status).toBe(200)
+
+    const centroId = (
+      db.prepare("SELECT Valor FROM ConfiguracionLocal WHERE Clave = 'BasculaCentroId'").get() as
+        | { Valor: string }
+        | undefined
+    )?.Valor
+    expect(centroId).toBe('centro-9')
+  })
 })
