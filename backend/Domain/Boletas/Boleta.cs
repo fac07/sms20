@@ -70,9 +70,14 @@ public class Boleta
     public DateTime? FechaHoraAnulacion { get; set; }
 
     /// <summary>
-    /// Guid suelto, sin FK ni navigation property — la tabla PreIngreso no
-    /// existe en este esquema. Enlaza la boleta con el pre-ingreso que la
-    /// originó cuando ese flujo exista.
+    /// Enlace lógico (sin navigation property) hacia el pre-ingreso de la cola
+    /// de transporte que originó esta boleta — lo captura el operador durante
+    /// el pesaje y viaja en el snapshot del Outbox. El lado canónico del 1:1
+    /// es <c>PreIngreso.BoletaId</c> (FK real, design D3); acá es una columna
+    /// denormalizada protegida por un índice único filtrado
+    /// (<c>WHERE [PreIngresoId] IS NOT NULL</c>). Null cuando la boleta se pesó
+    /// sin pre-ingreso o cuando la ingesta central rechazó el enlace
+    /// (ver <see cref="Boletas.MarcaPreIngreso"/>).
     /// </summary>
     public Guid? PreIngresoId { get; set; }
 
@@ -103,4 +108,13 @@ public class Boleta
 
     /// <summary>Texto libre opcional que acompaña al motivo — requerido solo cuando el motivo es "Otro".</summary>
     public string? MotivoPesoManualDetalle { get; set; }
+
+    /// <summary>
+    /// Marca de revisión sobre el enlace al pre-ingreso — null en el caso
+    /// normal. La fija la ingesta central (<c>/api/boletas/sync</c>) cuando el
+    /// <c>preIngresoId</c> declarado offline no se pudo honrar (perdedor del
+    /// doble-enlace, pre-ingreso inexistente) o cuando el pre-ingreso ya estaba
+    /// cancelado. No afecta validez, pesos ni estado de la boleta.
+    /// </summary>
+    public MarcaPreIngreso? MarcaPreIngreso { get; set; }
 }

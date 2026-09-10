@@ -1,4 +1,5 @@
 using SmsBackend.Domain.Boletas.Valores;
+using SmsBackend.Domain.PreIngresos;
 
 namespace SmsBackend.Domain.Boletas;
 
@@ -28,10 +29,16 @@ public record BoletaDto(
     Guid? BoletaOrigenId,
     Guid? BasculaSalidaId,
     Guid? PreIngresoId,
+    // Datos del pre-ingreso enlazado, resueltos por un left join en Proyectar —
+    // null cuando la boleta no tiene enlace (o el enlace fue rechazado).
+    string? PreIngresoNumeroEnvio,
+    EstadoPreIngreso? PreIngresoEstado,
     string? RespuestaD365Id,
     bool CreadaOffline,
     MotivoPesoManual? MotivoPesoManual,
     string? MotivoPesoManualDetalle,
+    // Marca de revisión del enlace al pre-ingreso — ver MarcaPreIngreso.
+    MarcaPreIngreso? MarcaPreIngreso,
     IReadOnlyList<ValorCampoLeidoDto> Valores);
 
 /// <summary>
@@ -53,7 +60,10 @@ public record CrearBoletaRequest(
     // Motivo del catálogo, como string crudo para poder devolver 422 (no 400)
     // ante un valor fuera de catálogo. Obligatorio cuando OrigenPesoIngreso = Manual.
     string? MotivoPesoManual = null,
-    string? MotivoPesoManualDetalle = null);
+    string? MotivoPesoManualDetalle = null,
+    // Enlace opcional a la cola de transporte — paridad con la rama "Crear" de
+    // /api/boletas/sync. Se resuelve con la misma lógica de carrera central.
+    Guid? PreIngresoId = null);
 
 /// <summary>Datos del segundo pesaje — cierra la boleta.</summary>
 public record CerrarBoletaRequest(

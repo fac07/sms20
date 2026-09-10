@@ -58,6 +58,18 @@ public class BoletaConfiguration : IEntityTypeConfiguration<Boleta>
             .HasMaxLength(40);
         builder.Property(b => b.MotivoPesoManualDetalle).HasMaxLength(500);
 
+        // Enum-as-string, mismo criterio que MotivoPesoManual. Columna nvarchar(30).
+        builder.Property(b => b.MarcaPreIngreso)
+            .HasConversion<string>()
+            .HasMaxLength(30);
+
+        // Cardinalidad 1:1 con PreIngreso (design D3), reforzada acá además de
+        // la FK real PreIngreso.BoletaId. El filtro deja pasar múltiples NULL
+        // (todas las boletas pesadas sin pre-ingreso).
+        builder.HasIndex(b => b.PreIngresoId)
+            .IsUnique()
+            .HasFilter("[PreIngresoId] IS NOT NULL");
+
         builder.Property(b => b.RespuestaD365Id).HasMaxLength(100);
 
         builder.Property(b => b.RowVersion).IsRowVersion();
