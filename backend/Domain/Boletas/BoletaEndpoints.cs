@@ -4,6 +4,7 @@ using SmsBackend.Data;
 using SmsBackend.Domain.Basculas;
 using SmsBackend.Domain.Boletas.Valores;
 using SmsBackend.Domain.Maestros;
+using SmsBackend.Domain.PreIngresos;
 
 namespace SmsBackend.Domain.Boletas;
 
@@ -115,6 +116,13 @@ public static class BoletaEndpoints
             await AgregarValoresAsync(db, boleta.Id, valores, ct);
             // Encabezado + filas BoletaValorCampo en un solo SaveChanges.
             await db.SaveChangesAsync(ct);
+
+            // La boleta ya existe (la FK PreIngreso.BoletaId lo exige) — recién
+            // ahora se puede resolver el enlace a la cola de transporte.
+            if (request.PreIngresoId is Guid preIngresoIdTipado)
+            {
+                await VincularPreIngresoAsync(db, boleta, preIngresoIdTipado, ct);
+            }
 
             var dto = await Proyectar(db.Boletas.AsNoTracking().Where(b => b.Id == boleta.Id), db)
                 .FirstAsync(ct);
@@ -350,6 +358,15 @@ public static class BoletaEndpoints
                     await AgregarValoresAsync(db, boleta.Id, valores, ct);
                     await db.SaveChangesAsync(ct);
 
+                    // Enlace opcional a la cola de transporte (design D4). El
+                    // operador lo eligió offline; central resuelve la carrera
+                    // entre las dos básculas del centro y NUNCA falla la boleta.
+                    var preIngresoId = LeerGuidNullable(request.Payload, "preIngresoId");
+                    if (preIngresoId is Guid pid)
+                    {
+                        await VincularPreIngresoAsync(db, boleta, pid, ct);
+                    }
+
                     var dto = await Proyectar(db.Boletas.AsNoTracking().Where(b => b.Id == id), db).FirstAsync(ct);
                     return Results.Ok(dto);
                 }
@@ -454,6 +471,75 @@ public static class BoletaEndpoints
                 default:
                     return Results.BadRequest($"Operación de sync desconocida: '{request.Operacion}'.");
             }
+    }
+
+    /// <summary>
+    /// Resuelve el enlace boleta↔pre-ingreso durante la ingesta (design D4). El
+    /// <c>SET</c> condicional (<c>Estado == Pendiente</c>) es atómico: de dos
+    /// terminales del mismo centro que declararon el mismo <c>preIngresoId</c>
+    /// offline, exactamente uno lo gana. <c>ExecuteUpdate</c> saltea
+    /// <c>SaveChanges</c>, así que el sellador <c>IFechaModificable</c> no corre
+    /// y la marca de agua del delta-sync se fija a mano.
+    ///
+    /// <para>Nunca lanza ni devuelve error: un problema de enlace no puede
+    /// invalidar una boleta ya pesada. Los cinco desenlaces:</para>
+    /// <list type="bullet">
+    ///   <item><b>ganó</b> → boleta conserva <c>PreIngresoId</c>, sin marca;</item>
+    ///   <item><b>ya Vinculado a esta misma boleta</b> (replay) → no-op;</item>
+    ///   <item><b>Vinculado a otra boleta</b> → <c>PreIngresoId = null</c> +
+    ///   <see cref="MarcaPreIngreso.VinculoRechazado"/> (si no, viola el índice único);</item>
+    ///   <item><b>Cancelado</b> → se CONSERVA <c>PreIngresoId</c> +
+    ///   <see cref="MarcaPreIngreso.PreIngresoCancelado"/> (revisión accionable, decisión #4);</item>
+    ///   <item><b>inexistente</b> → <c>null</c> + <see cref="MarcaPreIngreso.VinculoRechazado"/>.</item>
+    /// </list>
+    /// </summary>
+    private static async Task VincularPreIngresoAsync(
+        SmsDbContext db, Boleta boleta, Guid preIngresoId, CancellationToken ct)
+    {
+        var ganado = await db.PreIngresos
+            .Where(p => p.Id == preIngresoId && p.Estado == EstadoPreIngreso.Pendiente)
+            .ExecuteUpdateAsync(s => s
+                .SetProperty(p => p.Estado, EstadoPreIngreso.Vinculado)
+                .SetProperty(p => p.BoletaId, boleta.Id)
+                .SetProperty(p => p.FechaModificacion, DateTime.UtcNow), ct);
+
+        if (ganado > 0)
+        {
+            boleta.PreIngresoId = preIngresoId;
+            await db.SaveChangesAsync(ct);
+            return;
+        }
+
+        // ganado == 0 → el pre-ingreso no estaba Pendiente (o no existe):
+        // reclasificar contra su estado real.
+        var pre = await db.PreIngresos.AsNoTracking()
+            .FirstOrDefaultAsync(p => p.Id == preIngresoId, ct);
+
+        if (pre is null)
+        {
+            boleta.PreIngresoId = null;
+            boleta.MarcaPreIngreso = MarcaPreIngreso.VinculoRechazado;
+        }
+        else if (pre.Estado == EstadoPreIngreso.Cancelado)
+        {
+            boleta.PreIngresoId = preIngresoId;
+            boleta.MarcaPreIngreso = MarcaPreIngreso.PreIngresoCancelado;
+        }
+        else if (pre.Estado == EstadoPreIngreso.Vinculado && pre.BoletaId == boleta.Id)
+        {
+            // Replay de un enlace que esta misma boleta ya ganó — no-op.
+            boleta.PreIngresoId = preIngresoId;
+        }
+        else
+        {
+            // Vinculado por OTRA boleta: perdedor del doble-enlace. La
+            // identidad del pre-ingreso rechazado sobrevive en el SQLite local
+            // del perdedor, no en central.
+            boleta.PreIngresoId = null;
+            boleta.MarcaPreIngreso = MarcaPreIngreso.VinculoRechazado;
+        }
+
+        await db.SaveChangesAsync(ct);
     }
 
     private static Guid ObtenerGuid(JsonElement payload, string campo) => payload.GetProperty(campo).GetGuid();
@@ -665,6 +751,9 @@ public static class BoletaEndpoints
         from bascula in basculas.DefaultIfEmpty()
         join tm in db.TiposMovimiento.AsNoTracking() on b.TipoMovimientoId equals tm.Id into tiposMovimiento
         from tipoMovimiento in tiposMovimiento.DefaultIfEmpty()
+        // Left join al pre-ingreso enlazado — misma forma que Bascula/TipoMovimiento.
+        join pi in db.PreIngresos.AsNoTracking() on b.PreIngresoId equals pi.Id into preingresos
+        from preingreso in preingresos.DefaultIfEmpty()
         select new BoletaDto(
             b.Id, b.NumeroBoleta,
             b.BasculaId, bascula != null ? bascula.Codigo : null,
@@ -676,8 +765,11 @@ public static class BoletaEndpoints
             b.UsuarioIngreso, b.UsuarioSalida, b.UsuarioAnula, b.UsuarioAutoriza, b.MotivoAnulacion,
             b.FechaHoraAnulacion,
             b.BoletaReemplazoId, b.BoletaOrigenId, b.BasculaSalidaId, b.PreIngresoId,
+            preingreso != null ? preingreso.NumeroEnvio : null,
+            preingreso != null ? (EstadoPreIngreso?)preingreso.Estado : null,
             b.RespuestaD365Id, b.CreadaOffline,
             b.MotivoPesoManual, b.MotivoPesoManualDetalle,
+            b.MarcaPreIngreso,
             // Valores capturados: se unen por el CampoId ALMACENADO (sin filtro
             // VigenteHasta) para que un Campo retirado siga resolviendo. El join
             // a Maestro es un subquery escalar por columna (ReferenciaMaestro).
