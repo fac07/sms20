@@ -293,6 +293,38 @@ describe('sincronizarConfig — propagación del ingreso manual de peso (S2a)', 
     ])
   })
 
+  it('backfillea BasculaCentroId desde el GET de la báscula propia', async () => {
+    seedBasculaId()
+    const calls: string[] = []
+    const fetcher = fakeCentralConBascula(baseData(), calls, {
+      id: BASCULA_ID,
+      centroId: 'centro-de-la-bascula',
+      permiteIngresoManual: false,
+      pesoMinimoManual: null,
+      pesoMaximoManual: null,
+    })
+
+    await sincronizarConfig(db, { fetcher, baseUrl: BASE })
+
+    expect(leerConfig('BasculaCentroId')).toBe('centro-de-la-bascula')
+  })
+
+  it('un GET de báscula sin centroId no borra el BasculaCentroId ya conocido', async () => {
+    seedBasculaId()
+    db.prepare(`INSERT INTO ConfiguracionLocal (Clave, Valor) VALUES ('BasculaCentroId', 'previo')`).run()
+    const calls: string[] = []
+    const fetcher = fakeCentralConBascula(baseData(), calls, {
+      id: BASCULA_ID,
+      permiteIngresoManual: false,
+      pesoMinimoManual: null,
+      pesoMaximoManual: null,
+    })
+
+    await sincronizarConfig(db, { fetcher, baseUrl: BASE })
+
+    expect(leerConfig('BasculaCentroId')).toBe('previo')
+  })
+
   it('un 404 en el GET de la báscula propia no aborta el sync ni toca el default-deny', async () => {
     seedBasculaId()
     const calls: string[] = []

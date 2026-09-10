@@ -70,7 +70,8 @@ const SQL_CREAR_BOLETA = `
     RespuestaD365Id TEXT,
     CreadaOffline INTEGER NOT NULL,
     MotivoPesoManual TEXT,
-    MotivoPesoManualDetalle TEXT
+    MotivoPesoManualDetalle TEXT,
+    MarcaPreIngreso TEXT
   );
 `
 
@@ -82,7 +83,12 @@ const SQL_CREAR_BOLETA = `
 //       nullable, ingreso-manual-peso S2b). Aditivo: se agregan con
 //       `ALTER TABLE ADD COLUMN` en aplicarReshapeEsquemaLocal — sin recrear la
 //       tabla, sin pérdida de datos (a diferencia del salto v1->v2).
-const ESQUEMA_LOCAL_VERSION = '3'
+//  v4 = espejo local `PreIngreso` (cola-transporte, delta central→terminal) +
+//       Boleta gana `MarcaPreIngreso TEXT` (marca de revisión cuando el enlace
+//       se rechaza o el pre-ingreso se cancela después de enlazar). Aditivo:
+//       `CREATE TABLE IF NOT EXISTS` + `ALTER TABLE ADD COLUMN` idempotente vía
+//       `PRAGMA table_info` — un build viejo lo ignora y el pesaje no se toca.
+const ESQUEMA_LOCAL_VERSION = '4'
 
 /**
  * Guardia de versión del esquema local (decisión de diseño D2). SQLite no
@@ -147,6 +153,16 @@ function aplicarReshapeEsquemaLocal(database: Database.Database): void {
   }
   if (faltaColumna('MotivoPesoManualDetalle')) {
     database.exec(`ALTER TABLE Boleta ADD COLUMN MotivoPesoManualDetalle TEXT`)
+  }
+
+  // v3 -> v4 (cola-transporte): una sola columna aditiva nullable en Boleta para
+  // la marca de revisión del pre-ingreso. El espejo `PreIngreso` en sí es puro
+  // `CREATE TABLE IF NOT EXISTS` y vive en `SQL_ESQUEMA_LOCAL`. Se re-inspecciona
+  // `PRAGMA table_info` (no se reusa `columnasActuales`) porque los ALTER de
+  // arriba pudieron cambiar la forma de la tabla en esta misma corrida.
+  const columnasTrasV3 = database.prepare(`PRAGMA table_info(Boleta)`).all() as { name: string }[]
+  if (!columnasTrasV3.some((c) => c.name === 'MarcaPreIngreso')) {
+    database.exec(`ALTER TABLE Boleta ADD COLUMN MarcaPreIngreso TEXT`)
   }
 
   sellarVersion()
@@ -333,6 +349,38 @@ const SQL_ESQUEMA_LOCAL = `
       FormatoBoletaId TEXT,
       Activo INTEGER NOT NULL
     );
+
+    -- Espejo local de la cola de transporte central (backend/Domain/PreIngresos).
+    -- Alimentado SOLO por el delta central→terminal (preingreso-sync.ts) filtrado
+    -- por el centro de esta bascula, con marca de agua MAX(FechaModificacion) y
+    -- predicado estrictamente mayor (>) -- mismo patron que Maestro / config-sync,
+    -- sin watermark almacenado. Guid/enum/ISO-8601 como TEXT, pesos REAL, conteos
+    -- INTEGER. En modo delta el filtro de estado se ignora: Vinculado y
+    -- Cancelado tienen que llegar para que la fila salga de la cola de
+    -- pendientes de esta bascula.
+    CREATE TABLE IF NOT EXISTS PreIngreso (
+      Id TEXT PRIMARY KEY,
+      CentroId TEXT NOT NULL,
+      PilotoId TEXT,
+      TransportistaId TEXT,
+      EquipoId TEXT,
+      RegionId TEXT,
+      FincaId TEXT,
+      NumeroEnvio TEXT NOT NULL,
+      PesoEnviado REAL NOT NULL,
+      Racimos INTEGER,
+      Sacos INTEGER,
+      Estado TEXT NOT NULL,
+      BoletaId TEXT,
+      UsuarioCreacion TEXT NOT NULL,
+      UsuarioCancela TEXT,
+      MotivoCancelacion TEXT,
+      FechaCreacion TEXT NOT NULL,
+      FechaModificacion TEXT NOT NULL
+    );
+
+    CREATE INDEX IF NOT EXISTS IX_PreIngreso_Centro_Estado ON PreIngreso(CentroId, Estado);
+    CREATE INDEX IF NOT EXISTS IX_PreIngreso_NumeroEnvio ON PreIngreso(NumeroEnvio);
 `
 
 // Allow-list configurable de `TipoCatalogo` que la báscula puede coinar como
@@ -1907,4 +1955,213 @@ export function listarTiposMovimientoLocal(incluirInactivos = false): TipoMovimi
         .prepare('SELECT * FROM TipoMovimiento WHERE Activo = 1 ORDER BY Nombre')
         .all() as TipoMovimientoRow[])
   return rows.map(filaATipoMovimientoLocal)
+}
+
+// ---------------------------------------------------------------------------
+// PreIngreso — espejo local de la cola de transporte central (ver el CREATE
+// TABLE en SQL_ESQUEMA_LOCAL). El escritor (upsertPreIngresosLocal) lo usa
+// únicamente el delta-sync (preingreso-sync.ts); los lectores
+// (listarPreIngresosPendientesLocal / obtenerPreIngresoLocal) alimentan el
+// selector de pre-ingreso del pesaje offline. Direccion del sync: SIEMPRE
+// central→terminal, nunca al revés.
+// ---------------------------------------------------------------------------
+
+/** Marca de revisión que la ingesta central pone en la Boleta (enum central `MarcaPreIngreso`). */
+const MARCA_PREINGRESO_CANCELADO = 'PreIngresoCancelado'
+
+/** Espejo camelCase del `PreIngresoDto` central — shape idéntico al que baja el delta. */
+export interface PreIngresoLocal {
+  id: string
+  centroId: string
+  pilotoId: string | null
+  transportistaId: string | null
+  equipoId: string | null
+  regionId: string | null
+  fincaId: string | null
+  numeroEnvio: string
+  pesoEnviado: number
+  racimos: number | null
+  sacos: number | null
+  estado: string
+  boletaId: string | null
+  usuarioCreacion: string
+  usuarioCancela: string | null
+  motivoCancelacion: string | null
+  fechaCreacion: string
+  fechaModificacion: string
+}
+
+interface PreIngresoRow {
+  Id: string
+  CentroId: string
+  PilotoId: string | null
+  TransportistaId: string | null
+  EquipoId: string | null
+  RegionId: string | null
+  FincaId: string | null
+  NumeroEnvio: string
+  PesoEnviado: number
+  Racimos: number | null
+  Sacos: number | null
+  Estado: string
+  BoletaId: string | null
+  UsuarioCreacion: string
+  UsuarioCancela: string | null
+  MotivoCancelacion: string | null
+  FechaCreacion: string
+  FechaModificacion: string
+}
+
+function filaAPreIngresoLocal(row: PreIngresoRow): PreIngresoLocal {
+  return {
+    id: row.Id,
+    centroId: row.CentroId,
+    pilotoId: row.PilotoId,
+    transportistaId: row.TransportistaId,
+    equipoId: row.EquipoId,
+    regionId: row.RegionId,
+    fincaId: row.FincaId,
+    numeroEnvio: row.NumeroEnvio,
+    pesoEnviado: row.PesoEnviado,
+    racimos: row.Racimos,
+    sacos: row.Sacos,
+    estado: row.Estado,
+    boletaId: row.BoletaId,
+    usuarioCreacion: row.UsuarioCreacion,
+    usuarioCancela: row.UsuarioCancela,
+    motivoCancelacion: row.MotivoCancelacion,
+    fechaCreacion: row.FechaCreacion,
+    fechaModificacion: row.FechaModificacion,
+  }
+}
+
+/**
+ * Aplica la cancelación de uno o varios pre-ingresos sobre las boletas locales
+ * que ya los enlazaron estando offline: pone `MarcaPreIngreso='PreIngresoCancelado'`
+ * SOLO si la boleta no tiene ya un marcador (nunca pisa `VinculoRechazado`). La
+ * boleta sigue válida, conserva su `PreIngresoId` y sus pesos — es una marca de
+ * revisión para el admin, no una reversión (diseño D4).
+ *
+ * NO abre su propia transacción — se invoca desde dentro de la de
+ * `upsertPreIngresosLocal`, así el watermark (`MAX(FechaModificacion)`) no puede
+ * avanzar sin que la marca persista. Llamarla suelta (tests) también vale.
+ */
+export function marcarBoletasPreIngresoCancelado(preIngresoIds: readonly string[]): void {
+  const ids = [...new Set(preIngresoIds)].filter((id) => id.length > 0)
+  if (ids.length === 0) return
+
+  const marcadores = ids.map(() => '?').join(', ')
+  getDb()
+    .prepare(
+      `UPDATE Boleta SET MarcaPreIngreso = ?
+       WHERE PreIngresoId IN (${marcadores}) AND MarcaPreIngreso IS NULL`,
+    )
+    .run(MARCA_PREINGRESO_CANCELADO, ...ids)
+}
+
+/**
+ * Upsert en bloque del espejo de PreIngreso — toda la tanda comitea junto o
+ * nada (misma forma que `upsertMaestrosLocal`). La cancelación-apply corre
+ * DENTRO de la misma transacción: si marcar las boletas falla, el batch entero
+ * se revierte y el watermark no avanza.
+ */
+export function upsertPreIngresosLocal(preIngresos: readonly PreIngresoLocal[]): void {
+  if (preIngresos.length === 0) return
+
+  const upsert = getDb().prepare(
+    `INSERT INTO PreIngreso (
+      Id, CentroId, PilotoId, TransportistaId, EquipoId, RegionId, FincaId,
+      NumeroEnvio, PesoEnviado, Racimos, Sacos, Estado, BoletaId,
+      UsuarioCreacion, UsuarioCancela, MotivoCancelacion, FechaCreacion, FechaModificacion
+    ) VALUES (
+      @id, @centroId, @pilotoId, @transportistaId, @equipoId, @regionId, @fincaId,
+      @numeroEnvio, @pesoEnviado, @racimos, @sacos, @estado, @boletaId,
+      @usuarioCreacion, @usuarioCancela, @motivoCancelacion, @fechaCreacion, @fechaModificacion
+    )
+    ON CONFLICT(Id) DO UPDATE SET
+      CentroId = excluded.CentroId,
+      PilotoId = excluded.PilotoId,
+      TransportistaId = excluded.TransportistaId,
+      EquipoId = excluded.EquipoId,
+      RegionId = excluded.RegionId,
+      FincaId = excluded.FincaId,
+      NumeroEnvio = excluded.NumeroEnvio,
+      PesoEnviado = excluded.PesoEnviado,
+      Racimos = excluded.Racimos,
+      Sacos = excluded.Sacos,
+      Estado = excluded.Estado,
+      BoletaId = excluded.BoletaId,
+      UsuarioCreacion = excluded.UsuarioCreacion,
+      UsuarioCancela = excluded.UsuarioCancela,
+      MotivoCancelacion = excluded.MotivoCancelacion,
+      FechaCreacion = excluded.FechaCreacion,
+      FechaModificacion = excluded.FechaModificacion`,
+  )
+
+  const ejecutar = getDb().transaction((filas: readonly PreIngresoLocal[]): void => {
+    for (const p of filas) {
+      upsert.run({
+        id: p.id,
+        centroId: p.centroId,
+        pilotoId: p.pilotoId,
+        transportistaId: p.transportistaId,
+        equipoId: p.equipoId,
+        regionId: p.regionId,
+        fincaId: p.fincaId,
+        numeroEnvio: p.numeroEnvio,
+        pesoEnviado: p.pesoEnviado,
+        racimos: p.racimos,
+        sacos: p.sacos,
+        estado: p.estado,
+        boletaId: p.boletaId,
+        usuarioCreacion: p.usuarioCreacion,
+        usuarioCancela: p.usuarioCancela,
+        motivoCancelacion: p.motivoCancelacion,
+        fechaCreacion: p.fechaCreacion,
+        fechaModificacion: p.fechaModificacion,
+      })
+    }
+
+    const cancelados = filas.filter((p) => p.estado === 'Cancelado').map((p) => p.id)
+    marcarBoletasPreIngresoCancelado(cancelados)
+  })
+
+  ejecutar(preIngresos)
+}
+
+/**
+ * Read path del selector de pre-ingreso del pesaje — SOLO `Estado='Pendiente'`:
+ * una fila que el delta trajo `Vinculado` o `Cancelado` desaparece de la cola de
+ * esta báscula. `numeroEnvio` filtra por coincidencia parcial (no hace falta
+ * tipear el código exacto). Espejo vacío → `[]`, nunca lanza.
+ */
+export function listarPreIngresosPendientesLocal(numeroEnvio?: string): PreIngresoLocal[] {
+  const filtro = numeroEnvio?.trim()
+  const rows = filtro
+    ? (getDb()
+        .prepare(
+          `SELECT * FROM PreIngreso WHERE Estado = 'Pendiente' AND NumeroEnvio LIKE ? ESCAPE '\\'
+           ORDER BY NumeroEnvio`,
+        )
+        .all(`%${filtro.replace(/[\\%_]/g, '\\$&')}%`) as PreIngresoRow[])
+    : (getDb()
+        .prepare(`SELECT * FROM PreIngreso WHERE Estado = 'Pendiente' ORDER BY NumeroEnvio`)
+        .all() as PreIngresoRow[])
+  return rows.map(filaAPreIngresoLocal)
+}
+
+/** Lee una fila puntual del espejo de PreIngreso por Id (cualquier estado). */
+export function obtenerPreIngresoLocal(id: string): PreIngresoLocal | null {
+  const row = getDb().prepare('SELECT * FROM PreIngreso WHERE Id = ?').get(id) as
+    | PreIngresoRow
+    | undefined
+  return row ? filaAPreIngresoLocal(row) : null
+}
+
+/** Marca de agua del delta de PreIngreso — null si esta báscula nunca sincronizó nada todavía. */
+export function obtenerUltimaSincronizacionPreIngresos(): string | null {
+  const row = getDb().prepare('SELECT MAX(FechaModificacion) AS maximo FROM PreIngreso').get() as {
+    maximo: string | null
+  }
+  return row.maximo
 }

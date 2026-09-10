@@ -32,6 +32,7 @@ import type { OrigenPeso } from './peso-provider'
 import { despacharOutboxPendiente } from './outbox-dispatcher'
 import { sincronizarMaestros } from './maestros-sync'
 import { obtenerEstadoConfigSync, sincronizarConfigLocal } from './config-sync'
+import { sincronizarPreIngresosLocal } from './preingreso-sync'
 
 // Mismo origen hardcodeado que ya usan outbox-dispatcher.ts y los servicios
 // Angular — cada archivo tiene su propia copia a propósito (no hay un módulo
@@ -574,6 +575,21 @@ export function startLocalServer(port: number, esDev: boolean): Server {
     }
   })
 
+  // Cola de transporte (PreIngreso) — "Sincronizar ahora" del delta
+  // central→terminal, mismo patrón que /config/sincronizar: no dev-gated, de
+  // solo lectura contra Central, comparte la guardia `enVuelo`. El renderer lo
+  // dispara al entrar a `/pesaje` (eager) además del interval de 60s en main.ts.
+  // Un fallo acá no compromete nada local (el watermark no avanza sin batch
+  // persistido) — 502 y listo.
+  app.post('/preingreso/sincronizar', async (_req, res) => {
+    try {
+      const resultado = await sincronizarPreIngresosLocal()
+      res.json(resultado)
+    } catch (err) {
+      res.status(502).json({ error: (err as Error).message })
+    }
+  })
+
   app.post('/aprovisionamiento', async (req, res) => {
     const { codigo } = req.body as { codigo?: string }
     if (!codigo) {
@@ -626,6 +642,10 @@ export function startLocalServer(port: number, esDev: boolean): Server {
 
     setConfig('BasculaId', dto.basculaId)
     setConfig('BasculaCodigo', dto.basculaCodigo)
+    // Centro de la báscula — prereq del delta de PreIngreso (cola-transporte).
+    // Antes se recibía en el DTO y se descartaba; sin él preingreso-sync no
+    // puede scopear y se saltea en silencio.
+    setConfig('BasculaCentroId', dto.centroId)
     setConfig('BasculaTipoConexion', dto.tipoConexion)
     setConfig('BasculaPuerto', dto.puerto ?? '')
     setConfig('BasculaIp', dto.ip ?? '')
