@@ -77,6 +77,11 @@ interface TipoMovimientoDto {
 // `GET /api/basculas/{id}` ya existía; S1a le sumó estos 3 campos.
 interface BasculaPropiaDto {
   id: string
+  // Centro de esta báscula — prereq del delta de PreIngreso (cola-transporte).
+  // `GET /api/basculas/{id}` ya lo expone (`BasculaDto.CentroId`); acá se
+  // backfillea `ConfiguracionLocal.BasculaCentroId` en terminales ya
+  // aprovisionadas antes del bump que lo siembra en cold-start.
+  centroId?: string | null
   permiteIngresoManual: boolean
   pesoMinimoManual: number | null
   pesoMaximoManual: number | null
@@ -332,6 +337,16 @@ export async function sincronizarConfig(
         pesoMinimoManual: ingresoManual.pesoMinimoManual ?? null,
         pesoMaximoManual: ingresoManual.pesoMaximoManual ?? null,
       })
+
+      // Backfill del centro de la báscula (prereq del delta de PreIngreso). Solo
+      // se escribe si el DTO trae `centroId`: un central viejo sin el campo no
+      // borra un `BasculaCentroId` ya conocido.
+      if (typeof ingresoManual.centroId === 'string' && ingresoManual.centroId.length > 0) {
+        db.prepare(
+          `INSERT INTO ConfiguracionLocal (Clave, Valor) VALUES ('BasculaCentroId', @valor)
+           ON CONFLICT(Clave) DO UPDATE SET Valor = excluded.Valor`,
+        ).run({ valor: ingresoManual.centroId })
+      }
     }
   })
   persistir()

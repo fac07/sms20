@@ -5,6 +5,7 @@ import { getDb } from './db'
 import { despacharOutboxPendiente } from './outbox-dispatcher'
 import { sincronizarMaestros } from './maestros-sync'
 import { sincronizarConfigLocal } from './config-sync'
+import { sincronizarPreIngresosLocal } from './preingreso-sync'
 
 // La UI (renderer) no toca SQLite ni el puerto serial directamente — todo pasa
 // por este servidor HTTP local. Es el mismo contrato que usará el backend
@@ -29,6 +30,12 @@ const MAESTROS_SYNC_INTERVAL_MS = 60_000
 // que el Outbox. Un fallo acá NUNCA bloquea la creación de boletas: la báscula
 // sigue trabajando contra el último caché de config bueno.
 const CONFIG_SYNC_INTERVAL_MS = 60_000
+
+// Delta de la cola de transporte (PreIngreso) — misma cadencia y criterio que
+// Maestros / Config: central→terminal, por marca de agua, menos urgente que el
+// Outbox. Un fallo acá NUNCA bloquea el pesaje: la báscula sigue con el último
+// espejo bueno de pre-ingresos. Sin `BasculaCentroId` el sync se saltea solo.
+const PREINGRESO_SYNC_INTERVAL_MS = 60_000
 
 let mainWindow: BrowserWindow | null = null
 
@@ -66,6 +73,13 @@ app.whenReady().then(() => {
     console.error('Error en el sync de configuración inicial:', err),
   )
 
+  // Disparo eager del delta de PreIngreso al arrancar: la cola de transporte
+  // queda poblada en segundos en vez de esperar el primer tick de 60s.
+  // Comparte la guardia `enVuelo` con el interval y con la ruta de disparo.
+  sincronizarPreIngresosLocal().catch((err) =>
+    console.error('Error en el sync inicial de pre-ingresos:', err),
+  )
+
   setInterval(() => {
     despacharOutboxPendiente().catch((err) => console.error('Error despachando outbox:', err))
   }, DISPATCH_INTERVAL_MS)
@@ -77,6 +91,12 @@ app.whenReady().then(() => {
   setInterval(() => {
     sincronizarConfigLocal().catch((err) => console.error('Error sincronizando configuración:', err))
   }, CONFIG_SYNC_INTERVAL_MS)
+
+  setInterval(() => {
+    sincronizarPreIngresosLocal().catch((err) =>
+      console.error('Error sincronizando pre-ingresos:', err),
+    )
+  }, PREINGRESO_SYNC_INTERVAL_MS)
 
   createWindow()
 
