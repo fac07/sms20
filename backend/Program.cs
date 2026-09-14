@@ -9,6 +9,7 @@ using SmsBackend.Domain.Configuracion;
 using SmsBackend.Domain.Maestros;
 using SmsBackend.Domain.PreIngresos;
 using SmsBackend.Domain.TiposMovimiento;
+using SmsBackend.Domain.Transporte;
 
 var builder = WebApplication.CreateBuilder(args);
 
@@ -87,6 +88,7 @@ app.MapMaestros();
 app.MapBasculas();
 app.MapBoletas();
 app.MapPreIngresos();
+app.MapVinculosPilotoTransportista();
 app.MapSecciones();
 app.MapCampos();
 

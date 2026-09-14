@@ -6,6 +6,7 @@ using SmsBackend.Domain.Configuracion;
 using SmsBackend.Domain.Maestros;
 using SmsBackend.Domain.PreIngresos;
 using SmsBackend.Domain.TiposMovimiento;
+using SmsBackend.Domain.Transporte;
 
 namespace SmsBackend.Data;
 
@@ -28,6 +29,8 @@ public class SmsDbContext(DbContextOptions<SmsDbContext> options) : DbContext(op
     public DbSet<TipoMovimientoSeccion> TipoMovimientoSecciones => Set<TipoMovimientoSeccion>();
 
     public DbSet<BoletaValorCampo> BoletaValores => Set<BoletaValorCampo>();
+
+    public DbSet<VinculoPilotoTransportista> VinculosPilotoTransportista => Set<VinculoPilotoTransportista>();
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
