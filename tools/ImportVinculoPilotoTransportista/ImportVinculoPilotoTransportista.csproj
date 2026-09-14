@@ -1,0 +1,21 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <TargetFramework>net8.0</TargetFramework>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <RootNamespace>ImportVinculoPilotoTransportista</RootNamespace>
+  </PropertyGroup>
+
+  <!--
+    Deploy-time ops tool (design "Migration/Rollout", tasks G5) — NOT part of
+    the running API. It references SmsBackend directly to reuse SmsDbContext
+    and the VinculoPilotoTransportista/Maestro entities instead of duplicating
+    column names/types by hand in raw SQL. See Program.cs for usage.
+  -->
+  <ItemGroup>
+    <ProjectReference Include="../../backend/SmsBackend.csproj" />
+  </ItemGroup>
+
+</Project>
