@@ -6,6 +6,10 @@ import {
   guardarConfigIngresoManual,
   inicializarEsquemaLocal,
   leerConfigIngresoManual,
+  listarOutboxLocal,
+  obtenerBoletaLocal,
+  upsertPreIngresosLocal,
+  type PreIngresoLocal,
 } from './db'
 import { startLocalServer, stopLocalServer } from './local-server'
 
@@ -134,6 +138,102 @@ describe('GET /boletas — proyección local de consulta', () => {
 
     const ausente = await fetch(`${baseUrl}/boletas/no-existe`)
     expect(ausente.status).toBe(404)
+  })
+})
+
+describe('cola de transporte (PreIngreso) — read path del selector de pesaje (slice 4)', () => {
+  const pre = (
+    id: string,
+    estado: string,
+    numeroEnvio: string,
+    extra: Partial<PreIngresoLocal> = {},
+  ): PreIngresoLocal => ({
+    id,
+    centroId: 'centro-1',
+    pilotoId: null,
+    transportistaId: null,
+    equipoId: null,
+    regionId: null,
+    fincaId: null,
+    numeroEnvio,
+    pesoEnviado: 20000,
+    racimos: 100,
+    sacos: null,
+    estado,
+    boletaId: null,
+    usuarioCreacion: 'admin',
+    usuarioCancela: null,
+    motivoCancelacion: null,
+    fechaCreacion: '2026-09-01T00:00:00Z',
+    fechaModificacion: '2026-09-01T00:00:00Z',
+    ...extra,
+  })
+
+  beforeEach(async () => {
+    db.exec(`
+      INSERT INTO ConfiguracionLocal (Clave, Valor) VALUES ('BasculaId', 'ba-1'), ('BasculaCodigo', 'B01')
+      ON CONFLICT(Clave) DO UPDATE SET Valor = excluded.Valor;
+      INSERT INTO TipoMovimiento (Id, Codigo, Nombre, Prefijo, Direccion, OperacionD365, GeneraQR, FormatoBoletaId, Activo)
+        VALUES ('tm-1', 'REC', 'Recepcion', 'REC', 'Entrada', NULL, 0, NULL, 1);
+    `)
+    upsertPreIngresosLocal([
+      pre('p1', 'Pendiente', 'ENV-2026-001'),
+      pre('p2', 'Pendiente', 'ENV-2026-777'),
+      pre('p3', 'Vinculado', 'ENV-2026-999'),
+    ])
+    await arrancarServidor()
+  })
+
+  it('GET /preingreso sirve solo los Pendiente del espejo local', async () => {
+    const res = await fetch(`${baseUrl}/preingreso?estado=Pendiente`)
+    expect(res.status).toBe(200)
+    const cuerpo = (await res.json()) as Array<{ id: string; numeroEnvio: string }>
+    expect(cuerpo.map((p) => p.id).sort()).toEqual(['p1', 'p2'])
+  })
+
+  it('GET /preingreso?numeroEnvio= filtra por coincidencia parcial', async () => {
+    const res = await fetch(`${baseUrl}/preingreso?numeroEnvio=001`)
+    const cuerpo = (await res.json()) as Array<{ id: string }>
+    expect(cuerpo.map((p) => p.id)).toEqual(['p1'])
+  })
+
+  it('GET /preingreso/:id devuelve el registro y conserva el 404', async () => {
+    const encontrado = await fetch(`${baseUrl}/preingreso/p1`)
+    expect(encontrado.status).toBe(200)
+    expect((await encontrado.json()) as Record<string, unknown>).toMatchObject({
+      id: 'p1',
+      numeroEnvio: 'ENV-2026-001',
+      pesoEnviado: 20000,
+      estado: 'Pendiente',
+    })
+
+    const ausente = await fetch(`${baseUrl}/preingreso/no-existe`)
+    expect(ausente.status).toBe(404)
+  })
+
+  it('POST /boletas reenvía preIngresoId a crearBoletaLocal y el payload del Outbox lo lleva', async () => {
+    const res = await fetch(`${baseUrl}/boletas`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        numeroBoletaPrefijo: 'REC',
+        codigoBascula: 'B01',
+        tipoMovimientoId: 'tm-1',
+        pesoIngreso: 1000,
+        origenPesoIngreso: 'Bascula',
+        usuarioIngreso: 'operador',
+        preIngresoId: 'p1',
+      }),
+    })
+    expect(res.status).toBe(201)
+    const boleta = (await res.json()) as { id: string }
+
+    expect(obtenerBoletaLocal(boleta.id)?.preIngresoId).toBe('p1')
+    const evento = listarOutboxLocal().find(
+      (e) => e.operacion === 'Crear' && e.entidadId === boleta.id,
+    )
+    const payload = JSON.parse(evento!.payload) as { preIngresoId?: string | null }
+    expect(payload.preIngresoId).toBe('p1')
   })
 })
 

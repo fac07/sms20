@@ -14,11 +14,13 @@ import {
   listarEventosTrabados,
   listarMaestrosLocal,
   listarOutboxLocal,
+  listarPreIngresosPendientesLocal,
   listarTiposMovimientoLocal,
   MOTIVOS_PESO_MANUAL,
   obtenerBoletaDtoLocal,
   obtenerBoletaLocal,
   obtenerConfigIngresoManual,
+  obtenerPreIngresoLocal,
   resolverCamposLocal,
   setConfig,
   tiposProvisionalesHabilitados,
@@ -275,6 +277,7 @@ export function startLocalServer(port: number, esDev: boolean): Server {
       creadaOffline?: boolean
       motivoPesoManual?: string
       motivoPesoManualDetalle?: string
+      preIngresoId?: string | null
       valores?: unknown
     }
 
@@ -331,6 +334,11 @@ export function startLocalServer(port: number, esDev: boolean): Server {
           : null,
       motivoPesoManualDetalle:
         origenPesoIngreso === 'Manual' ? (body.motivoPesoManualDetalle ?? null) : null,
+      // Enlace a la cola de transporte (cola-transporte): lo manda el selector de
+      // pesaje al elegir un pre-ingreso; ausente cuando se pesa sin cola. Se
+      // reenvía tal cual — `crearBoletaLocal` lo persiste y el payload del Outbox
+      // lo lleva a central para la resolución de carrera.
+      preIngresoId: body.preIngresoId ?? null,
       valores,
     })
 
@@ -588,6 +596,28 @@ export function startLocalServer(port: number, esDev: boolean): Server {
     } catch (err) {
       res.status(502).json({ error: (err as Error).message })
     }
+  })
+
+  // Cola de transporte (PreIngreso) — read path del selector de pre-ingreso del
+  // pesaje, resuelto 100% contra el espejo SQLite local (sin llamada a central),
+  // mismo posture que `GET /maestros`. Solo devuelve `Estado='Pendiente'`: una
+  // fila que el delta trajo `Vinculado`/`Cancelado` ya salió de la cola de esta
+  // báscula. `?numeroEnvio=` filtra por coincidencia parcial (no hace falta el
+  // código exacto). El parámetro `estado` se acepta por compatibilidad con el
+  // contrato pero el espejo local siempre sirve la cola pendiente. Espejo vacío
+  // (nunca sincronizado) → `200 []`, nunca 5xx.
+  app.get('/preingreso', (req, res) => {
+    const numeroEnvio = req.query.numeroEnvio as string | undefined
+    res.json(listarPreIngresosPendientesLocal(numeroEnvio))
+  })
+
+  app.get('/preingreso/:id', (req, res) => {
+    const preIngreso = obtenerPreIngresoLocal(req.params.id)
+    if (!preIngreso) {
+      res.status(404).json({ error: 'No existe ese pre-ingreso.' })
+      return
+    }
+    res.json(preIngreso)
   })
 
   app.post('/aprovisionamiento', async (req, res) => {

@@ -958,6 +958,11 @@ export function crearBoletaLocal(
     // ya validó motivo+detalle+rango contra la config local antes de llamar acá.
     motivoPesoManual?: MotivoPesoManual | null
     motivoPesoManualDetalle?: string | null
+    // Enlace opcional a la cola de transporte (cola-transporte). El selector de
+    // pesaje lo pasa al elegir un pre-ingreso; ausente/null cuando se pesa sin
+    // cola. Es write-once acá (diseño D2) y viaja verbatim en el payload 'Crear'
+    // del Outbox — `POST /api/boletas/sync` lo resuelve contra la carrera central.
+    preIngresoId?: string | null
   },
 ): BoletaLocal {
   const id = crypto.randomUUID()
@@ -985,12 +990,12 @@ export function crearBoletaLocal(
           Id, NumeroBoleta, TipoMovimientoId, Estado, EstadoSync,
           PesoIngreso, OrigenPesoIngreso,
           FechaHoraIngreso, UsuarioIngreso, CreadaOffline,
-          MotivoPesoManual, MotivoPesoManualDetalle
+          MotivoPesoManual, MotivoPesoManualDetalle, PreIngresoId
         ) VALUES (
           @id, @numeroBoleta, @tipoMovimientoId, @estado, @estadoSync,
           @pesoIngreso, @origenPesoIngreso,
           @fechaHoraIngreso, @usuarioIngreso, @creadaOffline,
-          @motivoPesoManual, @motivoPesoManualDetalle
+          @motivoPesoManual, @motivoPesoManualDetalle, @preIngresoId
         )`,
       )
       .run({
@@ -1009,6 +1014,9 @@ export function crearBoletaLocal(
           input.origenPesoIngreso === 'Manual' ? (input.motivoPesoManual ?? null) : null,
         motivoPesoManualDetalle:
           input.origenPesoIngreso === 'Manual' ? (input.motivoPesoManualDetalle ?? null) : null,
+        // Enlace a la cola de transporte — se persiste tal cual llega (o null).
+        // Better-sqlite3 no acepta `undefined` en un named param, de ahí el `?? null`.
+        preIngresoId: input.preIngresoId ?? null,
       })
 
     // Filas BoletaValorCampo (EAV tipado) en la MISMA transacción que el
