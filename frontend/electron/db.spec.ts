@@ -113,6 +113,58 @@ describe('proyección local de consulta de boletas', () => {
   })
 })
 
+describe('proyección local del enlace de pre-ingreso en consulta (cola-transporte slice 6)', () => {
+  beforeEach(() => {
+    sembrarBoletaConsulta()
+    upsertPreIngresosLocal([
+      {
+        id: 'pre-1',
+        centroId: 'centro-1',
+        pilotoId: null,
+        transportistaId: null,
+        equipoId: null,
+        regionId: null,
+        fincaId: null,
+        numeroEnvio: 'ENV-2024-001',
+        pesoEnviado: 20000,
+        racimos: 100,
+        sacos: null,
+        estado: 'Vinculado',
+        boletaId: 'b-1',
+        usuarioCreacion: 'admin',
+        usuarioCancela: null,
+        motivoCancelacion: null,
+        fechaCreacion: '2026-09-10T00:00:00Z',
+        fechaModificacion: '2026-09-10T00:00:00Z',
+      },
+    ])
+    db.prepare(`UPDATE Boleta SET PreIngresoId = 'pre-1' WHERE Id = 'b-1'`).run()
+  })
+
+  it('obtenerBoletaDtoLocal proyecta marcaPreIngreso (columna ya existía, slice 3 la dejó sin proyectar)', () => {
+    db.prepare(`UPDATE Boleta SET MarcaPreIngreso = 'PreIngresoCancelado' WHERE Id = 'b-1'`).run()
+
+    const boleta = obtenerBoletaDtoLocal('b-1')
+
+    expect(boleta?.marcaPreIngreso).toBe('PreIngresoCancelado')
+  })
+
+  it('obtenerBoletaDtoLocal proyecta el número de envío y el estado del pre-ingreso enlazado', () => {
+    const boleta = obtenerBoletaDtoLocal('b-1')
+
+    expect(boleta?.preIngresoNumeroEnvio).toBe('ENV-2024-001')
+    expect(boleta?.preIngresoEstado).toBe('Vinculado')
+  })
+
+  it('sin enlace, marcaPreIngreso/preIngresoNumeroEnvio/preIngresoEstado son null', () => {
+    const boleta = obtenerBoletaDtoLocal('b-2')
+
+    expect(boleta?.marcaPreIngreso).toBeNull()
+    expect(boleta?.preIngresoNumeroEnvio).toBeNull()
+    expect(boleta?.preIngresoEstado).toBeNull()
+  })
+})
+
 describe('MOTIVOS_PESO_MANUAL', () => {
   it('es el catálogo cerrado que matchea el enum central MotivoPesoManual verbatim', () => {
     expect(MOTIVOS_PESO_MANUAL).toEqual([

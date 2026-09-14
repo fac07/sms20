@@ -79,3 +79,53 @@ export function armarValores(capturados: readonly ControlCapturado[]): ValorCamp
   }
   return valores;
 }
+
+/**
+ * Subconjunto de `PreIngresoLocal` (local-server.service.ts) que el prefill
+ * necesita — declarado acá en vez de importado para no acoplar este módulo
+ * puro al shape completo del pre-ingreso ni al servicio HTTP.
+ */
+export interface PreIngresoPrefillData {
+  pilotoId: string | null;
+  transportistaId: string | null;
+  equipoId: string | null;
+  regionId: string | null;
+  fincaId: string | null;
+}
+
+/**
+ * `campoClave` (sección estándar `transporte`/`detalle_fruta`, ver
+ * `RESERVED_CLAVES` en configuracion.models.ts) -> clave del pre-ingreso que
+ * lo prefillea. `region` no tiene una clave reservada declarada todavía pero
+ * el diseño (#175) lo incluye igual entre los 5 campos prefilleables.
+ */
+const CLAVE_A_CAMPO_PREINGRESO: Record<string, keyof PreIngresoPrefillData> = {
+  piloto: 'pilotoId',
+  transportista: 'transportistaId',
+  equipo: 'equipoId',
+  region: 'regionId',
+  finca: 'fincaId',
+};
+
+/**
+ * Arma el mapa `campoId -> valor` para prefillear piloto/transportista/
+ * equipo/región/finca desde el pre-ingreso seleccionado en el selector de
+ * Pesaje. Solo incluye campos aplicables cuya `campoClave` coincide con una
+ * de las 5 claves del pre-ingreso, y solo cuando ese valor no es null. Pura:
+ * el llamador decide cómo volcar el mapa a los FormControls — deben quedar
+ * EDITABLES, nunca disabled (diseño: "la observación del operador gana sobre
+ * la declaración de logística").
+ */
+export function valoresPrefillPreIngreso(
+  campos: readonly CampoAplicable[],
+  preIngreso: PreIngresoPrefillData,
+): Record<string, string> {
+  const valores: Record<string, string> = {};
+  for (const campo of campos) {
+    const clave = CLAVE_A_CAMPO_PREINGRESO[campo.campoClave];
+    if (clave === undefined) continue;
+    const valor = preIngreso[clave];
+    if (valor !== null) valores[campo.campoId] = valor;
+  }
+  return valores;
+}

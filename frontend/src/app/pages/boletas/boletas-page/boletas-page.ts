@@ -18,6 +18,20 @@ import { ValorCampoLeidoDto } from '../../../api/configuracion.models';
 import { etiquetaMotivoPesoManual } from '../../../api/motivo-peso-manual';
 import { agruparValores } from './valores-agrupados';
 
+/**
+ * `MarcaPreIngreso` central (backend/Domain/Boletas/MarcaPreIngreso.cs) — marca
+ * de revisión no bloqueante, nunca cambia estado/pesos/validez de la boleta.
+ */
+const ETIQUETAS_MARCA_PREINGRESO: Record<string, string> = {
+  VinculoRechazado: 'Vínculo rechazado',
+  PreIngresoCancelado: 'Pre-ingreso cancelado',
+};
+
+/** Etiqueta legible de una `marcaPreIngreso`; cae al valor crudo si no se reconoce. */
+export function etiquetaMarcaPreIngreso(marca: string): string {
+  return ETIQUETAS_MARCA_PREINGRESO[marca] ?? marca;
+}
+
 @Component({
   imports: [
     CommonModule,
@@ -49,6 +63,7 @@ export class BoletasPage {
   readonly detalle = signal<BoletaDto | null>(null);
 
   readonly etiquetaMotivo = etiquetaMotivoPesoManual;
+  readonly etiquetaMarca = etiquetaMarcaPreIngreso;
 
   // Valores del detalle plegados en secciones -> ocurrencias. El backend ya
   // entrega `valores` ordenado por Seccion.Orden, Campo.Orden, Ocurrencia; el
@@ -97,6 +112,11 @@ export class BoletasPage {
 
   verDetalle(boleta: BoletaDto): void {
     this.detalle.set(boleta);
+  }
+
+  /** Gate de la sección "Cola de transporte" del detalle — hay enlace a un pre-ingreso. */
+  tieneEnlacePreIngreso(boleta: BoletaDto): boolean {
+    return boleta.preIngresoId !== null;
   }
 
   cerrarDetalle(): void {

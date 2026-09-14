@@ -60,6 +60,66 @@
 
   <ng-container *ngTemplateOutlet="bloqueIngresoManual"></ng-container>
 
+  <div class="preingreso">
+    @if (preIngresoSeleccionado(); as p) {
+      <nz-alert
+        nzType="success"
+        nzShowIcon
+        class="preingreso__seleccionado"
+        [nzMessage]="'Pre-ingreso vinculado: ' + p.numeroEnvio"
+        [nzDescription]="tplQuitarPreIngreso"
+      ></nz-alert>
+      <ng-template #tplQuitarPreIngreso>
+        <button nz-button nzType="link" nzSize="small" (click)="limpiarPreIngreso()">
+          Quitar
+        </button>
+      </ng-template>
+    } @else {
+      <nz-form-item>
+        <nz-form-label>Número de envío (pre-ingreso)</nz-form-label>
+        <nz-form-control>
+          <input
+            nz-input
+            [formControl]="filtroNumeroEnvioCtrl"
+            placeholder="Filtrar la cola de transporte por número de envío"
+          />
+        </nz-form-control>
+      </nz-form-item>
+      @if (pendientesPreIngreso().length > 0) {
+        <nz-table
+          #tablaPreIngreso
+          [nzData]="pendientesPreIngreso()"
+          [nzShowPagination]="false"
+          [nzPageSize]="5"
+          class="preingreso__tabla"
+        >
+          <thead>
+            <tr>
+              <th>N° de envío</th>
+              <th nzAlign="right">Peso enviado</th>
+              <th></th>
+            </tr>
+          </thead>
+          <tbody>
+            @for (p of tablaPreIngreso.data; track p.id) {
+              <tr>
+                <td>{{ p.numeroEnvio }}</td>
+                <td class="pesos">{{ p.pesoEnviado | number: '1.2-2' }}</td>
+                <td>
+                  <button nz-button nzType="link" nzSize="small" (click)="seleccionarPreIngreso(p)">
+                    Seleccionar
+                  </button>
+                </td>
+              </tr>
+            }
+          </tbody>
+        </nz-table>
+      } @else {
+        <p class="preingreso__vacio">No hay pre-ingresos pendientes para este centro.</p>
+      }
+    }
+  </div>
+
   <form nz-form nzLayout="vertical" class="form-boleta">
     <nz-form-item>
       <nz-form-label nzRequired>Tipo de movimiento</nz-form-label>
@@ -330,6 +390,19 @@
           {{ lecturaPeso().origen ?? 'sin lectura' }}
         </nz-tag>
       </div>
+
+      @if (advertenciaPesoPreIngreso(); as adv) {
+        <nz-alert
+          nzType="warning"
+          nzShowIcon
+          class="alerta-peso-preingreso"
+          nzMessage="El peso neto difiere del peso declarado en el pre-ingreso."
+          [nzDescription]="
+            'Declarado: ' + (adv.pesoEnviado | number: '1.2-2') + ' kg — Neto estimado: ' +
+            (adv.pesoNeto | number: '1.2-2') + ' kg. Podés cerrar la boleta igual.'
+          "
+        ></nz-alert>
+      }
 
       <ng-container *ngTemplateOutlet="bloqueIngresoManual"></ng-container>
     }

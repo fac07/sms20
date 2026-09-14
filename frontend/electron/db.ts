@@ -654,6 +654,11 @@ export interface BoletaLocal {
   // Outbox — `POST /api/boletas/sync` lo lee con esa misma clave.
   motivoPesoManual: MotivoPesoManual | null
   motivoPesoManualDetalle: string | null
+  // Marca de revisión no bloqueante que deja la ingesta central cuando el
+  // enlace no se respetó tal cual (`VinculoRechazado`) o el pre-ingreso se
+  // canceló después de enlazar offline (`PreIngresoCancelado`). La columna es
+  // aditiva desde el v3→v4 reshape (slice 3); acá se proyecta por primera vez.
+  marcaPreIngreso: string | null
 }
 
 /** Proyección de lectura de un valor EAV, compatible con ValorCampoLeidoDto. */
@@ -672,6 +677,12 @@ export interface BoletaDtoLocal extends BoletaLocal {
   basculaId: string
   basculaCodigo: string | null
   tipoMovimientoNombre: string | null
+  // Resueltos por join contra el espejo local `PreIngreso` (ver
+  // `obtenerPreIngresoLocal`) cuando `preIngresoId` no es null — espejo del
+  // `join ... into ... DefaultIfEmpty()` que hace `Proyectar` en central
+  // (BoletaEndpoints.cs). Null sin enlace.
+  preIngresoNumeroEnvio: string | null
+  preIngresoEstado: string | null
   valores: ValorCampoLeidoLocal[]
 }
 
@@ -704,6 +715,7 @@ interface BoletaRow {
   CreadaOffline: number
   MotivoPesoManual: MotivoPesoManual | null
   MotivoPesoManualDetalle: string | null
+  MarcaPreIngreso: string | null
 }
 
 function filaABoletaLocal(row: BoletaRow): BoletaLocal {
@@ -734,6 +746,7 @@ function filaABoletaLocal(row: BoletaRow): BoletaLocal {
     creadaOffline: Boolean(row.CreadaOffline),
     motivoPesoManual: row.MotivoPesoManual,
     motivoPesoManualDetalle: row.MotivoPesoManualDetalle,
+    marcaPreIngreso: row.MarcaPreIngreso,
   }
 }
 
@@ -756,11 +769,18 @@ function proyectarBoletaLocal(boleta: BoletaLocal): BoletaDtoLocal {
     .prepare('SELECT Nombre FROM TipoMovimiento WHERE Id = ?')
     .get(boleta.tipoMovimientoId) as { Nombre: string } | undefined
 
+  // Join contra el espejo local PreIngreso — solo cuando hay enlace. Nunca
+  // llama a central: el mismo espejo que alimenta el selector de Pesaje.
+  const preIngreso =
+    boleta.preIngresoId !== null ? obtenerPreIngresoLocal(boleta.preIngresoId) : null
+
   return {
     ...boleta,
     basculaId: getConfig('BasculaId') ?? '',
     basculaCodigo: getConfig('BasculaCodigo') ?? null,
     tipoMovimientoNombre: tipoMovimiento?.Nombre ?? null,
+    preIngresoNumeroEnvio: preIngreso?.numeroEnvio ?? null,
+    preIngresoEstado: preIngreso?.estado ?? null,
     valores: listarValoresLeidosLocal(boleta.id),
   }
 }
@@ -950,6 +970,7 @@ export function crearBoletaLocal(
     | 'respuestaD365Id'
     | 'motivoPesoManual'
     | 'motivoPesoManualDetalle'
+    | 'marcaPreIngreso'
   > & {
     prefijo: string
     codigoBascula: string

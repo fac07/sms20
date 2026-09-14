@@ -109,6 +109,39 @@ export interface CrearBoletaInput {
   // la autoridad de enforcement — devuelve 422 si falta o está fuera de rango.
   motivoPesoManual?: MotivoPesoManual;
   motivoPesoManualDetalle?: string | null;
+  // Enlace opcional a la cola de transporte (cola-transporte, slice 6): el
+  // selector de pre-ingreso de Pesaje lo setea al elegir un pendiente; null
+  // cuando se pesa sin cola. Viaja verbatim al servidor local
+  // (`crearBoletaLocal`, ya lo persiste desde slice 4) y de ahí al payload
+  // 'Crear' del Outbox.
+  preIngresoId?: string | null;
+}
+
+/**
+ * Espejo local del `PreIngresoDto` central (ver `PreIngresoLocal` en
+ * frontend/electron/db.ts) — shape idéntico al que sirve `GET /preingreso`
+ * del servidor local, resuelto 100% contra el espejo SQLite (sin llamada a
+ * central).
+ */
+export interface PreIngresoLocal {
+  id: string;
+  centroId: string;
+  pilotoId: string | null;
+  transportistaId: string | null;
+  equipoId: string | null;
+  regionId: string | null;
+  fincaId: string | null;
+  numeroEnvio: string;
+  pesoEnviado: number;
+  racimos: number | null;
+  sacos: number | null;
+  estado: string;
+  boletaId: string | null;
+  usuarioCreacion: string;
+  usuarioCancela: string | null;
+  motivoCancelacion: string | null;
+  fechaCreacion: string;
+  fechaModificacion: string;
 }
 
 export interface CerrarBoletaInput {
@@ -260,5 +293,26 @@ export class LocalServerService {
   // bloqueante de la pantalla de Pesaje.
   alertasOutbox(): Observable<AlertasOutbox> {
     return this.http.get<AlertasOutbox>(`${LOCAL_SERVER_URL}/outbox/alertas`);
+  }
+
+  // Cola de transporte (PreIngreso) — read path del selector de pesaje,
+  // resuelto contra el espejo local (ver GET /preingreso en local-server.ts:
+  // solo Estado=Pendiente). `numeroEnvio` filtra por coincidencia parcial.
+  listarPreIngresosPendientes(numeroEnvio?: string): Observable<PreIngresoLocal[]> {
+    const params = numeroEnvio ? `?numeroEnvio=${encodeURIComponent(numeroEnvio)}` : '';
+    return this.http.get<PreIngresoLocal[]>(`${LOCAL_SERVER_URL}/preingreso${params}`);
+  }
+
+  // Detalle puntual de un pre-ingreso (cualquier estado) — usado al cerrar una
+  // boleta enlazada para comparar `PesoEnviado` contra el peso neto real.
+  preIngreso(id: string): Observable<PreIngresoLocal> {
+    return this.http.get<PreIngresoLocal>(`${LOCAL_SERVER_URL}/preingreso/${id}`);
+  }
+
+  // Dispara el delta-sync de la cola de transporte sin esperar el próximo tick
+  // de 60s — mismo contrato que sincronizarConfig(): coalesce contra un sync
+  // en vuelo, un fallo no compromete el espejo local.
+  sincronizarPreIngreso(): Observable<{ descargados: number }> {
+    return this.http.post<{ descargados: number }>(`${LOCAL_SERVER_URL}/preingreso/sincronizar`, {});
   }
 }

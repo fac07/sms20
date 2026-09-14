@@ -53,6 +53,15 @@ export interface BoletaDto {
   boletaOrigenId: string | null;
   basculaSalidaId: string | null;
   preIngresoId: string | null;
+  // Cola de transporte (cola-transporte, slice 6): número de envío y estado
+  // del pre-ingreso enlazado (null sin enlace), y la marca no bloqueante de
+  // revisión que deja la ingesta central cuando el enlace no pudo respetarse
+  // tal cual (`VinculoRechazado`) o el pre-ingreso se canceló después de
+  // enlazar offline (`PreIngresoCancelado`). Nunca cambia la validez ni los
+  // pesos de la boleta — ver spec `boletas` / diseño D4.
+  preIngresoNumeroEnvio: string | null;
+  preIngresoEstado: string | null;
+  marcaPreIngreso: string | null;
   respuestaD365Id: string | null;
   creadaOffline: boolean;
   valores: ValorCampoLeidoDto[];
