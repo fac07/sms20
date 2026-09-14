@@ -39,6 +39,8 @@ public record BoletaDto(
     string? MotivoPesoManualDetalle,
     // Marca de revisión del enlace al pre-ingreso — ver MarcaPreIngreso.
     MarcaPreIngreso? MarcaPreIngreso,
+    // Marca de revisión del par piloto+transportista — ver MarcaVinculoTransporte.
+    MarcaVinculoTransporte? MarcaVinculoTransporte,
     IReadOnlyList<ValorCampoLeidoDto> Valores);
 
 /// <summary>

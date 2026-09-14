@@ -3,8 +3,10 @@ using Microsoft.EntityFrameworkCore;
 using SmsBackend.Data;
 using SmsBackend.Domain.Basculas;
 using SmsBackend.Domain.Boletas.Valores;
+using SmsBackend.Domain.Configuracion;
 using SmsBackend.Domain.Maestros;
 using SmsBackend.Domain.PreIngresos;
+using SmsBackend.Domain.Transporte;
 
 namespace SmsBackend.Domain.Boletas;
 
@@ -101,6 +103,19 @@ public static class BoletaEndpoints
             };
 
             var valores = request.Valores ?? Array.Empty<ValorCampoDto>();
+
+            // Guardia del par piloto+transportista (design D2) — vive fuera de
+            // MotorCampos, así que se lee por Campo.Clave y se corre antes de
+            // persistir. Rechaza con 400 si el par no tiene vínculo activo;
+            // NUNCA aplica acá el criterio de "marcar y seguir" de la ingesta
+            // de sync (design D3), esta es la vía típada central.
+            var (pilotoIdTipado, transportistaIdTipado) = await LeerParTransporteAsync(db, valores, ct);
+            if (pilotoIdTipado is Guid pilotoTipado && transportistaIdTipado is Guid transportistaTipado)
+            {
+                var errorVinculo = await GuardiaVinculoTransporte.ValidarAsync(
+                    db, pilotoTipado, transportistaTipado, ct);
+                if (errorVinculo is not null) return errorVinculo;
+            }
 
             // El conjunto de campos aplicable se resuelve as-of FechaHoraIngreso;
             // un CampoId fuera de ese conjunto o un valor que viola su tipo/config
@@ -329,6 +344,21 @@ public static class BoletaEndpoints
                         return Results.UnprocessableEntity(errores);
                     }
 
+                    // Guardia del par piloto+transportista (design D3) — a
+                    // diferencia de la vía típada central, la ingesta de sync
+                    // NUNCA rechaza por esto: un 4xx acá rompe la secuencia
+                    // entera del outbox del terminal (break en
+                    // outbox-dispatcher.ts). Un par sin vínculo activo solo
+                    // marca la boleta para revisión admin; se sigue
+                    // persistiendo y procesando normal.
+                    var (pilotoIdSync, transportistaIdSync) = await LeerParTransporteAsync(db, valores, ct);
+                    MarcaVinculoTransporte? marcaVinculo = null;
+                    if (pilotoIdSync is Guid pilotoSync && transportistaIdSync is Guid transportistaSync
+                        && !await GuardiaVinculoTransporte.ExisteVinculoActivoAsync(db, pilotoSync, transportistaSync, ct))
+                    {
+                        marcaVinculo = MarcaVinculoTransporte.VinculoInvalido;
+                    }
+
                     var boleta = new Boleta
                     {
                         // Preserva la identidad generada localmente — central
@@ -352,6 +382,7 @@ public static class BoletaEndpoints
                         CreadaOffline = creadaOffline,
                         MotivoPesoManual = motivoManual,
                         MotivoPesoManualDetalle = motivoManualDetalle,
+                        MarcaVinculoTransporte = marcaVinculo,
                     };
 
                     db.Boletas.Add(boleta);
@@ -664,6 +695,36 @@ public static class BoletaEndpoints
         }
     }
 
+    /// <summary>
+    /// Extrae el par piloto+transportista de los valores capturados en la
+    /// sección "transporte", buscando el <c>CampoId</c> vigente por
+    /// <c>Campo.Clave</c> (design D2 — el guardia vive fuera de MotorCampos, así
+    /// que esta lectura por clave es la única forma de saber a qué Maestro
+    /// apunta cada <see cref="ValorCampoDto"/>). Devuelve <c>null</c> para el
+    /// elemento que falta si la sección/campo no está configurada o si el
+    /// valor no viene en la lista — no hay nada que validar en ese caso.
+    /// </summary>
+    private static async Task<(Guid? PilotoId, Guid? TransportistaId)> LeerParTransporteAsync(
+        SmsDbContext db, IReadOnlyList<ValorCampoDto> valores, CancellationToken ct)
+    {
+        if (valores.Count == 0) return (null, null);
+
+        var camposTransporte = await (
+            from c in db.Campos.AsNoTracking()
+            join s in db.Secciones.AsNoTracking() on c.SeccionId equals s.Id
+            where s.Clave == "transporte" && c.VigenteHasta == null
+                  && (c.Clave == "piloto" || c.Clave == "transportista")
+            select new { c.Id, c.Clave }).ToListAsync(ct);
+
+        Guid? IdDeValor(string clave)
+        {
+            var campoId = camposTransporte.FirstOrDefault(c => c.Clave == clave)?.Id;
+            return campoId is Guid id ? valores.FirstOrDefault(v => v.CampoId == id)?.ValorMaestroId : null;
+        }
+
+        return (IdDeValor("piloto"), IdDeValor("transportista"));
+    }
+
     private static async Task<IResult?> ValidarCreacion(CrearBoletaRequest request, SmsDbContext db)
     {
         var numeroEnUso = await db.Boletas.AnyAsync(b => b.NumeroBoleta == request.NumeroBoleta);
@@ -770,6 +831,7 @@ public static class BoletaEndpoints
             b.RespuestaD365Id, b.CreadaOffline,
             b.MotivoPesoManual, b.MotivoPesoManualDetalle,
             b.MarcaPreIngreso,
+            b.MarcaVinculoTransporte,
             // Valores capturados: se unen por el CampoId ALMACENADO (sin filtro
             // VigenteHasta) para que un Campo retirado siga resolviendo. El join
             // a Maestro es un subquery escalar por columna (ReferenciaMaestro).

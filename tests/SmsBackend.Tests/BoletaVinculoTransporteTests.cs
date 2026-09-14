@@ -130,9 +130,22 @@ public sealed class BoletaVinculoTransporteTests : IAsyncLifetime
         var (pilotoId, transportistaId) = await ParSinVinculoAsync();
         var boletaId = Guid.NewGuid();
 
+        // El cierre exige TODOS los campos requeridos de la sección con
+        // ocurrencia (equipo/placa), no solo el par piloto+transportista —
+        // sin relación con el guardia bajo prueba, solo hace falta para
+        // llegar al 'Cerrar'.
+        var formulario = await TestData.FormularioAsync(_client, escenario.TipoMovimientoId);
+        var equipo = await TestData.CrearMaestroAsync(_client, TipoCatalogo.Equipo);
+        var unidad = await TestData.CrearMaestroAsync(_client, TipoCatalogo.Unidad);
+        var valores = ValoresTransporte(pilotoCampoId, transportistaCampoId, pilotoId, transportistaId)
+            .Concat(new[]
+            {
+                TestData.Referencia(TestData.CampoId(formulario, "transporte", "equipo"), equipo.Id),
+                TestData.Referencia(TestData.CampoId(formulario, "transporte", "placa"), unidad.Id),
+            });
+
         var (respCrear, cuerpoCrear) = await TestData.SyncAsync(_client, TestData.SyncCrearPayload(
-            boletaId, escenario, DateTime.UtcNow,
-            ValoresTransporte(pilotoCampoId, transportistaCampoId, pilotoId, transportistaId)));
+            boletaId, escenario, DateTime.UtcNow, valores));
         Assert.True(respCrear.IsSuccessStatusCode, cuerpoCrear);
 
         var (respCerrar, cuerpoCerrar) = await TestData.SyncAsync(_client, TestData.SyncCerrarPayload(

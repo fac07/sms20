@@ -63,6 +63,11 @@ public class BoletaConfiguration : IEntityTypeConfiguration<Boleta>
             .HasConversion<string>()
             .HasMaxLength(30);
 
+        // Enum-as-string, mismo criterio que MarcaPreIngreso. Columna nvarchar(30).
+        builder.Property(b => b.MarcaVinculoTransporte)
+            .HasConversion<string>()
+            .HasMaxLength(30);
+
         // Cardinalidad 1:1 con PreIngreso (design D3), reforzada acá además de
         // la FK real PreIngreso.BoletaId. El filtro deja pasar múltiples NULL
         // (todas las boletas pesadas sin pre-ingreso).
