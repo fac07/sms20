@@ -1,0 +1,106 @@
+<nz-card [nzTitle]="'Cola de transporte'" [nzExtra]="extraTpl" [nzBodyStyle]="{ padding: '0' }">
+  <ng-template #extraTpl>
+    <button nz-button nzType="primary" (click)="abrirModalCrear()">
+      <span nz-icon nzType="plus"></span>
+      Nuevo pre-ingreso
+    </button>
+  </ng-template>
+
+  <nz-table #tabla [nzData]="preingresos()" [nzLoading]="cargando()" [nzPageSize]="10">
+    <thead>
+      <tr>
+        <th>Número de envío</th>
+        <th>Peso enviado (kg)</th>
+        <th>Racimos</th>
+        <th>Sacos</th>
+        <th>Estado</th>
+        <th></th>
+      </tr>
+    </thead>
+    <tbody>
+      @for (p of tabla.data; track p.id) {
+        <tr>
+          <td class="numero-envio">{{ p.numeroEnvio }}</td>
+          <td>{{ p.pesoEnviado }}</td>
+          <td>{{ p.racimos ?? '—' }}</td>
+          <td>{{ p.sacos ?? '—' }}</td>
+          <td>
+            <nz-tag
+              [nzColor]="
+                p.estado === 'Pendiente' ? 'processing' : p.estado === 'Vinculado' ? 'success' : 'default'
+              "
+            >
+              {{ p.estado }}
+            </nz-tag>
+          </td>
+          <td class="acciones">
+            @if (puedeEditar(p)) {
+              <button nz-button nzType="text" (click)="abrirModalEditar(p)">
+                <span nz-icon nzType="edit"></span>
+              </button>
+              <button
+                nz-button
+                nzType="text"
+                nzDanger
+                nz-popconfirm
+                nzPopconfirmTitle="¿Cancelar este pre-ingreso?"
+                (nzOnConfirm)="cancelar(p)"
+              >
+                <span nz-icon nzType="stop"></span>
+              </button>
+            }
+          </td>
+        </tr>
+      }
+    </tbody>
+  </nz-table>
+</nz-card>
+
+<nz-modal
+  [nzTitle]="editando() ? 'Editar pre-ingreso' : 'Nuevo pre-ingreso'"
+  [nzVisible]="modalAbierto()"
+  [nzOkLoading]="guardando()"
+  nzOkText="Guardar"
+  nzCancelText="Cancelar"
+  (nzOnCancel)="cerrarModal()"
+  (nzOnOk)="guardar()"
+>
+  <ng-container *nzModalContent>
+    <form nz-form [formGroup]="form" nzLayout="vertical">
+      <nz-form-item>
+        <nz-form-label nzRequired>Centro</nz-form-label>
+        <nz-form-control>
+          <nz-select formControlName="centroId" nzPlaceHolder="Elegí el centro">
+            @for (centro of centros(); track centro.id) {
+              <nz-option [nzValue]="centro.id" [nzLabel]="centro.nombre"></nz-option>
+            }
+          </nz-select>
+        </nz-form-control>
+      </nz-form-item>
+      <nz-form-item>
+        <nz-form-label nzRequired>Número de envío</nz-form-label>
+        <nz-form-control>
+          <input nz-input formControlName="numeroEnvio" placeholder="ENV-001" />
+        </nz-form-control>
+      </nz-form-item>
+      <nz-form-item>
+        <nz-form-label nzRequired>Peso enviado (kg)</nz-form-label>
+        <nz-form-control>
+          <nz-input-number formControlName="pesoEnviado" style="width: 100%" [nzMin]="0"></nz-input-number>
+        </nz-form-control>
+      </nz-form-item>
+      <nz-form-item>
+        <nz-form-label>Racimos</nz-form-label>
+        <nz-form-control>
+          <nz-input-number formControlName="racimos" style="width: 100%" [nzMin]="0"></nz-input-number>
+        </nz-form-control>
+      </nz-form-item>
+      <nz-form-item>
+        <nz-form-label>Sacos</nz-form-label>
+        <nz-form-control>
+          <nz-input-number formControlName="sacos" style="width: 100%" [nzMin]="0"></nz-input-number>
+        </nz-form-control>
+      </nz-form-item>
+    </form>
+  </ng-container>
+</nz-modal>

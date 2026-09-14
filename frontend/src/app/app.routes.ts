@@ -10,6 +10,7 @@ import { CamposPage } from './pages/campos/campos-page/campos-page';
 import { MaestrosPage } from './pages/maestros/maestros-page/maestros-page';
 import { ProvisionalesPage } from './pages/maestros/provisionales-page/provisionales-page';
 import { PesajePage } from './pages/pesaje/pesaje-page/pesaje-page';
+import { PreingresoPage } from './pages/preingreso/preingreso-page';
 import { SeccionesPage } from './pages/secciones/secciones-page/secciones-page';
 import { TiposMovimientoPage } from './pages/tipos-movimiento/tipos-movimiento-page/tipos-movimiento-page';
 
@@ -69,6 +70,12 @@ export const routes: Routes = [
       {
         path: 'maestros',
         component: MaestrosPage,
+        canActivate: [modoGuard],
+        data: { modo: 'admin' },
+      },
+      {
+        path: 'preingreso',
+        component: PreingresoPage,
         canActivate: [modoGuard],
         data: { modo: 'admin' },
       },
