@@ -7,6 +7,7 @@ using SmsBackend.Domain.Boletas;
 using SmsBackend.Domain.Boletas.Valores;
 using SmsBackend.Domain.Configuracion;
 using SmsBackend.Domain.Maestros;
+using SmsBackend.Domain.Transporte;
 using SmsBackend.Domain.TiposMovimiento;
 using Xunit;
 
@@ -311,4 +312,32 @@ public static class TestData
 
     public static ValorCampoDto Referencia(Guid campoId, Guid maestroId, int ocurrencia = 0) =>
         new(campoId, ocurrencia, null, null, null, null, maestroId);
+
+    /// <summary>
+    /// Arma un <see cref="Escenario"/> con la sección estándar "transporte"
+    /// asignada a su tipo de movimiento (design D2, guard tests). El guardia
+    /// vive fuera de <c>MotorCampos</c>, pero el <c>CampoId</c> de piloto y
+    /// transportista igual tiene que pertenecer al conjunto vigente para que
+    /// el motor acepte el valor.
+    /// </summary>
+    public static async Task<(Escenario Escenario, Guid PilotoCampoId, Guid TransportistaCampoId)> EscenarioTransporteAsync(
+        HttpClient client)
+    {
+        var escenario = await NuevoEscenarioAsync(client);
+        var secciones = await client.GetFromJsonAsync<List<SeccionDto>>("/api/secciones", Json);
+        var transporte = secciones!.Single(s => s.Clave == "transporte");
+        await AsignarSeccionesAsync(client, escenario.TipoMovimientoId,
+            new AsignacionSeccionRequest(transporte.Id, Requerida: false, Orden: 1));
+        var formulario = await FormularioAsync(client, escenario.TipoMovimientoId);
+        return (escenario, CampoId(formulario, "transporte", "piloto"), CampoId(formulario, "transporte", "transportista"));
+    }
+
+    public static Task<MaestroDto> CrearMaestroAsync(HttpClient client, TipoCatalogo tipo) =>
+        PostAsync<MaestroDto>(client, "/api/maestros",
+            new GuardarMaestroRequest(tipo, $"{tipo}-{Sufijo()}", $"{tipo} {Sufijo()}", null));
+
+    public static Task<VinculoPilotoTransportistaDto> CrearVinculoAsync(
+        HttpClient client, Guid pilotoId, Guid transportistaId, string usuarioCreacion = "admin") =>
+        PostAsync<VinculoPilotoTransportistaDto>(client, "/api/vinculos-piloto-transportista",
+            new CrearVinculoPilotoTransportistaRequest(pilotoId, transportistaId, usuarioCreacion));
 }

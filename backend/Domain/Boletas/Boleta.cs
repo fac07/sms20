@@ -117,4 +117,13 @@ public class Boleta
     /// cancelado. No afecta validez, pesos ni estado de la boleta.
     /// </summary>
     public MarcaPreIngreso? MarcaPreIngreso { get; set; }
+
+    /// <summary>
+    /// Marca de revisión sobre el par piloto+transportista capturado en
+    /// "transporte" — null en el caso normal. La fija ÚNICAMENTE la ingesta
+    /// de sync (design D3) cuando el par no tiene un vínculo activo; esa
+    /// ingesta nunca rechaza un evento por esto. No afecta validez, pesos ni
+    /// estado de la boleta (ver <see cref="Boletas.MarcaVinculoTransporte"/>).
+    /// </summary>
+    public MarcaVinculoTransporte? MarcaVinculoTransporte { get; set; }
 }

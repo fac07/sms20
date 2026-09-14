@@ -1,6 +1,7 @@
 using Microsoft.EntityFrameworkCore;
 using SmsBackend.Data;
 using SmsBackend.Domain.Maestros;
+using SmsBackend.Domain.Transporte;
 
 namespace SmsBackend.Domain.PreIngresos;
 
@@ -59,10 +60,13 @@ public static class PreIngresoEndpoints
             return preingreso is null ? Results.NotFound() : Results.Ok(PreIngresoDto.FromEntity(preingreso));
         });
 
-        group.MapPost("/", async (CrearPreIngresoRequest request, SmsDbContext db) =>
+        group.MapPost("/", async (CrearPreIngresoRequest request, SmsDbContext db, CancellationToken ct) =>
         {
             var error = await ValidarCentro(request.CentroId, db);
             if (error is not null) return error;
+
+            var errorVinculo = await ValidarVinculo(request.PilotoId, request.TransportistaId, db, ct);
+            if (errorVinculo is not null) return errorVinculo;
 
             var preingreso = new PreIngreso
             {
@@ -92,7 +96,7 @@ public static class PreIngresoEndpoints
                 $"/api/preingresos/{preingreso.Id}", PreIngresoDto.FromEntity(preingreso));
         });
 
-        group.MapPut("/{id:guid}", async (Guid id, EditarPreIngresoRequest request, SmsDbContext db) =>
+        group.MapPut("/{id:guid}", async (Guid id, EditarPreIngresoRequest request, SmsDbContext db, CancellationToken ct) =>
         {
             var preingreso = await db.PreIngresos.FirstOrDefaultAsync(p => p.Id == id);
             if (preingreso is null) return Results.NotFound();
@@ -105,6 +109,9 @@ public static class PreIngresoEndpoints
 
             var error = await ValidarCentro(request.CentroId, db);
             if (error is not null) return error;
+
+            var errorVinculo = await ValidarVinculo(request.PilotoId, request.TransportistaId, db, ct);
+            if (errorVinculo is not null) return errorVinculo;
 
             preingreso.CentroId = request.CentroId;
             preingreso.PilotoId = request.PilotoId;
@@ -176,4 +183,16 @@ public static class PreIngresoEndpoints
 
         return null;
     }
+
+    /// <summary>
+    /// Guardia del par piloto+transportista (design D2) — solo corre cuando
+    /// AMBOS campos vienen provistos: un formulario que todavía tiene solo
+    /// uno de los dos seleccionados no dispara este chequeo (spec "Only
+    /// transportista chosen so far").
+    /// </summary>
+    private static Task<IResult?> ValidarVinculo(
+        Guid? pilotoId, Guid? transportistaId, SmsDbContext db, CancellationToken ct) =>
+        pilotoId is Guid piloto && transportistaId is Guid transportista
+            ? GuardiaVinculoTransporte.ValidarAsync(db, piloto, transportista, ct)
+            : Task.FromResult<IResult?>(null);
 }
