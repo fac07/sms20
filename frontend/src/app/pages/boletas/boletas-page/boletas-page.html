@@ -155,6 +155,24 @@
         <nz-descriptions-item nzTitle="Origen peso salida">{{ d.origenPesoSalida ?? '—' }}</nz-descriptions-item>
       </nz-descriptions>
 
+      @if (tieneEnlacePreIngreso(d)) {
+        <nz-descriptions
+          nzTitle="Cola de transporte"
+          [nzColumn]="2"
+          nzBordered
+          [nzSize]="'small'"
+          class="seccion"
+        >
+          <nz-descriptions-item nzTitle="Número de envío">{{ d.preIngresoNumeroEnvio }}</nz-descriptions-item>
+          <nz-descriptions-item nzTitle="Estado del pre-ingreso">{{ d.preIngresoEstado }}</nz-descriptions-item>
+          @if (d.marcaPreIngreso !== null) {
+            <nz-descriptions-item nzTitle="Marca de revisión" [nzSpan]="2">
+              <nz-tag nzColor="warning">{{ etiquetaMarca(d.marcaPreIngreso) }}</nz-tag>
+            </nz-descriptions-item>
+          }
+        </nz-descriptions>
+      }
+
       @if (d.motivoPesoManual !== null) {
         <nz-descriptions
           nzTitle="Peso manual"

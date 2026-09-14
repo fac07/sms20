@@ -35,8 +35,10 @@ import {
   LecturaPeso,
   LocalServerService,
   MaestroLocal,
+  PreIngresoLocal,
 } from '../../../api/local-server.service';
-import { ControlCapturado, armarValores } from './armar-valores';
+import { hayDivergenciaPeso } from './advertencia-peso';
+import { ControlCapturado, armarValores, valoresPrefillPreIngreso } from './armar-valores';
 import {
   LineaResumen,
   aplicarErrores,
@@ -189,6 +191,18 @@ export class PesajePage implements OnInit, OnDestroy {
   readonly boletaCerrando = signal<BoletaLocal | null>(null);
   readonly cerrando = signal(false);
 
+  // --- Cola de transporte (PreIngreso) — selector, prefill y advertencia de peso ---
+  // Lista pendiente del espejo local (offline-safe); se repuebla al filtrar por
+  // número de envío y tras cada sync eager.
+  readonly pendientesPreIngreso = signal<PreIngresoLocal[]>([]);
+  readonly filtroNumeroEnvioCtrl = new FormControl<string>('', { nonNullable: true });
+  // Pre-ingreso elegido en el selector — null cuando se pesa sin cola.
+  readonly preIngresoSeleccionado = signal<PreIngresoLocal | null>(null);
+  readonly preIngresoId = signal<string | null>(null);
+  // Pre-ingreso de la boleta que se está cerrando (resuelto por id contra el
+  // espejo local) — solo para comparar PesoEnviado vs. el peso neto al cierre.
+  readonly preIngresoCerrando = signal<PreIngresoLocal | null>(null);
+
   // Errores del servidor (400 al crear / 422 al cerrar) mapeados a controles:
   // `resumenErrores` alimenta el `nz-alert` de arriba y `erroresPorSeccion` los
   // `nz-alert` por sección. Se limpian en cada envío y tras un éxito.
@@ -243,8 +257,13 @@ export class PesajePage implements OnInit, OnDestroy {
     this.cargarBoletasEnTransito();
     this.cargarTiposProvisionables();
     this.cargarAlertasProvisional();
+    this.cargarPreIngresosPendientes();
+    this.dispararSyncPreIngresoEager();
 
     this.tipoMovimientoCtrl.valueChanges.subscribe((id) => this.cargarFormulario(id));
+    this.filtroNumeroEnvioCtrl.valueChanges.subscribe((numeroEnvio) =>
+      this.cargarPreIngresosPendientes(numeroEnvio || undefined),
+    );
 
     this.actualizarPeso();
     this.intervalId = setInterval(() => this.actualizarPeso(), POLL_PESO_MS);
@@ -264,6 +283,50 @@ export class PesajePage implements OnInit, OnDestroy {
       .alertasOutbox()
       .pipe(catchError(() => of<AlertasOutbox | null>(null)))
       .subscribe((alerta) => this.hayAlertaProvisional.set(alerta?.hayAlertaProvisional ?? false));
+  }
+
+  private cargarPreIngresosPendientes(numeroEnvio?: string): void {
+    this.localServer
+      .listarPreIngresosPendientes(numeroEnvio)
+      .pipe(catchError(() => of<PreIngresoLocal[]>([])))
+      .subscribe((pendientes) => this.pendientesPreIngreso.set(pendientes));
+  }
+
+  /** Sync eager de la cola de transporte al entrar a `/pesaje` (D5) + refresco de la lista al terminar. */
+  private dispararSyncPreIngresoEager(): void {
+    this.localServer
+      .sincronizarPreIngreso()
+      .pipe(catchError(() => of(null)))
+      .subscribe(() =>
+        this.cargarPreIngresosPendientes(this.filtroNumeroEnvioCtrl.value || undefined),
+      );
+  }
+
+  /**
+   * Elige un pre-ingreso pendiente: lo recuerda para el payload de creación
+   * (`preIngresoId`) y prefillea piloto/transportista/equipo/región/finca
+   * como valores EDITABLES — nunca disabled (la observación del operador
+   * puede pisar la declaración de logística).
+   */
+  seleccionarPreIngreso(preIngreso: PreIngresoLocal): void {
+    this.preIngresoSeleccionado.set(preIngreso);
+    this.preIngresoId.set(preIngreso.id);
+    this.prefillDesdePreIngreso(preIngreso);
+  }
+
+  /** El operador pesa sin cola — vuelve al camino por defecto (`preIngresoId` null). */
+  limpiarPreIngreso(): void {
+    this.preIngresoSeleccionado.set(null);
+    this.preIngresoId.set(null);
+  }
+
+  private prefillDesdePreIngreso(preIngreso: PreIngresoLocal): void {
+    const valores = valoresPrefillPreIngreso(this.camposAplicables(), preIngreso);
+    for (const [campoId, valor] of Object.entries(valores)) {
+      const campo = this.camposAplicables().find((c) => c.campoId === campoId);
+      if (campo === undefined) continue;
+      this.grupoDeSeccion(campo.seccionClave).get(campoId)?.setValue(valor);
+    }
   }
 
   private cargarCatalogos(): void {
@@ -698,6 +761,7 @@ export class PesajePage implements OnInit, OnDestroy {
       usuarioIngreso: USUARIO_PLACEHOLDER,
       creadaOffline: true,
       valores: armarValores(this.capturarControles()),
+      preIngresoId: this.preIngresoId(),
       ...(manual ? this.motivoManualPayload() : {}),
     };
 
@@ -764,14 +828,44 @@ export class PesajePage implements OnInit, OnDestroy {
     this.maestrosPorCatalogo.set({});
     this.formSecciones.set(this.fb.group({}));
     this.salirModoIngresoManual();
+    this.limpiarPreIngreso();
   }
 
   abrirCierre(boleta: BoletaLocal): void {
     this.boletaCerrando.set(boleta);
+    this.preIngresoCerrando.set(null);
+    if (boleta.preIngresoId !== null) {
+      this.localServer
+        .preIngreso(boleta.preIngresoId)
+        .pipe(catchError(() => of<PreIngresoLocal | null>(null)))
+        .subscribe((preIngreso) => this.preIngresoCerrando.set(preIngreso));
+    }
   }
 
   cerrarModalCierre(): void {
     this.boletaCerrando.set(null);
+    this.preIngresoCerrando.set(null);
+  }
+
+  /**
+   * Advertencia NO bloqueante de divergencia entre el peso declarado en el
+   * pre-ingreso enlazado y el peso neto real estimado con la lectura actual.
+   * `null` cuando no hay pre-ingreso enlazado o todavía no hay peso de
+   * salida — nunca condiciona `puedeCerrar()`.
+   */
+  advertenciaPesoPreIngreso(): { pesoEnviado: number; pesoNeto: number } | null {
+    const boleta = this.boletaCerrando();
+    const preIngreso = this.preIngresoCerrando();
+    if (!boleta || !preIngreso) return null;
+
+    const lectura = this.lecturaPeso();
+    const pesoSalida = this.usandoEntradaManual() ? this.pesoManualCtrl.value : lectura.peso;
+    if (pesoSalida === null) return null;
+
+    const pesoNeto = boleta.pesoIngreso - pesoSalida;
+    return hayDivergenciaPeso(preIngreso.pesoEnviado, pesoNeto)
+      ? { pesoEnviado: preIngreso.pesoEnviado, pesoNeto }
+      : null;
   }
 
   /** Cierre habilitado: lectura automática disponible o captura manual válida. */
@@ -802,6 +896,7 @@ export class PesajePage implements OnInit, OnDestroy {
         );
         this.cerrando.set(false);
         this.boletaCerrando.set(null);
+        this.preIngresoCerrando.set(null);
         this.limpiarResumenErrores();
         this.salirModoIngresoManual();
         this.cargarBoletasEnTransito();
