@@ -10,6 +10,7 @@ public enum TipoCatalogo
     Finca,
     Almacen,
     Centro,
+    Region,
 
     /// <summary>
     /// Catálogos nuevos para la sección Compostera de Boleta — confirmar

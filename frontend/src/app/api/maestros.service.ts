@@ -15,6 +15,7 @@ export type TipoCatalogo =
   | 'Finca'
   | 'Almacen'
   | 'Centro'
+  | 'Region'
   | 'Cama'
   | 'CicloCompostera'
   | 'SeccionCompostera'
@@ -29,6 +30,7 @@ export const TIPOS_CATALOGO: TipoCatalogo[] = [
   'Finca',
   'Almacen',
   'Centro',
+  'Region',
   'Cama',
   'CicloCompostera',
   'SeccionCompostera',
