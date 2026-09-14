@@ -72,12 +72,21 @@ describe('PreingresoPage (TestBed + HttpTestingController)', () => {
     httpMock.verify();
   });
 
-  function crear(preingresos: PreIngreso[] = [], centros: Maestro[] = [maestro({ id: 'centro-1' })]) {
+  function crear(
+    preingresos: PreIngreso[] = [],
+    centros: Maestro[] = [maestro({ id: 'centro-1' })],
+    porTipo: Partial<Record<'Piloto' | 'Transportista' | 'Equipo' | 'Finca' | 'Region', Maestro[]>> = {},
+  ) {
     const fixture = TestBed.createComponent(PreingresoPage);
     httpMock.expectOne(`${CENTRAL}/api/preingresos`).flush(preingresos);
     httpMock
       .expectOne(`${CENTRAL}/api/maestros?tipoCatalogo=Centro&incluirInactivos=false`)
       .flush(centros);
+    for (const tipo of ['Piloto', 'Transportista', 'Equipo', 'Finca', 'Region'] as const) {
+      httpMock
+        .expectOne(`${CENTRAL}/api/maestros?tipoCatalogo=${tipo}&estado=Oficial&incluirInactivos=false`)
+        .flush(porTipo[tipo] ?? []);
+    }
     return fixture.componentInstance;
   }
 
@@ -158,6 +167,46 @@ describe('PreingresoPage (TestBed + HttpTestingController)', () => {
     httpMock.expectOne(`${CENTRAL}/api/preingresos`).flush([preingreso({ id: 'p1', estado: 'Cancelado' })]);
 
     expect(message.success).toHaveBeenCalled();
+  });
+
+  it('carga las 5 listas de maestros oficiales (piloto/transportista/equipo/finca/región) por su TipoCatalogo', () => {
+    const page = crear([], undefined, {
+      Piloto: [maestro({ id: 'piloto-1', tipoCatalogo: 'Piloto' as TipoCatalogo, nombre: 'Juan' })],
+      Transportista: [
+        maestro({ id: 'transportista-1', tipoCatalogo: 'Transportista' as TipoCatalogo, nombre: 'Transp SA' }),
+      ],
+      Equipo: [maestro({ id: 'equipo-1', tipoCatalogo: 'Equipo' as TipoCatalogo, nombre: 'Camión 1' })],
+      Finca: [maestro({ id: 'finca-1', tipoCatalogo: 'Finca' as TipoCatalogo, nombre: 'Finca Norte' })],
+      Region: [maestro({ id: 'region-1', tipoCatalogo: 'Region' as TipoCatalogo, nombre: 'Región Norte' })],
+    });
+
+    expect(page.pilotos().map((m) => m.id)).toEqual(['piloto-1']);
+    expect(page.transportistas().map((m) => m.id)).toEqual(['transportista-1']);
+    expect(page.equipos().map((m) => m.id)).toEqual(['equipo-1']);
+    expect(page.fincas().map((m) => m.id)).toEqual(['finca-1']);
+    expect(page.regiones().map((m) => m.id)).toEqual(['region-1']);
+  });
+
+  it('los 5 selects del formulario están enlazados a sus FormControls y muestran las opciones cargadas', () => {
+    const page = crear([], undefined, {
+      Piloto: [maestro({ id: 'piloto-1', tipoCatalogo: 'Piloto' as TipoCatalogo, nombre: 'Juan Pérez' })],
+    });
+
+    page.abrirModalCrear();
+
+    expect(page.pilotos().map((m) => m.id)).toContain('piloto-1');
+
+    page.form.controls.pilotoId.setValue('piloto-1');
+    page.form.controls.transportistaId.setValue('transportista-9');
+    page.form.controls.equipoId.setValue('equipo-9');
+    page.form.controls.fincaId.setValue('finca-9');
+    page.form.controls.regionId.setValue('region-9');
+
+    expect(page.form.controls.pilotoId.value).toBe('piloto-1');
+    expect(page.form.controls.transportistaId.value).toBe('transportista-9');
+    expect(page.form.controls.equipoId.value).toBe('equipo-9');
+    expect(page.form.controls.fincaId.value).toBe('finca-9');
+    expect(page.form.controls.regionId.value).toBe('region-9');
   });
 
   it('solo permite editar o cancelar mientras el estado es Pendiente', () => {

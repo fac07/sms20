@@ -90,6 +90,56 @@
         </nz-form-control>
       </nz-form-item>
       <nz-form-item>
+        <nz-form-label>Piloto</nz-form-label>
+        <nz-form-control>
+          <nz-select formControlName="pilotoId" nzAllowClear nzPlaceHolder="Elegí el piloto">
+            @for (piloto of pilotos(); track piloto.id) {
+              <nz-option [nzValue]="piloto.id" [nzLabel]="piloto.nombre"></nz-option>
+            }
+          </nz-select>
+        </nz-form-control>
+      </nz-form-item>
+      <nz-form-item>
+        <nz-form-label>Transportista</nz-form-label>
+        <nz-form-control>
+          <nz-select formControlName="transportistaId" nzAllowClear nzPlaceHolder="Elegí el transportista">
+            @for (transportista of transportistas(); track transportista.id) {
+              <nz-option [nzValue]="transportista.id" [nzLabel]="transportista.nombre"></nz-option>
+            }
+          </nz-select>
+        </nz-form-control>
+      </nz-form-item>
+      <nz-form-item>
+        <nz-form-label>Equipo</nz-form-label>
+        <nz-form-control>
+          <nz-select formControlName="equipoId" nzAllowClear nzPlaceHolder="Elegí el equipo">
+            @for (equipo of equipos(); track equipo.id) {
+              <nz-option [nzValue]="equipo.id" [nzLabel]="equipo.nombre"></nz-option>
+            }
+          </nz-select>
+        </nz-form-control>
+      </nz-form-item>
+      <nz-form-item>
+        <nz-form-label>Región</nz-form-label>
+        <nz-form-control>
+          <nz-select formControlName="regionId" nzAllowClear nzPlaceHolder="Elegí la región">
+            @for (region of regiones(); track region.id) {
+              <nz-option [nzValue]="region.id" [nzLabel]="region.nombre"></nz-option>
+            }
+          </nz-select>
+        </nz-form-control>
+      </nz-form-item>
+      <nz-form-item>
+        <nz-form-label>Finca</nz-form-label>
+        <nz-form-control>
+          <nz-select formControlName="fincaId" nzAllowClear nzPlaceHolder="Elegí la finca">
+            @for (finca of fincas(); track finca.id) {
+              <nz-option [nzValue]="finca.id" [nzLabel]="finca.nombre"></nz-option>
+            }
+          </nz-select>
+        </nz-form-control>
+      </nz-form-item>
+      <nz-form-item>
         <nz-form-label>Racimos</nz-form-label>
         <nz-form-control>
           <nz-input-number formControlName="racimos" style="width: 100%" [nzMin]="0"></nz-input-number>
