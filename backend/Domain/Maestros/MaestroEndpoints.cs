@@ -1,3 +1,4 @@
+using System.Text.Json;
 using System.Text.RegularExpressions;
 using Microsoft.EntityFrameworkCore;
 using SmsBackend.Data;
@@ -15,8 +16,18 @@ public static class MaestroEndpoints
             TipoCatalogo? tipoCatalogo = null,
             EstadoMaestro? estado = null,
             bool incluirInactivos = false,
-            DateTime? modificadoDesde = null) =>
+            DateTime? modificadoDesde = null,
+            string? codigoPrefijo = null,
+            string? rol = null) =>
         {
+            // D7: DatosAdicionales no es queryable por EF (nvarchar(max) sin
+            // índice), así que ?rol= solo tiene sentido junto a Tercero — de lo
+            // contrario estaría escaneando y parseando JSON de todo catálogo.
+            if (rol is not null && tipoCatalogo != TipoCatalogo.Tercero)
+            {
+                return Results.BadRequest("El filtro '?rol=' solo aplica junto con '?tipoCatalogo=Tercero'.");
+            }
+
             var query = db.Maestros.AsNoTracking();
 
             if (tipoCatalogo is not null)
@@ -26,6 +37,14 @@ public static class MaestroEndpoints
             if (estado is not null)
             {
                 query = query.Where(m => m.Estado == estado);
+            }
+            if (!string.IsNullOrEmpty(codigoPrefijo))
+            {
+                // D5: StartsWith se traduce a LIKE parametrizado por EF Core
+                // (nunca interpolación de string), y es SARGable contra el
+                // índice único (TipoCatalogo, Codigo) — filtra Lote por Finca
+                // gratis.
+                query = query.Where(m => m.Codigo.StartsWith(codigoPrefijo));
             }
 
             if (modificadoDesde is not null)
@@ -51,6 +70,14 @@ public static class MaestroEndpoints
                 .ThenBy(m => m.Nombre)
                 .Select(m => MaestroDto.FromEntity(m))
                 .ToListAsync();
+
+            if (rol is not null)
+            {
+                // Materializado en memoria: DatosAdicionales.roles es un array
+                // JSON dentro de una columna sin tipar (D1/D7), no hay forma de
+                // filtrarlo en SQL sin una columna calculada nueva.
+                maestros = maestros.Where(m => TieneRol(m.DatosAdicionales, rol)).ToList();
+            }
 
             return Results.Ok(maestros);
         });
@@ -202,15 +229,30 @@ public static class MaestroEndpoints
         // devuelve max+1 zero-padded al ancho más grande observado. Es solo
         // orientativo (M-D4): no se persiste nada, la unicidad la garantiza el
         // índice único (TipoCatalogo, Codigo) más el 409 de /aprobar.
-        group.MapGet("/siguiente-codigo", async (TipoCatalogo tipoCatalogo, SmsDbContext db) =>
+        group.MapGet("/siguiente-codigo", async (TipoCatalogo tipoCatalogo, SmsDbContext db, string? codigoPrefijo = null) =>
         {
-            var codigos = await db.Maestros
+            // G2: Codigo de Lote es compuesto ({FincaCodigo}-{LoteCodigo}, D5).
+            // Sugerir sobre TODOS los códigos del tipo mezclaría el run de
+            // dígitos de fincas distintas — sin el prefijo de Finca no hay
+            // sugerencia posible.
+            if (tipoCatalogo == TipoCatalogo.Lote && string.IsNullOrWhiteSpace(codigoPrefijo))
+            {
+                return Results.BadRequest(
+                    "El tipo 'Lote' requiere '?codigoPrefijo=' (código de Finca) para sugerir el siguiente código.");
+            }
+
+            var query = db.Maestros
                 .AsNoTracking()
                 .Where(m => m.TipoCatalogo == tipoCatalogo
                     && m.Estado == EstadoMaestro.Oficial
-                    && m.Activo)
-                .Select(m => m.Codigo)
-                .ToListAsync();
+                    && m.Activo);
+
+            if (!string.IsNullOrWhiteSpace(codigoPrefijo))
+            {
+                query = query.Where(m => m.Codigo.StartsWith(codigoPrefijo));
+            }
+
+            var codigos = await query.Select(m => m.Codigo).ToListAsync();
 
             var sugerido = SugerirSiguienteCodigo(codigos);
             return Results.Ok(new SiguienteCodigoResponse(sugerido));
@@ -344,6 +386,44 @@ public static class MaestroEndpoints
         group.MapGet("/incidencias-sync", (IncidenciasSyncStore store) => Results.Ok(store.Listar()));
 
         return group;
+    }
+
+    /// <summary>
+    /// D7: <c>DatosAdicionales</c> de un Tercero convención
+    /// <c>{"roles":["Cliente"|"Proveedor"]}</c> — un Tercero puede tener ambos
+    /// roles a la vez. Parseo defensivo: JSON ausente/inválido o sin
+    /// <c>roles</c> como array simplemente no matchea ningún rol.
+    /// </summary>
+    internal static bool TieneRol(string? datosAdicionales, string rol)
+    {
+        if (string.IsNullOrWhiteSpace(datosAdicionales))
+        {
+            return false;
+        }
+
+        try
+        {
+            using var documento = JsonDocument.Parse(datosAdicionales);
+            if (!documento.RootElement.TryGetProperty("roles", out var roles) || roles.ValueKind != JsonValueKind.Array)
+            {
+                return false;
+            }
+
+            foreach (var item in roles.EnumerateArray())
+            {
+                if (item.ValueKind == JsonValueKind.String
+                    && string.Equals(item.GetString(), rol, StringComparison.Ordinal))
+                {
+                    return true;
+                }
+            }
+
+            return false;
+        }
+        catch (JsonException)
+        {
+            return false;
+        }
     }
 
     private static readonly Regex RunDeDigitosFinal = new(@"(\d+)$", RegexOptions.Compiled);

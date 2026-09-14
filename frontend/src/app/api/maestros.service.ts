@@ -19,7 +19,15 @@ export type TipoCatalogo =
   | 'Cama'
   | 'CicloCompostera'
   | 'SeccionCompostera'
-  | 'CaracteristicaEquipo';
+  | 'CaracteristicaEquipo'
+  | 'Unidad'
+  | 'TipoUnidad'
+  | 'TipoEquipo'
+  | 'BodegaExterna'
+  | 'Tanque'
+  | 'Lote'
+  | 'CicloCosecha'
+  | 'SeccionFinca';
 
 export const TIPOS_CATALOGO: TipoCatalogo[] = [
   'Piloto',
@@ -35,7 +43,29 @@ export const TIPOS_CATALOGO: TipoCatalogo[] = [
   'CicloCompostera',
   'SeccionCompostera',
   'CaracteristicaEquipo',
+  'Unidad',
+  'TipoUnidad',
+  'TipoEquipo',
+  'BodegaExterna',
+  'Tanque',
+  'Lote',
+  'CicloCosecha',
+  'SeccionFinca',
 ];
+
+/**
+ * Etiqueta de display para un TipoCatalogo. maestros-page.ts y
+ * campos-page.ts hoy rendereaan el valor de TIPOS_CATALOGO directo como
+ * label — por eso esta función es aditiva (no cambia la forma de
+ * TIPOS_CATALOGO ni el valor que viaja como `tipoCatalogo` al backend) y
+ * queda disponible para cuando una vista lo necesite. Solo 'Unidad'
+ * (vehículo de transporte) tiene una etiqueta distinta, para desambiguar de
+ * `ConfiguracionCampo.Unidad` (la unidad de medida de display, ej. "kg") —
+ * comparten la palabra pero son conceptos sin relación.
+ */
+export function etiquetaTipoCatalogo(tipo: TipoCatalogo): string {
+  return tipo === 'Unidad' ? 'Unidad (vehículo)' : tipo;
+}
 
 export type EstadoMaestro = 'Oficial' | 'Provisional';
 
