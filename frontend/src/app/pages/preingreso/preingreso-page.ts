@@ -58,6 +58,11 @@ export class PreingresoPage {
 
   readonly preingresos = signal<PreIngreso[]>([]);
   readonly centros = signal<Maestro[]>([]);
+  readonly pilotos = signal<Maestro[]>([]);
+  readonly transportistas = signal<Maestro[]>([]);
+  readonly equipos = signal<Maestro[]>([]);
+  readonly fincas = signal<Maestro[]>([]);
+  readonly regiones = signal<Maestro[]>([]);
   readonly cargando = signal(false);
   readonly guardando = signal(false);
   readonly editando = signal<PreIngreso | null>(null);
@@ -81,6 +86,21 @@ export class PreingresoPage {
     this.maestrosService
       .listar({ tipoCatalogo: 'Centro' })
       .subscribe((centros) => this.centros.set(centros));
+    this.maestrosService
+      .listarOficialesActivos('Piloto')
+      .subscribe((pilotos) => this.pilotos.set(pilotos));
+    this.maestrosService
+      .listarOficialesActivos('Transportista')
+      .subscribe((transportistas) => this.transportistas.set(transportistas));
+    this.maestrosService
+      .listarOficialesActivos('Equipo')
+      .subscribe((equipos) => this.equipos.set(equipos));
+    this.maestrosService
+      .listarOficialesActivos('Finca')
+      .subscribe((fincas) => this.fincas.set(fincas));
+    this.maestrosService
+      .listarOficialesActivos('Region')
+      .subscribe((regiones) => this.regiones.set(regiones));
   }
 
   /** Solo se puede editar o cancelar mientras el estado es Pendiente (design D4). */
