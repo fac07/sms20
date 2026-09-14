@@ -17,13 +17,14 @@ public static class SeccionEstandar
             ["ubicacion"] = new[]
             {
                 "almacen_origen", "almacen_destino", "sitio_origen", "sitio_destino", "bodega_externa",
+                "tanque",
             },
             ["calidad"] = new[] { "acidez", "luz", "temperatura", "dobi", "humedad", "revision_qa" },
             ["detalle_fruta"] = new[]
             {
                 "finca", "lote", "numero_envio", "caporal", "racimos_verdes", "racimos_maduros",
                 "racimos_sobremaduros", "racimos_pasados", "racimos_pedunculo_largo", "sacos",
-                "libras", "jornales", "hectareas", "fecha_corte",
+                "libras", "jornales", "hectareas", "fecha_corte", "ciclo", "seccion_finca",
             },
             ["marchamos"] = new[] { "numero", "placa", "equipo", "activo", "observaciones" },
             ["caracteristicas"] = new[] { "clave", "valor", "tipo_dato" },

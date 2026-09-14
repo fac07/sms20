@@ -204,7 +204,7 @@ public sealed class SeederCampoReconciliacionTests
             vigente.TipoCatalogoRef = null;
             vigente.VigenteHasta = tSplit;
 
-            db.Campos.Add(new Campo
+            var nueva = new Campo
             {
                 Id = Guid.NewGuid(),
                 SeccionId = vigente.SeccionId,
@@ -216,12 +216,11 @@ public sealed class SeederCampoReconciliacionTests
                 Orden = vigente.Orden,
                 VigenteDesde = tSplit,
                 VigenteHasta = null,
-            });
+            };
+            db.Campos.Add(nueva);
 
             await db.SaveChangesAsync();
-            idNueva = await db.Campos.Where(c =>
-                c.SeccionId == vigente.SeccionId && c.Clave == "bodega_externa" && c.Id != idAnterior)
-                .Select(c => c.Id).SingleAsync();
+            idNueva = nueva.Id;
         });
 
         using var scope = _factory.CreateScope();
