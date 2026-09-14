@@ -144,4 +144,62 @@ public sealed class MaestroEndpointsTests : IAsyncLifetime
 
         Assert.Equal("013", sugerido!.CodigoSugerido);
     }
+
+    // --- G7: guarda de largo del código compuesto de Lote (Codigo max 30, MaestroConfiguration.cs:20) ---
+
+    [Fact]
+    public async Task Lote_codigo_de_largo_normal_se_crea_correctamente()
+    {
+        var s = TestData.Sufijo();
+        var codigo = $"F{s}-1";
+
+        var creado = await CrearAsync(TipoCatalogo.Lote, codigo, $"Lote {s}");
+
+        Assert.Equal(codigo, creado.Codigo);
+    }
+
+    [Fact]
+    public async Task Lote_codigo_de_exactamente_30_caracteres_se_crea_correctamente()
+    {
+        var s = TestData.Sufijo();
+        var codigo = s + new string('A', 30 - s.Length);
+        Assert.Equal(30, codigo.Length);
+
+        var creado = await CrearAsync(TipoCatalogo.Lote, codigo, $"Lote {s}");
+
+        Assert.Equal(codigo, creado.Codigo);
+    }
+
+    [Fact]
+    public async Task Lote_codigo_de_31_caracteres_es_400_y_no_persiste()
+    {
+        var s = TestData.Sufijo();
+        var codigo = s + new string('A', 31 - s.Length);
+        Assert.Equal(31, codigo.Length);
+
+        var resp = await _client.PostAsJsonAsync("/api/maestros",
+            new GuardarMaestroRequest(TipoCatalogo.Lote, codigo, $"Lote {s}", null), TestData.Json);
+
+        Assert.Equal(HttpStatusCode.BadRequest, resp.StatusCode);
+
+        var listado = await ListarAsync($"tipoCatalogo=Lote&codigoPrefijo={codigo}");
+        Assert.Empty(listado);
+    }
+
+    [Fact]
+    public async Task Editar_un_lote_a_31_caracteres_es_400_y_no_modifica_el_existente()
+    {
+        var s = TestData.Sufijo();
+        var codigoOriginal = $"F{s}-1";
+        var creado = await CrearAsync(TipoCatalogo.Lote, codigoOriginal, $"Lote {s}");
+        var codigoLargo = s + new string('A', 31 - s.Length);
+
+        var resp = await _client.PutAsJsonAsync($"/api/maestros/{creado.Id}",
+            new GuardarMaestroRequest(TipoCatalogo.Lote, codigoLargo, creado.Nombre, null), TestData.Json);
+
+        Assert.Equal(HttpStatusCode.BadRequest, resp.StatusCode);
+
+        var actual = await TestData.GetMaestroAsync(_client, creado.Id);
+        Assert.Equal(codigoOriginal, actual.Codigo);
+    }
 }

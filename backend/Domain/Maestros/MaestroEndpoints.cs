@@ -92,6 +92,12 @@ public static class MaestroEndpoints
         // en la báscula offline (todavía no implementado), no acá.
         group.MapPost("/", async (GuardarMaestroRequest request, SmsDbContext db) =>
         {
+            var errorLongitud = ValidarLongitudCodigoLote(request.TipoCatalogo, request.Codigo);
+            if (errorLongitud is not null)
+            {
+                return errorLongitud;
+            }
+
             var codigoEnUso = await db.Maestros
                 .AnyAsync(m => m.TipoCatalogo == request.TipoCatalogo && m.Codigo == request.Codigo);
             if (codigoEnUso)
@@ -183,6 +189,12 @@ public static class MaestroEndpoints
 
         group.MapPut("/{id:guid}", async (Guid id, GuardarMaestroRequest request, SmsDbContext db) =>
         {
+            var errorLongitud = ValidarLongitudCodigoLote(request.TipoCatalogo, request.Codigo);
+            if (errorLongitud is not null)
+            {
+                return errorLongitud;
+            }
+
             var maestro = await db.Maestros.FirstOrDefaultAsync(m => m.Id == id);
             if (maestro is null)
             {
@@ -387,6 +399,18 @@ public static class MaestroEndpoints
 
         return group;
     }
+
+    /// <summary>
+    /// G7: <c>Maestro.Codigo</c> tiene <c>HasMaxLength(30)</c> (MaestroConfiguration.cs:20).
+    /// El código de <see cref="TipoCatalogo.Lote"/> es compuesto
+    /// (<c>{FincaCodigo}-{LoteCodigo}</c>, diseño D5) y, sin datos de anchos legados
+    /// confirmados, se rechaza explícito en vez de truncar en silencio o reventar
+    /// contra el índice/columna de SQL Server.
+    /// </summary>
+    internal static IResult? ValidarLongitudCodigoLote(TipoCatalogo tipoCatalogo, string codigo) =>
+        tipoCatalogo == TipoCatalogo.Lote && codigo.Length > 30
+            ? Results.BadRequest("El código combinado de finca y lote excede el límite de 30 caracteres.")
+            : null;
 
     /// <summary>
     /// D7: <c>DatosAdicionales</c> de un Tercero convención

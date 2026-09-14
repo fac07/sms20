@@ -43,7 +43,8 @@ public static class ConfiguracionSeeder
             new("transportista", "Transportista", TipoCampo.ReferenciaMaestro, TipoCatalogo.Transportista, Requerido: true),
             new("piloto", "Piloto", TipoCampo.ReferenciaMaestro, TipoCatalogo.Piloto, Requerido: true),
             new("equipo", "Equipo / unidad", TipoCampo.ReferenciaMaestro, TipoCatalogo.Equipo, Requerido: true),
-            new("placa", "Placa de la unidad", TipoCampo.Texto, null, Requerido: true),
+            // Reconciliado (design D6): reemplaza el Texto libre por catálogo.
+            new("placa", "Placa de la unidad", TipoCampo.ReferenciaMaestro, TipoCatalogo.Unidad, Requerido: true),
             new("licencia", "Licencia del piloto", TipoCampo.Texto, null, Requerido: false),
         }),
         new SeccionDef("producto", "Producto", Cardinalidad.Unica, Reportable: true, new CampoDef[]
@@ -58,7 +59,9 @@ public static class ConfiguracionSeeder
             new("almacen_destino", "Almacén destino", TipoCampo.ReferenciaMaestro, TipoCatalogo.Almacen, Requerido: false),
             new("sitio_origen", "Sitio origen", TipoCampo.ReferenciaMaestro, TipoCatalogo.Centro, Requerido: false),
             new("sitio_destino", "Sitio destino", TipoCampo.ReferenciaMaestro, TipoCatalogo.Centro, Requerido: false),
-            new("bodega_externa", "Bodega externa", TipoCampo.Texto, null, Requerido: false),
+            // Reconciliado (design D6): reemplaza el Texto libre por catálogo.
+            new("bodega_externa", "Bodega externa", TipoCampo.ReferenciaMaestro, TipoCatalogo.BodegaExterna, Requerido: false),
+            new("tanque", "Tanque", TipoCampo.ReferenciaMaestro, TipoCatalogo.Tanque, Requerido: false),
         }),
         new SeccionDef("calidad", "Calidad", Cardinalidad.Unica, Reportable: true, new CampoDef[]
         {
@@ -72,7 +75,10 @@ public static class ConfiguracionSeeder
         new SeccionDef("detalle_fruta", "Detalle de fruta", Cardinalidad.Repetible, Reportable: true, new CampoDef[]
         {
             new("finca", "Finca", TipoCampo.ReferenciaMaestro, TipoCatalogo.Finca, Requerido: true),
-            new("lote", "Lote", TipoCampo.Texto, null, Requerido: false),
+            // Reconciliado (design D6): reemplaza el Texto libre por catálogo.
+            new("lote", "Lote", TipoCampo.ReferenciaMaestro, TipoCatalogo.Lote, Requerido: false),
+            new("seccion_finca", "Sección de finca", TipoCampo.ReferenciaMaestro, TipoCatalogo.SeccionFinca, Requerido: false),
+            new("ciclo", "Ciclo de cosecha", TipoCampo.ReferenciaMaestro, TipoCatalogo.CicloCosecha, Requerido: false),
             new("numero_envio", "Número de envío", TipoCampo.Texto, null, Requerido: false),
             new("caporal", "Caporal", TipoCampo.Texto, null, Requerido: false),
             new("racimos_verdes", "Racimos verdes", TipoCampo.Entero, null, Requerido: false),
@@ -203,15 +209,91 @@ public static class ConfiguracionSeeder
                 await db.SaveChangesAsync(ct);
             }
 
+            var reconciliados = await ReconciliarCamposReservadosAsync(db, ahora, logger, ct);
+
             logger.LogInformation(
                 "ConfiguracionSeeder: {Creadas} secciones creadas, {Presentes} ya presentes, "
-                + "{Campos} campos creados. Total esperado: {Total} secciones estándar.",
-                seccionesCreadas, seccionesPresentes, camposCreados, Estandar.Count);
+                + "{Campos} campos creados, {Reconciliados} campos reservados reconciliados. "
+                + "Total esperado: {Total} secciones estándar.",
+                seccionesCreadas, seccionesPresentes, camposCreados, reconciliados, Estandar.Count);
         }
         catch (Exception ex)
         {
             logger.LogError(ex, "ConfiguracionSeeder: el seeding falló; se omite y el arranque continúa.");
         }
+    }
+
+    /// <summary>
+    /// Diseño D6: las claves reservadas administra el seeder, no <c>nueva-version</c>
+    /// (bloqueado por <see cref="GuardiaEstandar.ParaNuevaVersionCampo"/>). Si la fila
+    /// vigente de una clave reservada no coincide en <c>TipoCampo</c>/<c>TipoCatalogoRef</c>
+    /// con <see cref="Estandar"/>, se versiona: se cierra la vigente y se inserta una
+    /// nueva con la MISMA <c>Etiqueta</c>/<c>Orden</c>/<c>Requerido</c>/<c>Configuracion</c>
+    /// que la anterior — esos campos siguen siendo admin-owned, el seeder solo
+    /// reconcilia el tipo. Datos ya capturados no se tocan: <c>BoletaValorCampo</c>
+    /// apunta al <c>CampoId</c> superado, que sigue resolviéndose <c>asOf</c>.
+    /// Un solo <c>SaveChanges</c> para toda la pasada.
+    /// </summary>
+    private static async Task<int> ReconciliarCamposReservadosAsync(
+        SmsDbContext db, DateTime ahora, ILogger logger, CancellationToken ct)
+    {
+        var reconciliados = 0;
+
+        foreach (var def in Estandar)
+        {
+            var seccion = await db.Secciones.FirstOrDefaultAsync(s => s.Clave == def.Clave, ct);
+            if (seccion is null)
+            {
+                continue;
+            }
+
+            foreach (var campoDef in def.Campos)
+            {
+                if (!SeccionEstandar.EsCampoReservado(def.Clave, campoDef.Clave))
+                {
+                    continue;
+                }
+
+                var vigente = await db.Campos.FirstOrDefaultAsync(
+                    c => c.SeccionId == seccion.Id && c.Clave == campoDef.Clave && c.VigenteHasta == null, ct);
+
+                if (vigente is null
+                    || (vigente.TipoCampo == campoDef.TipoCampo && vigente.TipoCatalogoRef == campoDef.TipoCatalogoRef))
+                {
+                    continue;
+                }
+
+                vigente.VigenteHasta = ahora;
+                vigente.FechaModificacion = ahora;
+
+                db.Campos.Add(new Campo
+                {
+                    Id = Guid.NewGuid(),
+                    SeccionId = seccion.Id,
+                    Clave = vigente.Clave,
+                    Etiqueta = vigente.Etiqueta,
+                    TipoCampo = campoDef.TipoCampo,
+                    TipoCatalogoRef = campoDef.TipoCatalogoRef,
+                    Requerido = vigente.Requerido,
+                    Configuracion = vigente.Configuracion,
+                    Orden = vigente.Orden,
+                    VigenteDesde = ahora,
+                    VigenteHasta = null,
+                });
+
+                reconciliados++;
+                logger.LogInformation(
+                    "ConfiguracionSeeder: reconciliando campo reservado '{Seccion}.{Clave}' de {Anterior} a {Nuevo}.",
+                    def.Clave, campoDef.Clave, vigente.TipoCampo, campoDef.TipoCampo);
+            }
+        }
+
+        if (reconciliados > 0)
+        {
+            await db.SaveChangesAsync(ct);
+        }
+
+        return reconciliados;
     }
 
     /// <summary>

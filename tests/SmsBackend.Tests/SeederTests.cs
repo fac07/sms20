@@ -57,8 +57,11 @@ public sealed class SeederTests
                 var seccion = await db.Secciones.SingleAsync(s => s.Clave == claveSeccion);
                 Assert.True(seccion.Estandar);
 
+                // Solo la fila vigente identifica el set esperado: la
+                // reconciliación de claves reservadas (diseño D6) puede dejar
+                // filas históricas con la misma Clave tras un swap de tipo.
                 var presentes = await db.Campos
-                    .Where(c => c.SeccionId == seccion.Id)
+                    .Where(c => c.SeccionId == seccion.Id && c.VigenteHasta == null)
                     .Select(c => c.Clave)
                     .ToListAsync();
 
