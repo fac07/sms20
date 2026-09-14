@@ -7,6 +7,7 @@ import { ComponentFixture, TestBed } from '@angular/core/testing';
 import { FormArray, FormControl, FormGroup } from '@angular/forms';
 import { NzMessageService } from 'ng-zorro-antd/message';
 import { CampoAplicable, ErrorCampo } from '../../../api/configuracion.models';
+import { BoletaLocal } from '../../../api/local-server.service';
 import { PesajePage } from './pesaje-page';
 import {
   CLAVE_SECCION,
@@ -15,7 +16,9 @@ import {
   construirMapaControles,
   limpiarErroresServidor,
 } from './aplicar-errores';
+import { hayDivergenciaPeso } from './advertencia-peso';
 import { calcularAntiguedadSync } from './antiguedad-sync';
+import { valoresPrefillPreIngreso } from './armar-valores';
 import { agruparSecciones } from './secciones';
 
 const LOCAL = 'http://127.0.0.1:4127';
@@ -137,6 +140,55 @@ describe('aplicarErrores (400/422 -> control map)', () => {
   });
 });
 
+describe('valoresPrefillPreIngreso (helper de prefill, cola-transporte slice 6)', () => {
+  const camposTransporte: CampoAplicable[] = [
+    campo({ campoId: 'c-piloto', campoClave: 'piloto', seccionClave: 'transporte' }),
+    campo({ campoId: 'c-transportista', campoClave: 'transportista', seccionClave: 'transporte' }),
+    campo({ campoId: 'c-equipo', campoClave: 'equipo', seccionClave: 'transporte' }),
+    campo({ campoId: 'c-region', campoClave: 'region', seccionClave: 'transporte' }),
+    campo({ campoId: 'c-finca', campoClave: 'finca', seccionClave: 'detalle_fruta' }),
+    campo({ campoId: 'c-otro', campoClave: 'acidez', seccionClave: 'calidad' }),
+  ];
+
+  it('mapea las 5 claves de piloto/transportista/equipo/region/finca a su campoId', () => {
+    const mapa = valoresPrefillPreIngreso(camposTransporte, {
+      pilotoId: 'piloto-1',
+      transportistaId: 'transportista-1',
+      equipoId: 'equipo-1',
+      regionId: 'region-1',
+      fincaId: 'finca-1',
+    });
+    expect(mapa).toEqual({
+      'c-piloto': 'piloto-1',
+      'c-transportista': 'transportista-1',
+      'c-equipo': 'equipo-1',
+      'c-region': 'region-1',
+      'c-finca': 'finca-1',
+    });
+  });
+
+  it('omite las claves null del pre-ingreso y los campos sin correspondencia', () => {
+    const mapa = valoresPrefillPreIngreso(camposTransporte, {
+      pilotoId: 'piloto-1',
+      transportistaId: null,
+      equipoId: null,
+      regionId: null,
+      fincaId: null,
+    });
+    expect(mapa).toEqual({ 'c-piloto': 'piloto-1' });
+  });
+});
+
+describe('hayDivergenciaPeso (helper de advertencia de peso, cola-transporte slice 6)', () => {
+  it('marca divergencia cuando la diferencia entre peso enviado y peso neto supera la tolerancia', () => {
+    expect(hayDivergenciaPeso(20000, 17000)).toBe(true);
+  });
+
+  it('no marca divergencia dentro de la tolerancia', () => {
+    expect(hayDivergenciaPeso(20000, 19980)).toBe(false);
+  });
+});
+
 describe('PesajePage (TestBed + HttpTestingController)', () => {
   let fixture: ComponentFixture<PesajePage>;
   let component: PesajePage;
@@ -190,6 +242,9 @@ describe('PesajePage (TestBed + HttpTestingController)', () => {
     tiposProvisionables?: { tipos: string[] };
     alertas?: { hayAlertaProvisional: boolean; eventos: unknown[] };
     peso?: unknown;
+    preIngresos?: unknown[];
+    preIngresosSync?: { descargados: number };
+    preIngresosRefresh?: unknown[];
   }): void {
     component.ngOnInit();
     const tipos = opciones?.tipos ?? [
@@ -232,6 +287,15 @@ describe('PesajePage (TestBed + HttpTestingController)', () => {
     httpMock
       .expectOne(`${LOCAL}/outbox/alertas`)
       .flush(opciones?.alertas ?? { hayAlertaProvisional: false, eventos: [] });
+    // Cola de transporte (S6): paint desde el espejo local, luego sync eager
+    // (POST) y refresco (GET) — mismo patrón A3/A4 que tipos-movimiento.
+    httpMock.expectOne(`${LOCAL}/preingreso`).flush(opciones?.preIngresos ?? []);
+    httpMock
+      .expectOne(`${LOCAL}/preingreso/sincronizar`)
+      .flush(opciones?.preIngresosSync ?? { descargados: 0 });
+    httpMock
+      .expectOne(`${LOCAL}/preingreso`)
+      .flush(opciones?.preIngresosRefresh ?? opciones?.preIngresos ?? []);
     httpMock.expectOne(`${LOCAL}/peso`).flush(opciones?.peso ?? { peso: 100, origen: 'Bascula' });
   }
 
@@ -488,6 +552,9 @@ describe('PesajePage (TestBed + HttpTestingController)', () => {
     httpMock
       .expectOne(`${LOCAL}/outbox/alertas`)
       .flush('boom', { status: 500, statusText: 'Server Error' });
+    httpMock.expectOne(`${LOCAL}/preingreso`).flush([]);
+    httpMock.expectOne(`${LOCAL}/preingreso/sincronizar`).flush({ descargados: 0 });
+    httpMock.expectOne(`${LOCAL}/preingreso`).flush([]);
     httpMock.expectOne(`${LOCAL}/peso`).flush({ peso: 100, origen: 'Bascula' });
 
     expect(component.hayAlertaProvisional()).toBe(false);
@@ -655,6 +722,153 @@ describe('PesajePage (TestBed + HttpTestingController)', () => {
       flushInit({ estado: ESTADO_MANUAL });
       expect(component.permiteIngresoManual()).toBe(true);
       expect(component.motivosPesoManual()).toEqual(['IndicadorSinSenal', 'CorteEnergia', 'Otro']);
+    });
+  });
+
+  describe('selector de pre-ingreso (cola-transporte slice 6)', () => {
+    const preIngresoFixture = {
+      id: 'pre-1',
+      centroId: 'centro-1',
+      pilotoId: 'piloto-1',
+      transportistaId: 'transportista-1',
+      equipoId: 'equipo-1',
+      regionId: 'region-1',
+      fincaId: 'finca-1',
+      numeroEnvio: 'ENV-2024-001',
+      pesoEnviado: 20000,
+      racimos: 100,
+      sacos: null,
+      estado: 'Pendiente',
+      boletaId: null,
+      usuarioCreacion: 'admin',
+      usuarioCancela: null,
+      motivoCancelacion: null,
+      fechaCreacion: '2026-09-10T00:00:00Z',
+      fechaModificacion: '2026-09-10T00:00:00Z',
+    };
+
+    it('la lista pendiente se sirve del espejo local (offline-safe)', () => {
+      flushInit({ preIngresos: [preIngresoFixture] });
+      expect(component.pendientesPreIngreso()).toEqual([preIngresoFixture]);
+    });
+
+    it('el filtro por número de envío narrows la lista con coincidencia parcial', () => {
+      flushInit({ preIngresos: [preIngresoFixture] });
+
+      component.filtroNumeroEnvioCtrl.setValue('2024');
+      httpMock.expectOne(`${LOCAL}/preingreso?numeroEnvio=2024`).flush([preIngresoFixture]);
+
+      expect(component.pendientesPreIngreso()).toEqual([preIngresoFixture]);
+    });
+
+    it('seleccionar un pre-ingreso prefillea piloto/transportista/equipo/region/finca como valores editables y setea preIngresoId', () => {
+      flushInit({ preIngresos: [preIngresoFixture] });
+      seleccionarTipo([
+        campo({
+          campoId: 'c-piloto',
+          campoClave: 'piloto',
+          seccionClave: 'transporte',
+          tipoCampo: 'ReferenciaMaestro',
+          tipoCatalogoRef: 'Piloto',
+        }),
+        campo({
+          campoId: 'c-transportista',
+          campoClave: 'transportista',
+          seccionClave: 'transporte',
+          tipoCampo: 'ReferenciaMaestro',
+          tipoCatalogoRef: 'Transportista',
+        }),
+        campo({
+          campoId: 'c-equipo',
+          campoClave: 'equipo',
+          seccionClave: 'transporte',
+          tipoCampo: 'ReferenciaMaestro',
+          tipoCatalogoRef: 'Equipo',
+        }),
+        campo({
+          campoId: 'c-region',
+          campoClave: 'region',
+          seccionClave: 'transporte',
+          tipoCampo: 'ReferenciaMaestro',
+          tipoCatalogoRef: 'Region',
+        }),
+        campo({
+          campoId: 'c-finca',
+          campoClave: 'finca',
+          seccionClave: 'detalle_fruta',
+          tipoCampo: 'ReferenciaMaestro',
+          tipoCatalogoRef: 'Finca',
+        }),
+      ]);
+      httpMock.expectOne(`${LOCAL}/maestros?tipoCatalogo=Piloto`).flush([]);
+      httpMock.expectOne(`${LOCAL}/maestros?tipoCatalogo=Transportista`).flush([]);
+      httpMock.expectOne(`${LOCAL}/maestros?tipoCatalogo=Equipo`).flush([]);
+      httpMock.expectOne(`${LOCAL}/maestros?tipoCatalogo=Region`).flush([]);
+      httpMock.expectOne(`${LOCAL}/maestros?tipoCatalogo=Finca`).flush([]);
+
+      component.seleccionarPreIngreso(preIngresoFixture);
+
+      expect(component.preIngresoId()).toBe('pre-1');
+      const grupoTransporte = component.formSecciones().get('transporte') as FormGroup;
+      expect(grupoTransporte.get('c-piloto')!.value).toBe('piloto-1');
+      expect(grupoTransporte.get('c-transportista')!.value).toBe('transportista-1');
+      expect(grupoTransporte.get('c-equipo')!.value).toBe('equipo-1');
+      expect(grupoTransporte.get('c-region')!.value).toBe('region-1');
+      // Editable: la selección no deshabilita el control — la observación del
+      // operador puede seguir pisando la declaración de logística.
+      expect(grupoTransporte.get('c-piloto')!.disabled).toBe(false);
+      const grupoFruta = component.formSecciones().get('detalle_fruta') as FormGroup;
+      expect(grupoFruta.get('c-finca')!.value).toBe('finca-1');
+    });
+
+    it('sin pre-ingreso seleccionado, crearBoleta manda preIngresoId null y no hay advertencia de vínculo', () => {
+      flushInit();
+      seleccionarTipo([]);
+      component.crearBoleta();
+
+      const req = httpMock.expectOne(`${LOCAL}/boletas`);
+      expect(req.request.body.preIngresoId).toBeNull();
+      req.flush({ numeroBoleta: 'IF-1' });
+      httpMock.expectOne(`${LOCAL}/boletas?estado=EnTransito`).flush([]);
+
+      expect(component.advertenciaPesoPreIngreso()).toBeNull();
+    });
+
+    it('la divergencia PesoEnviado/PesoNeto al cerrar muestra una advertencia no bloqueante y no impide cerrar', () => {
+      const boletaFixture: BoletaLocal = {
+        id: 'b-1',
+        numeroBoleta: 'IF-B01-000001',
+        tipoMovimientoId: 'tm-1',
+        estado: 'EnTransito',
+        estadoSync: 'Local',
+        pesoIngreso: 20000,
+        pesoSalida: null,
+        pesoNeto: null,
+        origenPesoIngreso: 'Bascula',
+        origenPesoSalida: null,
+        fechaHoraIngreso: '2026-09-10T12:00:00Z',
+        fechaHoraSalida: null,
+        usuarioIngreso: 'operador',
+        usuarioSalida: null,
+        usuarioAnula: null,
+        usuarioAutoriza: null,
+        motivoAnulacion: null,
+        fechaHoraAnulacion: null,
+        preIngresoId: 'pre-1',
+        boletaReemplazoId: null,
+        boletaOrigenId: null,
+        basculaSalidaId: null,
+        respuestaD365Id: null,
+        creadaOffline: true,
+      };
+
+      flushInit({ peso: { peso: 3000, origen: 'Bascula' } });
+      component.abrirCierre(boletaFixture);
+      httpMock.expectOne(`${LOCAL}/preingreso/pre-1`).flush(preIngresoFixture);
+
+      expect(component.advertenciaPesoPreIngreso()).toEqual({ pesoEnviado: 20000, pesoNeto: 17000 });
+      // No bloqueante: el cierre sigue permitido pese a la advertencia.
+      expect(component.puedeCerrar()).toBe(true);
     });
   });
 });
