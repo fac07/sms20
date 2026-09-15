@@ -1,0 +1,49 @@
+<nz-card [nzTitle]="'Resumen diario por báscula'" [nzBodyStyle]="{ padding: '16px 24px' }">
+  <div class="filtros">
+    <label>
+      Desde
+      <input nz-input type="date" name="desde" [ngModel]="desde()" (ngModelChange)="desde.set($event)" />
+    </label>
+    <label>
+      Hasta
+      <input nz-input type="date" name="hasta" [ngModel]="hasta()" (ngModelChange)="hasta.set($event)" />
+    </label>
+    <button nz-button nzType="primary" [disabled]="cargando()" (click)="generar()">Generar</button>
+  </div>
+
+  <nz-spin [nzSpinning]="cargando()">
+    <nz-table
+      #tabla
+      [nzData]="filas()"
+      [nzFrontPagination]="false"
+      [nzShowPagination]="false"
+      nzSize="middle"
+    >
+      <thead>
+        <tr>
+          <th>Báscula</th>
+          <th>Fecha</th>
+          <th nzAlign="right">Boletas</th>
+          <th nzAlign="right">Peso neto (kg)</th>
+        </tr>
+      </thead>
+      <tbody>
+        @for (fila of tabla.data; track fila.clave + fila.tipo + ('fecha' in fila ? fila.fecha : '')) {
+          <tr class="fila-{{ fila.tipo }}">
+            <td>{{ fila.basculaNombre }}</td>
+            <td>{{ fila.tipo === 'dia' ? fila.fecha : 'Subtotal' }}</td>
+            <td nzAlign="right">{{ fila.cantidadBoletas }}</td>
+            <td nzAlign="right">{{ fila.pesoNetoTotal | number: '1.0-2' }}</td>
+          </tr>
+        }
+      </tbody>
+      <tfoot>
+        <tr class="fila-total">
+          <td colspan="2">TOTAL GENERAL</td>
+          <td nzAlign="right">{{ total().cantidadBoletas }}</td>
+          <td nzAlign="right">{{ total().pesoNetoTotal | number: '1.0-2' }}</td>
+        </tr>
+      </tfoot>
+    </nz-table>
+  </nz-spin>
+</nz-card>

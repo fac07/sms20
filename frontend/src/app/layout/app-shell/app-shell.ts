@@ -33,7 +33,8 @@ const NAV_ITEMS: NavItem[] = [
   { path: '/transporte', icon: 'link', label: 'Vínculos piloto-transportista', modos: ['admin'] },
   { path: '/boletas', icon: 'file-text', label: 'Boletas', modos: ['bascula', 'admin'] },
   { path: '/outbox', icon: 'code', label: 'Visor de tramas', modos: ['bascula'] },
-  { path: '/reportes', icon: 'bar-chart', label: 'Reportes', modos: ['admin'] },
+  { path: '/reportes', icon: 'bar-chart', label: 'Informe diario', modos: ['admin'] },
+  { path: '/reportes/basculas', icon: 'bar-chart', label: 'Resumen por báscula', modos: ['admin'] },
 ];
 
 /** Ítems de nav visibles para un modo — filtra por `NavItem.modos`. */
@@ -63,6 +64,7 @@ const PAGE_TITLES: Record<string, string> = {
   '/boletas': 'Boletas',
   '/outbox': 'Visor de tramas',
   '/reportes': 'Informe diario',
+  '/reportes/basculas': 'Resumen por báscula',
 };
 
 @Component({

@@ -91,11 +91,12 @@ app.MapBasculas();
 app.MapCentros();
 app.MapBoletas();
 app.MapPreIngresos();
+app.MapResumenBasculas();
 app.MapVinculosPilotoTransportista();
 app.MapAsignacionesUnidadTransportista();
 app.MapSecciones();
 app.MapCampos();
-app.MapReportes();
+app.MapReporteDiario();
 
 app.Run();
 

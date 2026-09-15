@@ -1,0 +1,23 @@
+.filtros {
+  display: flex;
+  gap: 16px;
+  align-items: end;
+  margin-bottom: 16px;
+}
+
+.filtros label {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  font-size: 13px;
+}
+
+tr.fila-subtotal td {
+  font-weight: 600;
+  background: #fafafa;
+}
+
+tr.fila-total td {
+  font-weight: 700;
+  border-top: 2px solid #333;
+}

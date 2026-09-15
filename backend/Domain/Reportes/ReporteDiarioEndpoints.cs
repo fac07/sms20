@@ -8,7 +8,7 @@ public sealed record ReporteDiarioDto(DateOnly Fecha, int CantidadBoletas, decim
 
 public static class ReporteDiarioEndpoints
 {
-    public static RouteGroupBuilder MapReportes(this IEndpointRouteBuilder app)
+    public static RouteGroupBuilder MapReporteDiario(this IEndpointRouteBuilder app)
     {
         var group = app.MapGroup("/api/reportes").WithTags("Reportes");
 
