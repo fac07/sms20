@@ -6,10 +6,12 @@ import { startLocalServer, stopLocalServer } from './local-server'
 
 // Gate local de muestra de racimos en `POST /boletas/:id/cerrar`. Espejo de
 // `GuardiaMuestraFruta` (central): 0 < verdes + maduros + sobremaduros +
-// pasados <= 30, evaluado sobre los valores ya capturados en la boleta —
-// pedúnculo largo NO suma (paridad legacy frmCalidadFruta.cs:117-128). Sin
-// contadores capturados el guard pasa; central NO re-valida en la ingesta de
-// sync (D3/D8), así que la terminal es el punto de enforcement offline.
+// pasados <= 30 evaluado POR OCURRENCIA de forma independiente — cada
+// ocurrencia de detalle_fruta es un envío con su propia muestra física y el
+// cap de 30 acota UNA muestra, no la suma del camión. pedúnculo largo NO suma
+// (paridad legacy frmCalidadFruta.cs:117-128). Sin contadores capturados el
+// guard pasa; central NO re-valida en la ingesta de sync (D3/D8), así que la
+// terminal es el punto de enforcement offline.
 
 const TM_ID = '11111111-1111-1111-1111-111111111111'
 const SEC_ID = '22222222-2222-2222-2222-222222222222'
@@ -139,10 +141,34 @@ describe('POST /boletas/:id/cerrar — gate local de muestra de racimos', () => 
     expect(res.status).toBe(200)
   })
 
-  it('la suma cruza ocurrencias de la sección repetible', async () => {
-    sembrarBoleta('b5', [[0, C_VERDE, 20], [1, C_MADURO, 15]])
+  it('dos ocurrencias con muestras válidas no se suman entre sí', async () => {
+    // Cada ocurrencia de detalle_fruta es un envío con su propia muestra:
+    // 25 + 25 = dos muestras válidas. La suma global (50) sería un rechazo
+    // sin motivo — el cap de 30 acota UNA muestra física.
+    sembrarBoleta('b5', [[0, C_VERDE, 25], [1, C_MADURO, 25]])
 
     const res = await cerrar('b5')
+
+    expect(res.status).toBe(200)
+    expect(obtenerBoletaLocal('b5')!.estado).toBe('Cerrada')
+  })
+
+  it('una ocurrencia de 31 es 400 aunque otra ocurrencia sea válida', async () => {
+    sembrarBoleta('b7', [[0, C_VERDE, 20], [1, C_MADURO, 31]])
+
+    const res = await cerrar('b7')
+
+    expect(res.status).toBe(400)
+    expect(obtenerBoletaLocal('b7')!.estado).toBe('EnTransito')
+  })
+
+  it('una ocurrencia en cero es 400 aunque otra ocurrencia sea válida', async () => {
+    // Sentido inverso de la granularidad: occ 0 con el contador cargado en 0
+    // es una muestra capturada vacía y se rechaza sola, sin que la suma
+    // global (25) "salve" el cierre.
+    sembrarBoleta('b8', [[0, C_VERDE, 0], [1, C_MADURO, 25]])
+
+    const res = await cerrar('b8')
 
     expect(res.status).toBe(400)
   })

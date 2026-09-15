@@ -142,43 +142,51 @@ const MAXIMO_MUESTRA_RACIMOS = 30
 
 /**
  * Espejo local de `GuardiaMuestraFruta` (central): 0 < verdes + maduros +
- * sobremaduros + pasados <= 30 sobre los valores ya capturados en la boleta
- * (cruza las ocurrencias de la sección repetible; `racimos_pedunculo_largo`
- * NO suma, paridad legacy frmCalidadFruta). Sin ningún contador capturado el
- * guard pasa. Se resuelve por Clave del espejo local de Campo, no por Id
- * congelado, para atravesar versiones. Falla = 400, igual que central; la
- * ingesta de sync NO revalida (D3/D8): acá se decide offline.
+ * sobremaduros + pasados <= 30 evaluado INDEPENDIENTEMENTE POR OCURRENCIA de
+ * detalle_fruta — cada ocurrencia es un envío/lote con su propia muestra
+ * física (el cap de 30 es por muestra, no por camión). Una ocurrencia con
+ * alguno de los cuatro contadores cargado se evalúa sola (suma 0 ⇒ rechazo);
+ * una sin contadores no participa. `racimos_pedunculo_largo` NO suma
+ * (paridad legacy frmCalidadFruta). Sin ningún contador en ninguna
+ * ocurrencia el guard pasa. Se resuelve por Clave del espejo local de Campo,
+ * no por Id congelado, para atravesar versiones. Falla = 400, igual que
+ * central; la ingesta de sync NO revalida (D3/D8): acá se decide offline.
  */
 function validarMuestraFrutaLocal(boletaId: string): { status: number; error: string } | null {
   const placeholders = CLAVES_MUESTRA_RACIMOS.map(() => '?').join(',')
   const filas = getDb()
     .prepare(
-      `SELECT v.ValorNumero AS n
+      `SELECT v.Ocurrencia AS occ, v.ValorNumero AS n
          FROM BoletaValorCampo v
          JOIN Campo c ON c.Id = v.CampoId
         WHERE v.BoletaId = ? AND c.Clave IN (${placeholders})`,
     )
-    .all(boletaId, ...CLAVES_MUESTRA_RACIMOS) as Array<{ n: string | number | null }>
-
-  if (filas.length === 0) return null
+    .all(boletaId, ...CLAVES_MUESTRA_RACIMOS) as Array<{ occ: number; n: string | number | null }>
 
   // `ValorNumero` sale como string por la afinidad TEXT de SQLite — Number()
   // explícito antes de sumar (misma lectura que hace el motor local).
-  const suma = filas.reduce((acc, f) => acc + Number(f.n ?? 0), 0)
-  if (suma <= 0) {
-    return {
-      status: 400,
-      error:
-        'La muestra de racimos debe ser mayor a 0 — los contadores están ' +
-        `cargados pero su suma es ${suma}.`,
-    }
+  const sumasPorOcurrencia = new Map<number, number>()
+  for (const f of filas) {
+    sumasPorOcurrencia.set(f.occ, (sumasPorOcurrencia.get(f.occ) ?? 0) + Number(f.n ?? 0))
   }
-  if (suma > MAXIMO_MUESTRA_RACIMOS) {
-    return {
-      status: 400,
-      error:
-        `La muestra de racimos no puede superar ${MAXIMO_MUESTRA_RACIMOS} — ` +
-        `suma actual: ${suma}.`,
+
+  for (const [occ, suma] of sumasPorOcurrencia) {
+    if (suma <= 0) {
+      return {
+        status: 400,
+        error:
+          `La muestra de racimos de la ocurrencia ${occ} debe ser mayor a 0 — ` +
+          'los contadores están cargados pero su suma es ' +
+          `${suma}.`,
+      }
+    }
+    if (suma > MAXIMO_MUESTRA_RACIMOS) {
+      return {
+        status: 400,
+        error:
+          `La muestra de racimos de la ocurrencia ${occ} no puede superar ` +
+          `${MAXIMO_MUESTRA_RACIMOS} — suma actual: ${suma}.`,
+      }
     }
   }
   return null

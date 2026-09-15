@@ -10,17 +10,24 @@ using Xunit;
 namespace SmsBackend.Tests;
 
 /// <summary>
-/// Guard de muestra de racimos al cierre (espejo del legacy NAT_Basculas
-/// frmCalidadFruta: guarda la calidad SOLO si 0 &lt; verdes+maduros+
-/// sobremaduros+pasados &lt;= 30 — frmCalidadFruta.cs:117-128). Vive AFUERA de
-/// <c>MotorCampos</c> (congelado por paridad) como <c>GuardiaMuestraFruta</c>,
-/// mismo estilo que <c>GuardiaVinculoTransporte</c>: estático, devuelve
-/// <c>IResult?</c> y el endpoint lo devuelve tal cual antes de mutar.
+/// Guard de muestra de racimos al cierre (espejo del guard de grabado de
+/// NAT_Basculas frmCalidadFruta: 0 &lt; verdes + maduros + sobremaduros +
+/// pasados &lt;= 30 — frmCalidadFruta.cs:117-128). El legacy lo evaluaba sobre
+/// columnas 1:1 de la Boleta (clsDatosCalidadFruta: <c>Boleta.Racimos_*</c>) —
+/// UNA sola muestra por boleta. Como <c>detalle_fruta</c> es Repetible y cada
+/// ocurrencia es un envío/lote con su propia muestra (esquema 2.0: "Repetible
+/// = N ... envíos de fruta"), la regla se aplica POR OCURRENCIA de forma
+/// independiente: una ocurrencia sin ninguno de los cuatro contadores no
+/// participa; una con alguno debe cumplir 0 &lt; suma &lt;= 30.
+/// Vive AFUERA de <c>MotorCampos</c> (congelado por paridad) como
+/// <c>GuardiaMuestraFruta</c>, mismo estilo que <c>GuardiaVinculoTransporte</c>:
+/// estático, devuelve <c>IResult?</c> y el endpoint lo devuelve tal cual antes
+/// de mutar.
 ///
 /// <c>racimos_pedunculo_largo</c> NO entra en la suma (tampoco en el legacy).
-/// Si la boleta no capturó ninguno de los cuatro contadores, el guard no
-/// aplica — no toda báscula pesa fruta con muestra de calidad. La ingesta de
-/// sync NO re-valida (design D3/D8): la decisión ya se tomó al cerrar.
+/// Si la boleta no capturó ningún contador en ninguna ocurrencia, el guard no
+/// aplica. La ingesta de sync NO re-valida (design D3/D8): la decisión ya se
+/// tomó al cerrar.
 /// </summary>
 [Collection(ApiCollection.Name)]
 public sealed class MuestraFrutaGuardTests : IAsyncLifetime
@@ -138,11 +145,46 @@ public sealed class MuestraFrutaGuardTests : IAsyncLifetime
     }
 
     [Fact]
-    public async Task La_suma_cruza_ocurrencias_de_la_seccion_repetible()
+    public async Task Dos_ocurrencias_con_muestras_validas_no_se_suman_entre_si()
+    {
+        // Cada ocurrencia de detalle_fruta es un envío/lote con su propia
+        // muestra física (esquema 2.0: "Repetible = N ... envíos de fruta").
+        // 25 + 25 son DOS muestras válidas; una suma global (50) rechazaría
+        // sin motivo — el cap de 30 es el tamaño de UNA muestra.
+        var m = await NuevoEscenarioConDetalleFrutaAsync();
+        var (boletaId, _) = await CrearConValoresAsync(
+            m, (0, m.Verde, 25), (1, m.Maduro, 25));
+
+        var resp = await TestData.CerrarAsync(_client, boletaId);
+
+        resp.EnsureSuccessStatusCode();
+        var boleta = await TestData.GetBoletaAsync(_client, boletaId);
+        Assert.Equal(EstadoBoleta.Cerrada, boleta.Estado);
+    }
+
+    [Fact]
+    public async Task Una_ocurrencia_de_31_es_400_ansi_haya_otra_valida()
     {
         var m = await NuevoEscenarioConDetalleFrutaAsync();
         var (boletaId, _) = await CrearConValoresAsync(
-            m, (0, m.Verde, 20), (1, m.Maduro, 15));
+            m, (0, m.Verde, 20), (1, m.Maduro, 31));
+
+        var resp = await TestData.CerrarAsync(_client, boletaId);
+
+        Assert.Equal(HttpStatusCode.BadRequest, resp.StatusCode);
+        var boleta = await TestData.GetBoletaAsync(_client, boletaId);
+        Assert.Equal(EstadoBoleta.EnTransito, boleta.Estado);
+    }
+
+    [Fact]
+    public async Task Una_ocurrencia_en_cero_es_400_ansi_haya_otra_valida()
+    {
+        // Sentido inverso de la granularidad: occ 0 con todos los contadores
+        // en 0 es una muestra capturada vacía → se rechaza, aunque occ 1 sea
+        // perfectamente válida y la suma global (25) pasaría el cap de 30.
+        var m = await NuevoEscenarioConDetalleFrutaAsync();
+        var (boletaId, _) = await CrearConValoresAsync(
+            m, (0, m.Verde, 0), (1, m.Maduro, 25));
 
         var resp = await TestData.CerrarAsync(_client, boletaId);
 
