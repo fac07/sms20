@@ -13,6 +13,7 @@ import { PesajePage } from './pages/pesaje/pesaje-page/pesaje-page';
 import { PreingresoPage } from './pages/preingreso/preingreso-page';
 import { SeccionesPage } from './pages/secciones/secciones-page/secciones-page';
 import { TiposMovimientoPage } from './pages/tipos-movimiento/tipos-movimiento-page/tipos-movimiento-page';
+import { TransportePage } from './pages/transporte/transporte-page';
 
 // Landing según el modo del build: pesaje en báscula, configuración en admin.
 const rutaInicio = (): string => (environment.modo === 'bascula' ? 'pesaje' : 'tipos-movimiento');
@@ -76,6 +77,12 @@ export const routes: Routes = [
       {
         path: 'preingreso',
         component: PreingresoPage,
+        canActivate: [modoGuard],
+        data: { modo: 'admin' },
+      },
+      {
+        path: 'transporte',
+        component: TransportePage,
         canActivate: [modoGuard],
         data: { modo: 'admin' },
       },
