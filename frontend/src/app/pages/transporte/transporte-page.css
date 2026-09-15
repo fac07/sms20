@@ -6,3 +6,8 @@
   text-align: right;
   white-space: nowrap;
 }
+
+.sin-seleccion {
+  padding: 16px;
+  color: rgba(0, 0, 0, 0.45);
+}
