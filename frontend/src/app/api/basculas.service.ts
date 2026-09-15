@@ -24,6 +24,9 @@ export interface Bascula {
   activa: boolean;
   aprovisionada: boolean;
   tieneCodigoVigente: boolean;
+  // UTC, marcada por el ping que la terminal Electron dispara en cada ciclo
+  // de config-sync. Null = nunca pingueó desde la instrumentación.
+  ultimaConexion: string | null;
 }
 
 export interface GuardarBasculaInput {

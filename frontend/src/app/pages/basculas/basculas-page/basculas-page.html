@@ -13,6 +13,7 @@
         <th>Nombre</th>
         <th>Centro</th>
         <th>Conexión</th>
+        <th>Última conexión</th>
         <th>Aprovisionamiento</th>
         <th>Activa</th>
         <th></th>
@@ -28,6 +29,18 @@
             <nz-tag [nzColor]="b.tipoConexion === 'Serial' ? 'blue' : 'purple'">
               <span nz-icon [nzType]="b.tipoConexion === 'Serial' ? 'api' : 'swap'"></span>
               {{ b.tipoConexion }}{{ b.tipoConexion === 'Serial' ? ' — ' + (b.puerto ?? '?') : ' — ' + (b.ip ?? '?') + ':' + (b.puertoTcp ?? '?') }}
+            </nz-tag>
+          </td>
+          <td class="conexion">
+            @let estado = conexion(b);
+            <nz-tag
+              [nzColor]="estado.color"
+              nz-tooltip
+              [nzTooltipTitle]="
+                b.ultimaConexion ? 'Último ping: ' + (b.ultimaConexion | date: 'medium') : 'La báscula nunca pingueó desde la instrumentación'
+              "
+            >
+              {{ estado.etiqueta }}
             </nz-tag>
           </td>
           <td>
