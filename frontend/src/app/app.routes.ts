@@ -11,6 +11,7 @@ import { MaestrosPage } from './pages/maestros/maestros-page/maestros-page';
 import { ProvisionalesPage } from './pages/maestros/provisionales-page/provisionales-page';
 import { PesajePage } from './pages/pesaje/pesaje-page/pesaje-page';
 import { PreingresoPage } from './pages/preingreso/preingreso-page';
+import { PreingresoColaPage } from './pages/preingreso/preingreso-cola-page';
 import { SeccionesPage } from './pages/secciones/secciones-page/secciones-page';
 import { TiposMovimientoPage } from './pages/tipos-movimiento/tipos-movimiento-page/tipos-movimiento-page';
 import { TransportePage } from './pages/transporte/transporte-page';
@@ -77,6 +78,12 @@ export const routes: Routes = [
       {
         path: 'preingreso',
         component: PreingresoPage,
+        canActivate: [modoGuard],
+        data: { modo: 'admin' },
+      },
+      {
+        path: 'preingreso/cola',
+        component: PreingresoColaPage,
         canActivate: [modoGuard],
         data: { modo: 'admin' },
       },
