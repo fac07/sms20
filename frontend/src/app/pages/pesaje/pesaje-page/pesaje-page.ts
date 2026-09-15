@@ -24,7 +24,7 @@ import { NzModalModule } from 'ng-zorro-antd/modal';
 import { NzSelectModule } from 'ng-zorro-antd/select';
 import { NzTableModule } from 'ng-zorro-antd/table';
 import { NzTagModule } from 'ng-zorro-antd/tag';
-import { Observable, catchError, forkJoin, of } from 'rxjs';
+import { Observable, Subscription, catchError, forkJoin, of } from 'rxjs';
 import { CampoAplicable, ErrorCampo, TipoMovimiento } from '../../../api/configuracion.models';
 import {
   AlertasOutbox,
@@ -36,6 +36,7 @@ import {
   LocalServerService,
   MaestroLocal,
   PreIngresoLocal,
+  VinculoPilotoTransportistaLocal,
 } from '../../../api/local-server.service';
 import { hayDivergenciaPeso } from './advertencia-peso';
 import { ControlCapturado, armarValores, valoresPrefillPreIngreso } from './armar-valores';
@@ -75,6 +76,15 @@ const MS_ESPERA_INGRESO_MANUAL = 15_000;
 // (~30s) — no hace falta la cadencia de 1.5s del peso y no debe martillar
 // `GET /outbox/alertas`.
 const POLL_ALERTAS_PROVISIONAL_MS = 30_000;
+
+// Sección/clave estándar de la pareja piloto+transportista (PR5b, diseño
+// D2/D3). El escopado del combo de piloto es un caso especial de ESTA página
+// — no del motor genérico de campos — así que se identifica por
+// `seccionClave`+`campoClave`, igual que el backend (`GuardiaVinculoTransporte`)
+// lee la pareja por `Campo.Clave` en vez de asumir un `FormControl` fijo.
+const SECCION_TRANSPORTE = 'transporte';
+const CLAVE_PILOTO = 'piloto';
+const CLAVE_TRANSPORTISTA = 'transportista';
 
 // Slice C3 — sobre C1/C2 agrega:
 //  - mapeo de `ErrorCampo[]` (400 al crear / 422 al cerrar) a cada control con
@@ -170,6 +180,18 @@ export class PesajePage implements OnInit, OnDestroy {
   // Opciones de `ReferenciaMaestro` indexadas por `TipoCatalogoRef` — snapshot
   // local, se recarga cada vez que cambia el tipo de movimiento.
   readonly maestrosPorCatalogo = signal<Record<string, MaestroLocal[]>>({});
+
+  // Vínculos activos del transportista actualmente seleccionado en
+  // `transporte.transportista` (PR5b, diseño D2/D3) — fuente de escopado
+  // offline del combo de piloto, resuelta contra el espejo local vía
+  // `GET /vinculos?transportistaId=` (PR5). Vacío mientras no hay
+  // transportista elegido: el piloto no ofrece ninguna opción hasta entonces,
+  // paridad con legacy `clsPilotos.dtPilotos(transportistaId)` — el combo de
+  // piloto NUNCA muestra el catálogo completo como fallback.
+  readonly pilotosVinculados = signal<VinculoPilotoTransportistaLocal[]>([]);
+  // Suscripción al control `transporte.transportista` — se recrea en cada
+  // `cargarFormulario` porque `formSecciones` se reconstruye por completo.
+  private transportistaVinculoSub: Subscription | null = null;
 
   // Tipos de catálogo que la báscula puede coinar como provisional offline (M1)
   // — controla si un combo `ReferenciaMaestro` ofrece el "+ Crear provisional".
@@ -276,6 +298,7 @@ export class PesajePage implements OnInit, OnDestroy {
   ngOnDestroy(): void {
     if (this.intervalId !== null) clearInterval(this.intervalId);
     if (this.alertasIntervalId !== null) clearInterval(this.alertasIntervalId);
+    this.transportistaVinculoSub?.unsubscribe();
   }
 
   private cargarAlertasProvisional(): void {
@@ -387,6 +410,9 @@ export class PesajePage implements OnInit, OnDestroy {
     this.camposAplicables.set([]);
     this.maestrosPorCatalogo.set({});
     this.formSecciones.set(this.fb.group({}));
+    this.transportistaVinculoSub?.unsubscribe();
+    this.transportistaVinculoSub = null;
+    this.pilotosVinculados.set([]);
 
     if (tipoMovimientoId === '') return;
 
@@ -403,7 +429,72 @@ export class PesajePage implements OnInit, OnDestroy {
         this.camposAplicables.set(campos);
         this.formSecciones.set(this.construirFormulario(campos));
         this.cargarMaestrosReferencia(campos);
+        this.suscribirTransportistaVinculo(campos);
       });
+  }
+
+  /**
+   * Escopado offline del combo de piloto (PR5b, diseño D2/D3): se suscribe al
+   * control `transporte.transportista` (si el formulario del tipo de
+   * movimiento actual lo incluye) para recargar `pilotosVinculados` en cada
+   * cambio. Vive FUERA del motor genérico de campos a propósito — es la regla
+   * de negocio piloto+transportista que `MotorCampos`/`motor-campos.ts` no
+   * debe conocer (17 vectores dorados de paridad).
+   */
+  private suscribirTransportistaVinculo(campos: readonly CampoAplicable[]): void {
+    const campoTransportista = campos.find(
+      (c) => c.seccionClave === SECCION_TRANSPORTE && c.campoClave === CLAVE_TRANSPORTISTA,
+    );
+    if (campoTransportista === undefined) return;
+
+    const control = this.grupoDeSeccion(campoTransportista.seccionClave).get(campoTransportista.campoId);
+    if (control === null) return;
+
+    this.transportistaVinculoSub = control.valueChanges.subscribe((transportistaId: unknown) =>
+      this.refrescarPilotosVinculados((transportistaId as string | null) || null, campos),
+    );
+  }
+
+  /**
+   * Recarga `pilotosVinculados` para el transportista dado (o la vacía sin
+   * transportista) y limpia una selección de piloto que ya no sea válida.
+   * Fully offline: `vinculosPorTransportista` resuelve contra el espejo local
+   * (`GET /vinculos?transportistaId=`, PR5) — no hay ruta de red central acá.
+   */
+  private refrescarPilotosVinculados(
+    transportistaId: string | null,
+    campos: readonly CampoAplicable[],
+  ): void {
+    if (transportistaId === null) {
+      this.pilotosVinculados.set([]);
+      this.limpiarPilotoSiInvalido(campos, []);
+      return;
+    }
+
+    this.localServer
+      .vinculosPorTransportista(transportistaId)
+      .pipe(catchError(() => of<VinculoPilotoTransportistaLocal[]>([])))
+      .subscribe((vinculos) => {
+        this.pilotosVinculados.set(vinculos);
+        this.limpiarPilotoSiInvalido(campos, vinculos);
+      });
+  }
+
+  /** Si el piloto seleccionado ya no está entre los vínculos vigentes, lo limpia (nunca lo deja stale/inválido en silencio). */
+  private limpiarPilotoSiInvalido(
+    campos: readonly CampoAplicable[],
+    vinculos: readonly VinculoPilotoTransportistaLocal[],
+  ): void {
+    const campoPiloto = campos.find(
+      (c) => c.seccionClave === SECCION_TRANSPORTE && c.campoClave === CLAVE_PILOTO,
+    );
+    if (campoPiloto === undefined) return;
+
+    const control = this.grupoDeSeccion(campoPiloto.seccionClave).get(campoPiloto.campoId);
+    if (control === null || control.value === null) return;
+
+    const sigueValido = vinculos.some((v) => v.pilotoId === control.value);
+    if (!sigueValido) control.setValue(null);
   }
 
   /** Batch-load de los catálogos referenciados por los campos `ReferenciaMaestro`. */
@@ -469,9 +560,18 @@ export class PesajePage implements OnInit, OnDestroy {
   }
 
   opcionesMaestro(campo: CampoAplicable): MaestroLocal[] {
-    return campo.tipoCatalogoRef !== null
-      ? this.maestrosPorCatalogo()[campo.tipoCatalogoRef] ?? []
-      : [];
+    const catalogo =
+      campo.tipoCatalogoRef !== null ? this.maestrosPorCatalogo()[campo.tipoCatalogoRef] ?? [] : [];
+
+    // Caso especial de ESTA página (PR5b): el combo de piloto se escopa a los
+    // vínculos activos del transportista elegido — cualquier otro campo
+    // `ReferenciaMaestro` sigue el camino genérico sin tocar.
+    if (campo.seccionClave !== SECCION_TRANSPORTE || campo.campoClave !== CLAVE_PILOTO) {
+      return catalogo;
+    }
+
+    const idsVinculados = new Set(this.pilotosVinculados().map((v) => v.pilotoId));
+    return catalogo.filter((m) => idsVinculados.has(m.id));
   }
 
   private cargarTiposProvisionables(): void {
