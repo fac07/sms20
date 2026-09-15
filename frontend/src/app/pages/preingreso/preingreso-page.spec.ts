@@ -7,6 +7,7 @@ import { TestBed } from '@angular/core/testing';
 import { NzMessageService } from 'ng-zorro-antd/message';
 import { Maestro, TipoCatalogo } from '../../api/maestros.service';
 import { PreIngreso } from '../../api/preingresos.service';
+import { VinculoPilotoTransportista } from '../../api/transporte.service';
 import { PreingresoPage } from './preingreso-page';
 import { environment } from '../../../environments/environment';
 import { routes } from '../../app.routes';
@@ -23,6 +24,20 @@ function maestro(parcial: Partial<Maestro> & Pick<Maestro, 'id'>): Maestro {
     fusionadoConId: null,
     fechaModificacion: '',
     activo: true,
+    ...parcial,
+  };
+}
+
+function vinculo(
+  parcial: Partial<VinculoPilotoTransportista> &
+    Pick<VinculoPilotoTransportista, 'pilotoId' | 'transportistaId'>,
+): VinculoPilotoTransportista {
+  return {
+    id: `${parcial.pilotoId}-${parcial.transportistaId}`,
+    activo: true,
+    usuarioCreacion: 'admin@naturaceites.com',
+    fechaCreacion: '2026-09-01T00:00:00Z',
+    fechaModificacion: '2026-09-01T00:00:00Z',
     ...parcial,
   };
 }
@@ -76,6 +91,7 @@ describe('PreingresoPage (TestBed + HttpTestingController)', () => {
     preingresos: PreIngreso[] = [],
     centros: Maestro[] = [maestro({ id: 'centro-1' })],
     porTipo: Partial<Record<'Piloto' | 'Transportista' | 'Equipo' | 'Finca' | 'Region', Maestro[]>> = {},
+    vinculos: VinculoPilotoTransportista[] = [],
   ) {
     const fixture = TestBed.createComponent(PreingresoPage);
     httpMock.expectOne(`${CENTRAL}/api/preingresos`).flush(preingresos);
@@ -87,6 +103,7 @@ describe('PreingresoPage (TestBed + HttpTestingController)', () => {
         .expectOne(`${CENTRAL}/api/maestros?tipoCatalogo=${tipo}&estado=Oficial&incluirInactivos=false`)
         .flush(porTipo[tipo] ?? []);
     }
+    httpMock.expectOne(`${CENTRAL}/api/vinculos-piloto-transportista`).flush(vinculos);
     return fixture.componentInstance;
   }
 
@@ -188,16 +205,21 @@ describe('PreingresoPage (TestBed + HttpTestingController)', () => {
   });
 
   it('los 5 selects del formulario están enlazados a sus FormControls y muestran las opciones cargadas', () => {
-    const page = crear([], undefined, {
-      Piloto: [maestro({ id: 'piloto-1', tipoCatalogo: 'Piloto' as TipoCatalogo, nombre: 'Juan Pérez' })],
-    });
+    const page = crear(
+      [],
+      undefined,
+      { Piloto: [maestro({ id: 'piloto-1', tipoCatalogo: 'Piloto' as TipoCatalogo, nombre: 'Juan Pérez' })] },
+      // Vínculo activo requerido: sin él, seleccionar transportista-9 después
+      // limpiaría pilotoId por quedar fuera del alcance escopado (task 6.3).
+      [vinculo({ pilotoId: 'piloto-1', transportistaId: 'transportista-9' })],
+    );
 
     page.abrirModalCrear();
 
     expect(page.pilotos().map((m) => m.id)).toContain('piloto-1');
 
-    page.form.controls.pilotoId.setValue('piloto-1');
     page.form.controls.transportistaId.setValue('transportista-9');
+    page.form.controls.pilotoId.setValue('piloto-1');
     page.form.controls.equipoId.setValue('equipo-9');
     page.form.controls.fincaId.setValue('finca-9');
     page.form.controls.regionId.setValue('region-9');
@@ -207,6 +229,85 @@ describe('PreingresoPage (TestBed + HttpTestingController)', () => {
     expect(page.form.controls.equipoId.value).toBe('equipo-9');
     expect(page.form.controls.fincaId.value).toBe('finca-9');
     expect(page.form.controls.regionId.value).toBe('region-9');
+  });
+
+  it('sin transportista seleccionado no ofrece opciones de piloto (task 6.3)', () => {
+    const page = crear(
+      [],
+      undefined,
+      { Piloto: [maestro({ id: 'piloto-1', tipoCatalogo: 'Piloto' as TipoCatalogo, nombre: 'Juan' })] },
+      [],
+    );
+
+    expect(page.form.controls.transportistaId.value).toBeNull();
+    expect(page.pilotosVinculados()).toEqual([]);
+  });
+
+  it('escopa las opciones de piloto al transportista seleccionado (task 6.3)', () => {
+    const page = crear(
+      [],
+      undefined,
+      {
+        Piloto: [
+          maestro({ id: 'piloto-1', tipoCatalogo: 'Piloto' as TipoCatalogo, nombre: 'Juan' }),
+          maestro({ id: 'piloto-2', tipoCatalogo: 'Piloto' as TipoCatalogo, nombre: 'Pedro' }),
+        ],
+        Transportista: [
+          maestro({ id: 'transportista-1', tipoCatalogo: 'Transportista' as TipoCatalogo, nombre: 'Transp A' }),
+        ],
+      },
+      [
+        vinculo({ pilotoId: 'piloto-1', transportistaId: 'transportista-1' }),
+        vinculo({ pilotoId: 'piloto-2', transportistaId: 'transportista-9' }),
+      ],
+    );
+
+    page.form.controls.transportistaId.setValue('transportista-1');
+
+    expect(page.pilotosVinculados().map((p) => p.id)).toEqual(['piloto-1']);
+  });
+
+  it('al cambiar de transportista, reescopa y limpia un piloto que ya no es válido (task 6.3)', () => {
+    const page = crear(
+      [],
+      undefined,
+      {
+        Piloto: [
+          maestro({ id: 'piloto-1', tipoCatalogo: 'Piloto' as TipoCatalogo, nombre: 'Juan' }),
+          maestro({ id: 'piloto-2', tipoCatalogo: 'Piloto' as TipoCatalogo, nombre: 'Pedro' }),
+        ],
+      },
+      [
+        vinculo({ pilotoId: 'piloto-1', transportistaId: 'transportista-1' }),
+        vinculo({ pilotoId: 'piloto-2', transportistaId: 'transportista-2' }),
+      ],
+    );
+
+    page.form.controls.transportistaId.setValue('transportista-1');
+    page.form.controls.pilotoId.setValue('piloto-1');
+    expect(page.form.controls.pilotoId.value).toBe('piloto-1');
+
+    page.form.controls.transportistaId.setValue('transportista-2');
+
+    expect(page.pilotosVinculados().map((p) => p.id)).toEqual(['piloto-2']);
+    expect(page.form.controls.pilotoId.value).toBeNull();
+  });
+
+  it('un vínculo inactivo no habilita al piloto para ese transportista (task 6.3)', () => {
+    const page = crear(
+      [],
+      undefined,
+      {
+        Piloto: [maestro({ id: 'piloto-1', tipoCatalogo: 'Piloto' as TipoCatalogo, nombre: 'Juan' })],
+      },
+      [
+        vinculo({ pilotoId: 'piloto-1', transportistaId: 'transportista-1', activo: false }),
+      ],
+    );
+
+    page.form.controls.transportistaId.setValue('transportista-1');
+
+    expect(page.pilotosVinculados()).toEqual([]);
   });
 
   it('solo permite editar o cancelar mientras el estado es Pendiente', () => {

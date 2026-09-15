@@ -1,5 +1,6 @@
 import { CommonModule } from '@angular/common';
-import { Component, inject, signal } from '@angular/core';
+import { Component, computed, inject, signal } from '@angular/core';
+import { toSignal } from '@angular/core/rxjs-interop';
 import { FormBuilder, ReactiveFormsModule, Validators } from '@angular/forms';
 import { NzButtonModule } from 'ng-zorro-antd/button';
 import { NzCardModule } from 'ng-zorro-antd/card';
@@ -19,6 +20,7 @@ import {
   PreIngreso,
   PreingresosService,
 } from '../../api/preingresos.service';
+import { TransporteService, VinculoPilotoTransportista } from '../../api/transporte.service';
 
 // No hay autenticación real todavía — mismo placeholder que pesaje-page hasta
 // que exista un servicio de sesión/usuario.
@@ -53,6 +55,7 @@ const USUARIO_PLACEHOLDER = 'admin@naturaceites.com';
 export class PreingresoPage {
   private readonly service = inject(PreingresosService);
   private readonly maestrosService = inject(MaestrosService);
+  private readonly transporteService = inject(TransporteService);
   private readonly message = inject(NzMessageService);
   private readonly fb = inject(FormBuilder);
 
@@ -60,6 +63,7 @@ export class PreingresoPage {
   readonly centros = signal<Maestro[]>([]);
   readonly pilotos = signal<Maestro[]>([]);
   readonly transportistas = signal<Maestro[]>([]);
+  readonly vinculos = signal<VinculoPilotoTransportista[]>([]);
   readonly equipos = signal<Maestro[]>([]);
   readonly fincas = signal<Maestro[]>([]);
   readonly regiones = signal<Maestro[]>([]);
@@ -79,6 +83,29 @@ export class PreingresoPage {
     fincaId: this.fb.control<string | null>(null),
     racimos: this.fb.control<number | null>(null),
     sacos: this.fb.control<number | null>(null),
+  });
+
+  /** Bridge de `transportistaId` (FormControl) a signal, para el `computed()` de abajo (design D8). */
+  private readonly transportistaIdSeleccionado = toSignal(
+    this.form.controls.transportistaId.valueChanges,
+    { initialValue: this.form.controls.transportistaId.value },
+  );
+
+  /**
+   * Pilotos habilitados para el transportista elegido, derivados de los
+   * catálogos ya cargados — sin llamada HTTP por selección (design D8). Sin
+   * transportista elegido, no se ofrece ningún piloto (misma regla de
+   * paridad legacy que PR5b: nunca cae al catálogo completo sin escopar).
+   */
+  readonly pilotosVinculados = computed(() => {
+    const transportistaId = this.transportistaIdSeleccionado();
+    if (!transportistaId) return [];
+    const idsVinculados = new Set(
+      this.vinculos()
+        .filter((v) => v.activo && v.transportistaId === transportistaId)
+        .map((v) => v.pilotoId),
+    );
+    return this.pilotos().filter((p) => idsVinculados.has(p.id));
   });
 
   constructor() {
@@ -101,6 +128,16 @@ export class PreingresoPage {
     this.maestrosService
       .listarOficialesActivos('Region')
       .subscribe((regiones) => this.regiones.set(regiones));
+    this.transporteService.listar().subscribe((vinculos) => this.vinculos.set(vinculos));
+
+    // Si al cambiar de transportista el piloto ya elegido queda fuera del
+    // nuevo alcance, se limpia — nunca se deja una selección inválida (task 6.3).
+    this.form.controls.transportistaId.valueChanges.subscribe(() => {
+      const pilotoActual = this.form.controls.pilotoId.value;
+      if (pilotoActual && !this.pilotosVinculados().some((p) => p.id === pilotoActual)) {
+        this.form.controls.pilotoId.setValue(null);
+      }
+    });
   }
 
   /** Solo se puede editar o cancelar mientras el estado es Pendiente (design D4). */

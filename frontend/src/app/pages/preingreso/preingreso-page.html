@@ -93,7 +93,7 @@
         <nz-form-label>Piloto</nz-form-label>
         <nz-form-control>
           <nz-select formControlName="pilotoId" nzAllowClear nzPlaceHolder="Elegí el piloto">
-            @for (piloto of pilotos(); track piloto.id) {
+            @for (piloto of pilotosVinculados(); track piloto.id) {
               <nz-option [nzValue]="piloto.id" [nzLabel]="piloto.nombre"></nz-option>
             }
           </nz-select>
