@@ -169,6 +169,18 @@ export interface MaestroLocal {
   activo: boolean;
 }
 
+// Espejo camelCase del `VinculoPilotoTransportistaDto` central — mismo shape
+// que `VinculoPilotoTransportistaLocal` en frontend/electron/db.ts, servido
+// por `GET /vinculos?transportistaId=` del servidor local (PR5/D3). Siempre
+// `activo=true` (el read path local ya filtra `Activo=1`).
+export interface VinculoPilotoTransportistaLocal {
+  id: string;
+  pilotoId: string;
+  transportistaId: string;
+  activo: boolean;
+  fechaModificacion: string;
+}
+
 // Evento provisional trabado en el Outbox local (>= 5 intentos, aún Pendiente)
 // — mismo shape que devuelve `GET /outbox/alertas` en electron/local-server.ts.
 export interface AlertaProvisionalEvento {
@@ -314,5 +326,15 @@ export class LocalServerService {
   // en vuelo, un fallo no compromete el espejo local.
   sincronizarPreIngreso(): Observable<{ descargados: number }> {
     return this.http.post<{ descargados: number }>(`${LOCAL_SERVER_URL}/preingreso/sincronizar`, {});
+  }
+
+  // Vínculo Piloto-Transportista (PR5b) — read path local del selector de
+  // piloto de Pesaje, escopado por el transportista elegido y resuelto 100%
+  // contra el espejo local (ver GET /vinculos en local-server.ts: siempre
+  // Activo=1, 400 sin transportistaId, 200 [] para uno sin vínculos).
+  vinculosPorTransportista(transportistaId: string): Observable<VinculoPilotoTransportistaLocal[]> {
+    return this.http.get<VinculoPilotoTransportistaLocal[]>(
+      `${LOCAL_SERVER_URL}/vinculos?transportistaId=${encodeURIComponent(transportistaId)}`,
+    );
   }
 }

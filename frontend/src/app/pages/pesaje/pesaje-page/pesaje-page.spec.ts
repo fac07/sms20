@@ -445,6 +445,12 @@ describe('PesajePage (TestBed + HttpTestingController)', () => {
       activo: true,
     });
 
+    // Seleccionar el provisional recién creado como transportista dispara el
+    // escopado offline del piloto (PR5b) — este formulario no tiene campo
+    // piloto, así que la respuesta es irrelevante más allá de destrabar el
+    // request pendiente.
+    httpMock.expectOne(`${LOCAL}/vinculos?transportistaId=prov-1`).flush([]);
+
     expect(grupo.get('c1')!.value).toBe('prov-1');
     expect(component.opcionesMaestro(refCampo).map((m) => m.id)).toContain('prov-1');
   });
@@ -906,6 +912,19 @@ describe('PesajePage (TestBed + HttpTestingController)', () => {
       httpMock.expectOne(`${LOCAL}/maestros?tipoCatalogo=Finca`).flush([]);
 
       component.seleccionarPreIngreso(preIngresoFixture);
+
+      // El prefill setea transportista, lo que dispara el escopado offline
+      // del piloto (PR5b) — el vínculo devuelto incluye el piloto prefilleado
+      // para que la reconciliación de "ya no válido" no lo limpie.
+      httpMock.expectOne(`${LOCAL}/vinculos?transportistaId=transportista-1`).flush([
+        {
+          id: 'v1',
+          pilotoId: 'piloto-1',
+          transportistaId: 'transportista-1',
+          activo: true,
+          fechaModificacion: '',
+        },
+      ]);
 
       expect(component.preIngresoId()).toBe('pre-1');
       const grupoTransporte = component.formSecciones().get('transporte') as FormGroup;
