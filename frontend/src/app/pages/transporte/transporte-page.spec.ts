@@ -6,7 +6,10 @@ import {
 import { TestBed } from '@angular/core/testing';
 import { NzMessageService } from 'ng-zorro-antd/message';
 import { Maestro, TipoCatalogo } from '../../api/maestros.service';
-import { VinculoPilotoTransportista } from '../../api/transporte.service';
+import {
+  AsignacionUnidadTransportista,
+  VinculoPilotoTransportista,
+} from '../../api/transporte.service';
 import { TransportePage } from './transporte-page';
 import { environment } from '../../../environments/environment';
 import { routes } from '../../app.routes';
@@ -18,6 +21,7 @@ const CENTRAL = environment.apiUrl;
 // inactivos (los inactivos son necesarios para poder reactivarlos) — sin
 // `modificadoDesde` el endpoint sólo devuelve los activos.
 const URL_VINCULOS_TODOS = `${CENTRAL}/api/vinculos-piloto-transportista?modificadoDesde=1970-01-01T00%3A00%3A00.000Z`;
+const URL_UNIDADES = `${CENTRAL}/api/maestros?tipoCatalogo=Unidad&estado=Oficial&incluirInactivos=false`;
 
 function maestro(parcial: Partial<Maestro> & Pick<Maestro, 'id'>): Maestro {
   return {
@@ -43,6 +47,20 @@ function vinculo(
     usuarioCreacion: 'admin@naturaceites.com',
     fechaCreacion: '2026-09-01T00:00:00Z',
     fechaModificacion: '2026-09-01T00:00:00Z',
+    ...parcial,
+  };
+}
+
+function asignacion(
+  parcial: Partial<AsignacionUnidadTransportista> & Pick<AsignacionUnidadTransportista, 'id'>,
+): AsignacionUnidadTransportista {
+  return {
+    unidadId: 'unidad-1',
+    transportistaId: 'transportista-1',
+    vigenteDesde: '2026-09-01T00:00:00Z',
+    vigenteHasta: null,
+    usuarioAsigna: 'admin@naturaceites.com',
+    motivoCambio: null,
     ...parcial,
   };
 }
@@ -73,6 +91,7 @@ describe('TransportePage (TestBed + HttpTestingController)', () => {
     vinculos: VinculoPilotoTransportista[] = [],
     pilotos: Maestro[] = [],
     transportistas: Maestro[] = [],
+    unidades: Maestro[] = [],
   ) {
     const fixture = TestBed.createComponent(TransportePage);
     httpMock.expectOne(URL_VINCULOS_TODOS).flush(vinculos);
@@ -82,6 +101,7 @@ describe('TransportePage (TestBed + HttpTestingController)', () => {
     httpMock
       .expectOne(`${CENTRAL}/api/maestros?tipoCatalogo=Transportista&estado=Oficial&incluirInactivos=false`)
       .flush(transportistas);
+    httpMock.expectOne(URL_UNIDADES).flush(unidades);
     return fixture.componentInstance;
   }
 
@@ -171,6 +191,101 @@ describe('TransportePage (TestBed + HttpTestingController)', () => {
     httpMock.expectOne(URL_VINCULOS_TODOS).flush([vinculo({ id: 'v1', activo: true })]);
 
     expect(message.success).toHaveBeenCalled();
+  });
+});
+
+describe('TransportePage — pestaña Asignación de unidades (TestBed + HttpTestingController)', () => {
+  let httpMock: HttpTestingController;
+  const message = { error: vi.fn(), success: vi.fn() };
+
+  beforeEach(async () => {
+    message.error.mockReset();
+    message.success.mockReset();
+    await TestBed.configureTestingModule({
+      imports: [TransportePage],
+      providers: [
+        provideHttpClient(),
+        provideHttpClientTesting(),
+        { provide: NzMessageService, useValue: message },
+      ],
+    }).compileComponents();
+    httpMock = TestBed.inject(HttpTestingController);
+  });
+
+  afterEach(() => {
+    httpMock.verify();
+  });
+
+  function crear(unidades: Maestro[] = [], transportistas: Maestro[] = []) {
+    const fixture = TestBed.createComponent(TransportePage);
+    httpMock.expectOne(URL_VINCULOS_TODOS).flush([]);
+    httpMock
+      .expectOne(`${CENTRAL}/api/maestros?tipoCatalogo=Piloto&estado=Oficial&incluirInactivos=false`)
+      .flush([]);
+    httpMock
+      .expectOne(`${CENTRAL}/api/maestros?tipoCatalogo=Transportista&estado=Oficial&incluirInactivos=false`)
+      .flush(transportistas);
+    httpMock.expectOne(URL_UNIDADES).flush(unidades);
+    return fixture.componentInstance;
+  }
+
+  it('carga las unidades oficiales activas para el selector', () => {
+    const page = crear([maestro({ id: 'unidad-1', tipoCatalogo: 'Unidad' as TipoCatalogo, nombre: 'U-01' })]);
+
+    expect(page.unidades().map((m) => m.id)).toEqual(['unidad-1']);
+  });
+
+  it('al seleccionar una unidad carga su historial de asignaciones, más reciente primero', () => {
+    const page = crear([maestro({ id: 'unidad-1', tipoCatalogo: 'Unidad' as TipoCatalogo })]);
+
+    page.seleccionarUnidad('unidad-1');
+
+    const req = httpMock.expectOne(`${CENTRAL}/api/transporte/unidades/unidad-1/asignaciones`);
+    expect(req.request.method).toBe('GET');
+    req.flush([
+      asignacion({ id: 'a2', transportistaId: 't2', vigenteDesde: '2026-09-10T00:00:00Z', vigenteHasta: null }),
+      asignacion({ id: 'a1', transportistaId: 't1', vigenteDesde: '2026-09-01T00:00:00Z', vigenteHasta: '2026-09-10T00:00:00Z' }),
+    ]);
+
+    expect(page.historial().map((a) => a.id)).toEqual(['a2', 'a1']);
+  });
+
+  it('reasigna el transportista de la unidad seleccionada y recarga el historial', () => {
+    const page = crear([maestro({ id: 'unidad-1', tipoCatalogo: 'Unidad' as TipoCatalogo })]);
+    page.seleccionarUnidad('unidad-1');
+    httpMock.expectOne(`${CENTRAL}/api/transporte/unidades/unidad-1/asignaciones`).flush([]);
+
+    page.reasignarForm.patchValue({ transportistaId: 'transportista-2', motivoCambio: 'Cambio de ruta' });
+    page.reasignar();
+
+    const req = httpMock.expectOne(`${CENTRAL}/api/transporte/unidades/unidad-1/asignaciones`);
+    expect(req.request.method).toBe('POST');
+    expect(req.request.body).toMatchObject({
+      transportistaId: 'transportista-2',
+      motivoCambio: 'Cambio de ruta',
+    });
+    req.flush(
+      asignacion({ id: 'a3', transportistaId: 'transportista-2', vigenteDesde: '2026-09-15T00:00:00Z' }),
+    );
+
+    httpMock
+      .expectOne(`${CENTRAL}/api/transporte/unidades/unidad-1/asignaciones`)
+      .flush([asignacion({ id: 'a3', transportistaId: 'transportista-2' })]);
+
+    expect(message.success).toHaveBeenCalled();
+    expect(page.historial().length).toBe(1);
+  });
+
+  it('rechaza la reasignación sin transportista elegido — no envía nada', () => {
+    const page = crear([maestro({ id: 'unidad-1', tipoCatalogo: 'Unidad' as TipoCatalogo })]);
+    page.seleccionarUnidad('unidad-1');
+    httpMock.expectOne(`${CENTRAL}/api/transporte/unidades/unidad-1/asignaciones`).flush([]);
+
+    page.reasignarForm.patchValue({ transportistaId: '' });
+    page.reasignar();
+
+    httpMock.expectNone((r) => r.method === 'POST');
+    expect(page.reasignarForm.invalid).toBe(true);
   });
 });
 
