@@ -18,7 +18,8 @@ public record BasculaDto(
     bool TieneCodigoVigente,
     bool PermiteIngresoManual,
     decimal? PesoMinimoManual,
-    decimal? PesoMaximoManual);
+    decimal? PesoMaximoManual,
+    DateTime? UltimaConexion);
 
 /// <summary>
 /// Configuración central de ingreso manual para una báscula. La toca solo el

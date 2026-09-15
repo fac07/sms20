@@ -184,6 +184,25 @@ public static class BasculaEndpoints
                 bascula.PermiteIngresoManual, bascula.PesoMinimoManual, bascula.PesoMaximoManual));
         });
 
+        // Ping de conectividad — lo dispara la terminal Electron en cada ciclo
+        // de config-sync (~60s). Endpoint DEDICADO a propósito: stampar desde
+        // el GET /{id} haría que un admin que abre la ficha de la báscula
+        // "la conecte" (falso positivo). Mismo posture que /aprovisionar:
+        // identidad = conoce el id de la báscula, sin auth. Best-effort: si
+        // Central no responde, el próximo tick lo reintenta. No exige
+        // Activa=true — una báscula dada de baja que aún llama también deja
+        // su marca (historial de conectividad, no permiso operativo).
+        group.MapPost("/{id:guid}/ping", async (Guid id, SmsDbContext db) =>
+        {
+            var bascula = await db.Basculas.FirstOrDefaultAsync(b => b.Id == id);
+            if (bascula is null) return Results.NotFound();
+
+            bascula.UltimaConexion = DateTime.UtcNow;
+            await db.SaveChangesAsync();
+
+            return Results.NoContent();
+        });
+
         return group;
     }
 
@@ -221,7 +240,8 @@ public static class BasculaEndpoints
             b.Activa, b.Aprovisionada,
             b.CodigoAprovisionamiento != null && !b.Aprovisionada
                 && b.CodigoAprovisionamientoExpira > DateTime.UtcNow,
-            b.PermiteIngresoManual, b.PesoMinimoManual, b.PesoMaximoManual);
+            b.PermiteIngresoManual, b.PesoMinimoManual, b.PesoMaximoManual,
+            b.UltimaConexion);
 
     private static string GenerarCodigo()
     {
