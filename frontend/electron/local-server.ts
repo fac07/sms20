@@ -26,6 +26,7 @@ import {
   tiposProvisionalesHabilitados,
   validarCierreLocal,
   validarValoresLocal,
+  vinculosPorTransportistaLocal,
 } from './db'
 import type { EstadoOutboxLocal, MotivoPesoManual, OrigenPesoLocal } from './db'
 import type { ValorCampo } from './motor-campos'
@@ -618,6 +619,22 @@ export function startLocalServer(port: number, esDev: boolean): Server {
       return
     }
     res.json(preIngreso)
+  })
+
+  // Vínculo Piloto-Transportista (PR5/D3) — read path local del selector de
+  // piloto de Pesaje, resuelto 100% contra el espejo SQLite (sin llamada a
+  // central), mismo posture que GET /preingreso. SIEMPRE requiere
+  // `transportistaId`: sin él el selector no tiene qué escopar, así que 400 en
+  // vez de devolver el catálogo entero (eso sería exactamente la regresión que
+  // este endpoint existe para evitar). vinculosPorTransportistaLocal ya filtra
+  // Activo=1; espejo vacío (nunca sincronizado) -> 200 [], nunca 5xx.
+  app.get('/vinculos', (req, res) => {
+    const transportistaId = req.query.transportistaId as string | undefined
+    if (!transportistaId) {
+      res.status(400).json({ error: 'Falta transportistaId.' })
+      return
+    }
+    res.json(vinculosPorTransportistaLocal(transportistaId))
   })
 
   app.post('/aprovisionamiento', async (req, res) => {

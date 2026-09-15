@@ -88,7 +88,17 @@ const SQL_CREAR_BOLETA = `
 //       se rechaza o el pre-ingreso se cancela después de enlazar). Aditivo:
 //       `CREATE TABLE IF NOT EXISTS` + `ALTER TABLE ADD COLUMN` idempotente vía
 //       `PRAGMA table_info` — un build viejo lo ignora y el pesaje no se toca.
-const ESQUEMA_LOCAL_VERSION = '4'
+//  v5 = espejo local `VinculoPilotoTransportista` (diseño D3/G4, delta
+//       central→terminal compartiendo el mismo pase de maestros-sync.ts), lo
+//       que permite escopar el selector de piloto de Pesaje por el
+//       transportista elegido, 100% offline. Puramente aditivo — solo
+//       `CREATE TABLE IF NOT EXISTS` (sin ALTER a ninguna tabla existente), así
+//       que no hace falta ningún paso dentro de `aplicarReshapeEsquemaLocal`:
+//       la tabla ya vive en `SQL_ESQUEMA_LOCAL` y se crea sola en cualquier
+//       versión. El bump de versión acá es solo trazabilidad — un build viejo
+//       que nunca corre esta migración no se rompe, simplemente no tiene la
+//       tabla ni el sync la usa.
+const ESQUEMA_LOCAL_VERSION = '5'
 
 /**
  * Guardia de versión del esquema local (decisión de diseño D2). SQLite no
@@ -381,6 +391,27 @@ const SQL_ESQUEMA_LOCAL = `
 
     CREATE INDEX IF NOT EXISTS IX_PreIngreso_Centro_Estado ON PreIngreso(CentroId, Estado);
     CREATE INDEX IF NOT EXISTS IX_PreIngreso_NumeroEnvio ON PreIngreso(NumeroEnvio);
+
+    -- Espejo local del vínculo Piloto-Transportista central (diseño D1/D3,
+    -- backend/Domain/Transporte). Alimentado SOLO por el delta central→terminal
+    -- (maestros-sync.ts, MISMA transacción que el upsert de Maestro — G4: si
+    -- uno de los dos falla, ninguno de los dos watermarks avanza), filtrado por
+    -- modificadoDesde=MAX(FechaModificacion) con predicado estrictamente
+    -- mayor (>), igual que Maestro/PreIngreso. En modo delta los inactivos
+    -- también llegan (un vínculo desactivado tiene que dejar de ofrecerse acá).
+    -- Guid/bool/ISO-8601 como TEXT/INTEGER, mismo idioma que el resto del
+    -- espejo. Read path: vinculosPorTransportistaLocal, SIEMPRE Activo=1 (el
+    -- selector de piloto de Pesaje nunca debe ofrecer un vínculo desactivado).
+    CREATE TABLE IF NOT EXISTS VinculoPilotoTransportista (
+      Id TEXT PRIMARY KEY,
+      PilotoId TEXT NOT NULL,
+      TransportistaId TEXT NOT NULL,
+      Activo INTEGER NOT NULL,
+      FechaModificacion TEXT NOT NULL
+    );
+
+    CREATE INDEX IF NOT EXISTS IX_VinculoPilotoTransportista_Transportista_Activo
+      ON VinculoPilotoTransportista(TransportistaId, Activo);
 `
 
 // Allow-list configurable de `TipoCatalogo` que la báscula puede coinar como
@@ -2192,5 +2223,120 @@ export function obtenerUltimaSincronizacionPreIngresos(): string | null {
   const row = getDb().prepare('SELECT MAX(FechaModificacion) AS maximo FROM PreIngreso').get() as {
     maximo: string | null
   }
+  return row.maximo
+}
+
+// ---------------------------------------------------------------------------
+// VinculoPilotoTransportista — espejo local del enlace central (ver el CREATE
+// TABLE en SQL_ESQUEMA_LOCAL). El escritor (upsertVinculosLocal) lo usa
+// únicamente el delta-sync (maestros-sync.ts, en la MISMA transacción que el
+// upsert de Maestro — ver upsertMaestrosYVinculosLocal); el lector
+// (vinculosPorTransportistaLocal) alimenta el selector de piloto de Pesaje
+// escopado por el transportista elegido, 100% offline. Dirección del sync:
+// SIEMPRE central→terminal, nunca al revés.
+// ---------------------------------------------------------------------------
+
+/** Espejo camelCase del `VinculoPilotoTransportistaDto` central — shape idéntico al que baja el delta. */
+export interface VinculoPilotoTransportistaLocal {
+  id: string
+  pilotoId: string
+  transportistaId: string
+  activo: boolean
+  fechaModificacion: string
+}
+
+interface VinculoPilotoTransportistaRow {
+  Id: string
+  PilotoId: string
+  TransportistaId: string
+  Activo: number
+  FechaModificacion: string
+}
+
+function filaAVinculoPilotoTransportistaLocal(
+  row: VinculoPilotoTransportistaRow,
+): VinculoPilotoTransportistaLocal {
+  return {
+    id: row.Id,
+    pilotoId: row.PilotoId,
+    transportistaId: row.TransportistaId,
+    activo: Boolean(row.Activo),
+    fechaModificacion: row.FechaModificacion,
+  }
+}
+
+/**
+ * Upsert en bloque del espejo de VinculoPilotoTransportista — toda la tanda
+ * comitea junta o ninguna (mismo espíritu que upsertMaestrosLocal /
+ * upsertPreIngresosLocal). Sin filas, no vale la pena ni abrir la transacción.
+ */
+export function upsertVinculosLocal(vinculos: readonly VinculoPilotoTransportistaLocal[]): void {
+  if (vinculos.length === 0) return
+
+  const upsert = getDb().prepare(
+    `INSERT INTO VinculoPilotoTransportista (
+      Id, PilotoId, TransportistaId, Activo, FechaModificacion
+    ) VALUES (
+      @id, @pilotoId, @transportistaId, @activo, @fechaModificacion
+    )
+    ON CONFLICT(Id) DO UPDATE SET
+      PilotoId = excluded.PilotoId,
+      TransportistaId = excluded.TransportistaId,
+      Activo = excluded.Activo,
+      FechaModificacion = excluded.FechaModificacion`,
+  )
+
+  const ejecutar = getDb().transaction((filas: readonly VinculoPilotoTransportistaLocal[]): void => {
+    for (const v of filas) {
+      upsert.run({
+        id: v.id,
+        pilotoId: v.pilotoId,
+        transportistaId: v.transportistaId,
+        activo: v.activo ? 1 : 0,
+        fechaModificacion: v.fechaModificacion,
+      })
+    }
+  })
+
+  ejecutar(vinculos)
+}
+
+/**
+ * Upsertea Maestro y VinculoPilotoTransportista en UNA sola transacción SQLite
+ * (diseño D3/G4) — la usa maestros-sync.ts para su pase combinado. Al anidar
+ * `getDb().transaction()` (better-sqlite3 lo resuelve con SAVEPOINT), si
+ * cualquiera de los dos upserts tira, la transacción exterior entera se
+ * revierte: ni el watermark de Maestro ni el de VinculoPilotoTransportista
+ * pueden divergir — es exactamente el punto de compartir un solo módulo/pase
+ * en vez de un sync job separado.
+ */
+export function upsertMaestrosYVinculosLocal(
+  maestros: MaestroLocal[],
+  vinculos: readonly VinculoPilotoTransportistaLocal[],
+): void {
+  const ejecutar = getDb().transaction((): void => {
+    upsertMaestrosLocal(maestros)
+    upsertVinculosLocal(vinculos)
+  })
+  ejecutar()
+}
+
+/**
+ * Read path del selector de piloto de Pesaje — SIEMPRE Activo=1: un vínculo
+ * desactivado tiene que desaparecer del combo offline exactamente igual que ya
+ * desaparece del listado central en modo no-delta.
+ */
+export function vinculosPorTransportistaLocal(transportistaId: string): VinculoPilotoTransportistaLocal[] {
+  const rows = getDb()
+    .prepare('SELECT * FROM VinculoPilotoTransportista WHERE TransportistaId = ? AND Activo = 1')
+    .all(transportistaId) as VinculoPilotoTransportistaRow[]
+  return rows.map(filaAVinculoPilotoTransportistaLocal)
+}
+
+/** Marca de agua del delta de VinculoPilotoTransportista — null si nunca sincronizó nada todavía. */
+export function obtenerUltimaSincronizacionVinculos(): string | null {
+  const row = getDb()
+    .prepare('SELECT MAX(FechaModificacion) AS maximo FROM VinculoPilotoTransportista')
+    .get() as { maximo: string | null }
   return row.maximo
 }
