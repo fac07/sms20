@@ -24,6 +24,35 @@ import {
   TipoConexion,
 } from '../../../api/basculas.service';
 
+export interface BadgeConexion {
+  color: 'default' | 'success' | 'warning' | 'error';
+  etiqueta: string;
+}
+
+// Umbrales aprobados para la vista de conectividad: el ciclo de ping de la
+// terminal es de ~60s, así que verde < 5 min (tolera ~4 ticks perdidos:
+// sleep de la notebook, blips de red), amarillo 5–60 min, rojo >= 60 min.
+const UMBRAL_ONLINE_MIN = 5;
+const UMBRAL_OFFLINE_MIN = 60;
+
+/**
+ * Pure — takes `ahoraMs` so specs can pin the clock. Negative deltas (central
+ * clock behind the browser) clamp to "hace instantes", never to a future label.
+ */
+export function estadoDeConexion(
+  ultimaConexion: string | null,
+  ahoraMs: number,
+): BadgeConexion {
+  if (ultimaConexion === null) return { color: 'default', etiqueta: 'Sin datos' };
+
+  const minutos = Math.floor((ahoraMs - Date.parse(ultimaConexion)) / 60_000);
+  if (minutos < 1) return { color: 'success', etiqueta: 'hace instantes' };
+  if (minutos < UMBRAL_ONLINE_MIN) return { color: 'success', etiqueta: `hace ${minutos} min` };
+  if (minutos < UMBRAL_OFFLINE_MIN) return { color: 'warning', etiqueta: `hace ${minutos} min` };
+  if (minutos < 48 * 60) return { color: 'error', etiqueta: `hace ${Math.floor(minutos / 60)} h` };
+  return { color: 'error', etiqueta: `hace ${Math.floor(minutos / 1440)} días` };
+}
+
 @Component({
   imports: [
     CommonModule,
@@ -98,6 +127,10 @@ export class BasculasPage {
         this.cargando.set(false);
       },
     });
+  }
+
+  conexion(bascula: Bascula): BadgeConexion {
+    return estadoDeConexion(bascula.ultimaConexion, Date.now());
   }
 
   abrirModalCrear(): void {

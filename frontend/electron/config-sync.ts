@@ -10,7 +10,10 @@ const CENTRAL_API_URL = 'http://localhost:5094'
  * doble que sirve datos de un central falso. Se acota a lo que este módulo usa
  * (`ok` / `status` / `json`), así el `fetch` global encaja sin adaptador.
  */
-export type Fetcher = (url: string) => Promise<{
+export type Fetcher = (
+  url: string,
+  init?: { method?: string },
+) => Promise<{
   ok: boolean
   status: number
   json: () => Promise<unknown>
@@ -303,6 +306,11 @@ export async function sincronizarConfig(
   )?.Valor
   let ingresoManual: BasculaPropiaDto | null = null
   if (basculaId) {
+    // Ping de conectividad — fire-and-forget ANTES del GET: marca presence en
+    // Central (Bascula.UltimaConexion) incluso si el GET de config revienta o
+    // 404ea. Nunca aborta el tick: la rejection se traga acá y el próximo
+    // ciclo (60s) reintenta. No depende de ninguna respuesta.
+    void fetcher(`${baseUrl}/api/basculas/${basculaId}/ping`, { method: 'POST' }).catch(() => {})
     try {
       const respuesta = await fetcher(`${baseUrl}/api/basculas/${basculaId}`)
       if (respuesta.ok) {

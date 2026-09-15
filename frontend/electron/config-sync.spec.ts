@@ -383,6 +383,97 @@ describe('sincronizarConfig — propagación del ingreso manual de peso (S2a)', 
     expect(cfg.pesoMinimoManual).toBe(50)
     expect(cfg.pesoMaximoManual).toBeNull()
   })
+
+  // --- Ping de conectividad (POST /api/basculas/{id}/ping) ---
+  // Best-effort fire-and-forget en cada ciclo: central marca UltimaConexion
+  // para la vista de "hace X min". Nunca aborta el tick ni bumbea watermarks.
+
+  type PingCall = { url: string; method?: string }
+
+  function conSpyDePing(
+    data: FakeData,
+    calls: string[],
+    pings: PingCall[],
+    bascula: Record<string, unknown> | null | 'throw',
+  ): Fetcher {
+    const base = fakeCentralConBascula(data, calls, bascula)
+    return async (rawUrl: string, init?: { method?: string }) => {
+      if (new URL(rawUrl).pathname.endsWith('/ping')) {
+        calls.push(rawUrl)
+        pings.push({ url: rawUrl, method: init?.method })
+        return { ok: true, status: 204, json: async () => ({}) }
+      }
+      return base(rawUrl, init)
+    }
+  }
+
+  it('cada ciclo POSTea el ping de conectividad con la BasculaId propia', async () => {
+    seedBasculaId()
+    const calls: string[] = []
+    const pings: PingCall[] = []
+
+    await sincronizarConfig(db, {
+      fetcher: conSpyDePing(baseData(), calls, pings, {
+        id: BASCULA_ID,
+        permiteIngresoManual: false,
+        pesoMinimoManual: null,
+        pesoMaximoManual: null,
+      }),
+      baseUrl: BASE,
+    })
+
+    expect(pings).toHaveLength(1)
+    expect(pings[0].url).toBe(`${BASE}/api/basculas/${BASCULA_ID}/ping`)
+    expect(pings[0].method).toBe('POST')
+  })
+
+  it('un ping que revienta no aborta el sync', async () => {
+    seedBasculaId()
+    const calls: string[] = []
+    const base = fakeCentralConBascula(baseData(), calls, {
+      id: BASCULA_ID,
+      permiteIngresoManual: false,
+      pesoMinimoManual: null,
+      pesoMaximoManual: null,
+    })
+    const fetcher: Fetcher = async (rawUrl: string, init?: { method?: string }) => {
+      if (new URL(rawUrl).pathname.endsWith('/ping')) {
+        throw new Error('red caída en el ping')
+      }
+      return base(rawUrl, init)
+    }
+
+    const resultado = await sincronizarConfig(db, { fetcher, baseUrl: BASE })
+
+    expect(resultado.secciones).toBe(1)
+    expect(contar('Seccion')).toBe(1)
+  })
+
+  it('el ping va aunque el GET de la propia báscula 404ee (conectividad ≠ config)', async () => {
+    seedBasculaId()
+    const calls: string[] = []
+    const pings: PingCall[] = []
+
+    await sincronizarConfig(db, {
+      fetcher: conSpyDePing(baseData(), calls, pings, null),
+      baseUrl: BASE,
+    })
+
+    expect(pings).toHaveLength(1)
+    expect(contar('Seccion')).toBe(1)
+  })
+
+  it('sin BasculaId no se pega al ping', async () => {
+    const calls: string[] = []
+    const pings: PingCall[] = []
+
+    await sincronizarConfig(db, {
+      fetcher: conSpyDePing(baseData(), calls, pings, { id: 'x', permiteIngresoManual: true }),
+      baseUrl: BASE,
+    })
+
+    expect(pings).toHaveLength(0)
+  })
 })
 
 describe('sincronizarConfigLocal — guardia de sync en vuelo', () => {

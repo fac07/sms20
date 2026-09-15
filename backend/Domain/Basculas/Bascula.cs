@@ -50,6 +50,15 @@ public class Bascula
     /// <summary>Pasa a verdadero en el primer arranque exitoso — el código ya no sirve después de eso.</summary>
     public bool Aprovisionada { get; set; }
 
+    /// <summary>
+    /// Última vez que Central vio a esta báscula viva (UTC), marcada por el
+    /// ping que la terminal Electron dispara en cada ciclo de config-sync.
+    /// Null = nunca pingueó desde la instrumentación — NO significa "nunca
+    /// existió". Es dato operativo de conectividad, no de negocio: se pisa en
+    /// cada ping y ningún otro endpoint lo toca.
+    /// </summary>
+    public DateTime? UltimaConexion { get; set; }
+
     // --- Ingreso manual de peso (configuración central por báscula) ---
 
     /// <summary>
