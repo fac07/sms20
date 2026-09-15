@@ -111,8 +111,19 @@ if (app.Environment.IsDevelopment())
     app.UseCors(DevFrontendPolicy);
 }
 
+// Autenticación/autorización del pipeline HTTP (design "Technical Approach",
+// PR2 Phase 1): traduce el bearer token en ClaimsPrincipal
+// (MockAuthenticationHandler, 0.8) y evalúa las políticas que cada endpoint
+// declare vía .RequireAuthorization(). Va después de CORS/routing (implícito
+// en el hosting mínimo) y antes de mapear los endpoints — si corriera después
+// de los Map*, los endpoints ya habrían ejecutado sin que el pipeline
+// evaluara ninguna política.
+app.UseAuthentication();
+app.UseAuthorization();
+
 app.MapHealthChecks("/health");
 
+app.MapAuth();
 app.MapTiposMovimiento();
 app.MapMaestros();
 app.MapBasculas();

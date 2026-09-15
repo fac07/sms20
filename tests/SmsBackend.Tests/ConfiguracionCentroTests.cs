@@ -1,7 +1,9 @@
 using System.Net;
+using System.Net.Http.Headers;
 using System.Net.Http.Json;
 using SmsBackend.Domain.Centros;
 using SmsBackend.Domain.Maestros;
+using SmsBackend.Domain.Seguridad;
 using Xunit;
 
 namespace SmsBackend.Tests;
@@ -34,7 +36,22 @@ public sealed class ConfiguracionCentroTests : IAsyncLifetime
         _client = factory.CreateClient();
     }
 
-    public Task InitializeAsync() => _factory.ResetAsync();
+    public async Task InitializeAsync()
+    {
+        await _factory.ResetAsync();
+
+        // Estas rutas ahora exigen Politicas.Administrador (PR2 1.6) — la
+        // cobertura de 401/403 vive aparte en ConfiguracionCentroAuthTests;
+        // acá el foco sigue siendo el CRUD de la configuración, así que
+        // autenticamos como Administrador para no romper ese contrato.
+        var resp = await _client.PostAsJsonAsync(
+            "/api/auth/login",
+            new { nombreUsuario = "administrador", clave = "Administrador123!" },
+            TestData.Json);
+        resp.EnsureSuccessStatusCode();
+        var login = await resp.Content.ReadFromJsonAsync<ResultadoLogin>(TestData.Json);
+        _client.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", login!.Token);
+    }
 
     public Task DisposeAsync() => Task.CompletedTask;
 
