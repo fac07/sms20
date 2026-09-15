@@ -8,6 +8,7 @@ import { BasculasPage } from './pages/basculas/basculas-page/basculas-page';
 import { BoletasPage } from './pages/boletas/boletas-page/boletas-page';
 import { CamposPage } from './pages/campos/campos-page/campos-page';
 import { MaestrosPage } from './pages/maestros/maestros-page/maestros-page';
+import { OutboxPage } from './pages/outbox/outbox-page';
 import { ProvisionalesPage } from './pages/maestros/provisionales-page/provisionales-page';
 import { PesajePage } from './pages/pesaje/pesaje-page/pesaje-page';
 import { PreingresoPage } from './pages/preingreso/preingreso-page';
@@ -98,6 +99,12 @@ export const routes: Routes = [
         component: BoletasPage,
         canActivate: [modoGuard],
         data: { modo: ['bascula', 'admin'] },
+      },
+      {
+        path: 'outbox',
+        component: OutboxPage,
+        canActivate: [modoGuard],
+        data: { modo: 'bascula' },
       },
       { path: '', pathMatch: 'full', redirectTo: rutaInicio },
       { path: '**', redirectTo: rutaInicio },

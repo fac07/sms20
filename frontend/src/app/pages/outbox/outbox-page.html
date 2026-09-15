@@ -1,0 +1,69 @@
+<nz-card nzTitle="Visor de tramas" [nzBodyStyle]="{ padding: '0' }">
+  <div class="filtros">
+    <label for="estado-outbox">Estado</label>
+    <nz-select
+      id="estado-outbox"
+      nzAllowClear
+      nzPlaceHolder="Todos los estados"
+      [ngModel]="estado()"
+      (ngModelChange)="filtrarPorEstado($event)"
+    >
+      @for (opcion of estados; track opcion) {
+        <nz-option [nzValue]="opcion" [nzLabel]="opcion"></nz-option>
+      }
+    </nz-select>
+  </div>
+
+  @if (cargando()) {
+    <p class="estado-carga" role="status">Cargando tramas…</p>
+  } @else if (errorCarga()) {
+    <p class="estado-carga error-carga" role="alert">No se pudieron cargar las tramas.</p>
+  } @else if (eventos().length === 0) {
+    <p class="estado-carga" role="status">No hay tramas para mostrar.</p>
+  }
+
+  <nz-table #tabla [nzData]="eventos()" [nzLoading]="cargando()" [nzPageSize]="15">
+    <thead>
+      <tr>
+        <th>Tipo de entidad</th>
+        <th>Entidad</th>
+        <th>Operación</th>
+        <th>Estado</th>
+        <th>Intentos</th>
+        <th>Último error</th>
+        <th>Fecha de creación</th>
+        <th>Fecha de envío</th>
+      </tr>
+    </thead>
+    <tbody>
+      @for (evento of tabla.data; track evento.id) {
+        <tr
+          class="evento"
+          tabindex="0"
+          [attr.aria-expanded]="expandidoId() === evento.id"
+          (click)="alternarDetalle(evento.id)"
+          (keydown.enter)="alternarDetalle(evento.id)"
+        >
+          <td>{{ evento.tipoEntidad }}</td>
+          <td class="codigo">{{ evento.entidadId }}</td>
+          <td>{{ evento.operacion }}</td>
+          <td>{{ evento.estado }}</td>
+          <td>{{ evento.intentos }}</td>
+          <td class="error">{{ evento.ultimoError ?? '—' }}</td>
+          <td>{{ evento.fechaCreacion | date: 'dd/MM/yyyy HH:mm:ss' }}</td>
+          <td>
+            {{ evento.fechaEnviado ? (evento.fechaEnviado | date: 'dd/MM/yyyy HH:mm:ss') : '—' }}
+          </td>
+        </tr>
+        @if (expandidoId() === evento.id) {
+          <tr class="detalle">
+            <td colspan="8">
+              <strong>Payload</strong>
+              <pre class="payload">{{ formatearPayload(evento.payload) }}</pre>
+            </td>
+          </tr>
+        }
+      }
+    </tbody>
+  </nz-table>
+</nz-card>
