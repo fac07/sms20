@@ -83,6 +83,26 @@ public record AnularBoletaRequest(
     string MotivoAnulacion);
 
 /// <summary>
+/// Re-emisión de una boleta anulada — pesaje nuevo con correlativo propio.
+/// El contexto operativo (báscula, tipo de movimiento) NO se pide: se hereda
+/// de la reemplazada. Si <see cref="Valores"/> es null se copian los valores
+/// almacenados en la original (el equivalente server-side del prefill del
+/// legacy); si viene, manda el pedido. El vínculo es unidireccional
+/// (<c>BoletaReemplazoId</c> en la original) — <c>BoletaOrigenId</c> queda
+/// reservado para recepción de transferencia (esquema v7).
+/// </summary>
+public record ReemitirBoletaRequest(
+    string NumeroBoleta,
+    decimal PesoIngreso,
+    OrigenPeso OrigenPesoIngreso,
+    string UsuarioIngreso,
+    IReadOnlyList<ValorCampoDto>? Valores = null,
+    // Mismo contrato que CrearBoletaRequest: string crudo para devolver 422
+    // (no 400) ante un valor fuera de catálogo.
+    string? MotivoPesoManual = null,
+    string? MotivoPesoManualDetalle = null);
+
+/// <summary>
 /// Evento del Outbox local (Electron/SQLite) que el dispatcher reenvía al
 /// backend central. El payload viaja como snapshot JSON crudo — no un DTO
 /// tipado — porque es exactamente lo que ya escribió db.ts al momento del

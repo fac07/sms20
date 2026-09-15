@@ -167,6 +167,28 @@ public sealed class PreIngresoEndpointsTests : IAsyncLifetime
         Assert.Equal(HttpStatusCode.Conflict, resp.StatusCode);
     }
 
+    [Theory]
+    [InlineData(EstadoPreIngreso.Pendiente)]
+    [InlineData(EstadoPreIngreso.Vinculado)]
+    [InlineData(EstadoPreIngreso.Cancelado)]
+    public async Task Observaciones_se_pueden_editar_en_cualquier_estado(EstadoPreIngreso estado)
+    {
+        var escenario = await TestData.NuevoEscenarioAsync(_client);
+        var id = await SembrarAsync(escenario.CentroId, estado);
+
+        var resp = await _client.PutAsJsonAsync(
+            $"/api/preingresos/{id}/observaciones",
+            new EditarObservacionesPreIngresoRequest($"Nota para {estado}"),
+            TestData.Json);
+
+        Assert.True(resp.IsSuccessStatusCode, await resp.Content.ReadAsStringAsync());
+        var actualizado = await resp.Content.ReadFromJsonAsync<PreIngresoDto>(TestData.Json);
+        Assert.Equal($"Nota para {estado}", actualizado!.Observaciones);
+
+        var recargado = await GetAsync(id);
+        Assert.Equal($"Nota para {estado}", recargado.Observaciones);
+    }
+
     [Fact]
     public async Task Cancelar_un_pendiente_lo_pasa_a_Cancelado_y_avanza_watermark()
     {

@@ -48,6 +48,9 @@ public class PreIngreso : IFechaModificable
 
     public int? Sacos { get; set; }
 
+    /// <summary>Notas libres del despachador, editables durante todo el ciclo de vida.</summary>
+    public string? Observaciones { get; set; }
+
     public EstadoPreIngreso Estado { get; set; }
 
     /// <summary>

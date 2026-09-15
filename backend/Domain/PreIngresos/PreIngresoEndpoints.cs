@@ -81,6 +81,7 @@ public static class PreIngresoEndpoints
                 PesoEnviado = request.PesoEnviado,
                 Racimos = request.Racimos,
                 Sacos = request.Sacos,
+                Observaciones = request.Observaciones,
                 // Estado forzado server-side — una báscula nunca puede acuñar
                 // un Vinculado ni un Cancelado por esta vía.
                 Estado = EstadoPreIngreso.Pendiente,
@@ -123,8 +124,24 @@ public static class PreIngresoEndpoints
             preingreso.PesoEnviado = request.PesoEnviado;
             preingreso.Racimos = request.Racimos;
             preingreso.Sacos = request.Sacos;
+            preingreso.Observaciones = request.Observaciones;
             // FechaModificacion la avanza el sellador de SmsDbContext.
 
+            await db.SaveChangesAsync();
+
+            return Results.Ok(PreIngresoDto.FromEntity(preingreso));
+        });
+
+        // Las observaciones son una anotación operativa, no una transición de
+        // estado. Por eso se editan mediante un subrecurso independiente aun
+        // cuando el pre-ingreso ya está Vinculado o Cancelado.
+        group.MapPut("/{id:guid}/observaciones", async (
+            Guid id, EditarObservacionesPreIngresoRequest request, SmsDbContext db) =>
+        {
+            var preingreso = await db.PreIngresos.FirstOrDefaultAsync(p => p.Id == id);
+            if (preingreso is null) return Results.NotFound();
+
+            preingreso.Observaciones = request.Observaciones;
             await db.SaveChangesAsync();
 
             return Results.Ok(PreIngresoDto.FromEntity(preingreso));

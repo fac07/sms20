@@ -17,6 +17,7 @@ public class PreIngresoConfiguration : IEntityTypeConfiguration<PreIngreso>
             .IsRequired();
 
         builder.Property(p => p.PesoEnviado).HasColumnType("decimal(12,2)");
+        builder.Property(p => p.Observaciones).HasColumnType("nvarchar(max)");
 
         // Enum-as-string, igual que Boleta.Estado / Bascula.TipoConexion. La
         // columna es nvarchar(20) — el HasConversion no altera el esquema.
