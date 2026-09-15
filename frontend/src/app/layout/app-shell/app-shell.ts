@@ -32,6 +32,7 @@ const NAV_ITEMS: NavItem[] = [
   { path: '/preingreso/cola', icon: 'clock-circle', label: 'Informe de cola', modos: ['admin'] },
   { path: '/transporte', icon: 'link', label: 'Vínculos piloto-transportista', modos: ['admin'] },
   { path: '/boletas', icon: 'file-text', label: 'Boletas', modos: ['bascula', 'admin'] },
+  { path: '/outbox', icon: 'code', label: 'Visor de tramas', modos: ['bascula'] },
   { path: '/reportes', icon: 'bar-chart', label: 'Reportes', disabled: true, modos: ['admin'] },
 ];
 
@@ -60,6 +61,7 @@ const PAGE_TITLES: Record<string, string> = {
   '/preingreso/cola': 'Informe de cola pendiente',
   '/transporte': 'Vínculos piloto-transportista',
   '/boletas': 'Boletas',
+  '/outbox': 'Visor de tramas',
 };
 
 @Component({

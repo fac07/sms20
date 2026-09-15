@@ -1,0 +1,57 @@
+.filtros {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 16px;
+}
+
+.filtros nz-select {
+  width: 220px;
+}
+
+.estado-carga {
+  margin: 0;
+  padding: 0 16px 12px;
+  color: #595959;
+}
+
+.error-carga {
+  color: #cf1322;
+}
+
+.evento {
+  cursor: pointer;
+}
+
+.evento:hover,
+.evento:focus-visible {
+  background: #fafafa;
+}
+
+.codigo,
+.payload {
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+}
+
+.error {
+  max-width: 260px;
+  white-space: normal;
+  overflow-wrap: anywhere;
+}
+
+.detalle td {
+  background: #fafafa;
+  padding: 16px 24px;
+}
+
+.payload {
+  max-height: 420px;
+  margin: 8px 0 0;
+  padding: 12px;
+  overflow: auto;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  background: #1f1f1f;
+  color: #f5f5f5;
+  border-radius: 4px;
+}

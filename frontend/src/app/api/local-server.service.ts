@@ -195,6 +195,23 @@ export interface AlertasOutbox {
   eventos: AlertaProvisionalEvento[];
 }
 
+export type EstadoOutboxLocal = 'Pendiente' | 'Enviado' | 'Error';
+
+/** Espejo camelCase de `OutboxLocalEvento`, servido por `GET /outbox`. */
+export interface OutboxLocalEvento {
+  id: string;
+  secuencia: number;
+  tipoEntidad: 'Boleta' | 'MaestroProvisional';
+  entidadId: string;
+  operacion: 'Crear' | 'Cerrar' | 'Anular';
+  payload: string;
+  estado: EstadoOutboxLocal;
+  intentos: number;
+  ultimoError: string | null;
+  fechaCreacion: string;
+  fechaEnviado: string | null;
+}
+
 /**
  * Cliente del servidor local de Electron (127.0.0.1:4127) — contrapartida de
  * los servicios de esta carpeta que hablan con el backend central. Es el
@@ -305,6 +322,12 @@ export class LocalServerService {
   // bloqueante de la pantalla de Pesaje.
   alertasOutbox(): Observable<AlertasOutbox> {
     return this.http.get<AlertasOutbox>(`${LOCAL_SERVER_URL}/outbox/alertas`);
+  }
+
+  /** Diagnóstico de solo lectura del Outbox local, opcionalmente filtrado en SQLite. */
+  listarOutbox(estado?: EstadoOutboxLocal): Observable<OutboxLocalEvento[]> {
+    const params = estado ? `?estado=${encodeURIComponent(estado)}` : '';
+    return this.http.get<OutboxLocalEvento[]>(`${LOCAL_SERVER_URL}/outbox${params}`);
   }
 
   // Cola de transporte (PreIngreso) — read path del selector de pesaje,
