@@ -10,6 +10,7 @@ import {
   obtenerBoletaLocal,
   upsertPreIngresosLocal,
   upsertVinculosLocal,
+  vinculosPorTransportistaLocal,
   type PreIngresoLocal,
 } from './db'
 import { startLocalServer, stopLocalServer } from './local-server'
@@ -271,6 +272,85 @@ describe('GET /vinculos — selector de piloto escopado por transportista (PR5)'
     const res = await fetch(`${baseUrl}/vinculos?transportistaId=tr-sin-enlaces`)
     expect(res.status).toBe(200)
     expect(await res.json()).toEqual([])
+  })
+})
+
+// spec obs #251, capability `boletas` — escenario "Terminal-captured boleta is
+// never synchronously rejected for the pair": una boleta capturada offline con
+// Piloto=P, Transportista=T sin vínculo activo entre ambos debe guardarse y
+// encolarse para sync SIN ningún rechazo por el par (diseño D3 — "no hard
+// local guard at POST /boletas... by then the truck is already weighed"). El
+// único enforcement síncrono del par vive en central (GuardiaVinculoTransporte,
+// PR4); este terminal jamás lo replica. `POST /boletas` solo valida
+// `valores` campo por campo (existencia/estado/tipo del Maestro referenciado
+// vía `validarValoresLocal` → `motor-campos.ts`), nunca la relación cruzada
+// piloto+transportista — no hay ninguna llamada a `vinculosPorTransportistaLocal`
+// (ni a ninguna otra función de vínculo) en el handler de `POST /boletas`
+// (confirmado por lectura directa de `local-server.ts`).
+describe('POST /boletas — par piloto+transportista sin vínculo activo (D3, boletas)', () => {
+  const PILOTO_ID = 'piloto-sin-vinculo'
+  const TRANSPORTISTA_ID = 'transportista-sin-vinculo'
+
+  beforeEach(async () => {
+    db.exec(`
+      INSERT INTO ConfiguracionLocal (Clave, Valor) VALUES
+        ('BasculaId', 'ba-1'), ('BasculaCodigo', 'B01')
+      ON CONFLICT(Clave) DO UPDATE SET Valor = excluded.Valor;
+      INSERT INTO TipoMovimiento (Id, Codigo, Nombre, Prefijo, Direccion, OperacionD365, GeneraQR, FormatoBoletaId, Activo)
+        VALUES ('tm-1', 'REC', 'Recepcion', 'REC', 'Entrada', NULL, 0, NULL, 1);
+      INSERT INTO Seccion (Id, Clave, Nombre, Cardinalidad, Reportable, Estandar, Orden, Activa, FechaModificacion)
+        VALUES ('s-transporte', 'transporte', 'Transporte', 'Unica', 0, 1, 1, 1, '2026-01-01T00:00:00Z');
+      INSERT INTO Campo (Id, SeccionId, Clave, Etiqueta, TipoCampo, TipoCatalogoRef, Requerido, Configuracion, Orden, VigenteDesde, VigenteHasta, FechaModificacion)
+        VALUES
+          ('c-piloto', 's-transporte', 'piloto', 'Piloto', 'ReferenciaMaestro', 'Piloto', 1, NULL, 1, '2026-01-01T00:00:00Z', NULL, '2026-01-01T00:00:00Z'),
+          ('c-transportista', 's-transporte', 'transportista', 'Transportista', 'ReferenciaMaestro', 'Transportista', 1, NULL, 2, '2026-01-01T00:00:00Z', NULL, '2026-01-01T00:00:00Z');
+      INSERT INTO TipoMovimientoSeccion (TipoMovimientoId, SeccionId, VigenteDesde, VigenteHasta, Requerida, Orden, FechaModificacion)
+        VALUES ('tm-1', 's-transporte', '2026-01-01T00:00:00Z', NULL, 1, 1, '2026-01-01T00:00:00Z');
+      INSERT INTO Maestro (Id, TipoCatalogo, Codigo, Nombre, DatosAdicionales, Estado, FusionadoConId, FechaModificacion, Activo) VALUES
+        ('${PILOTO_ID}', 'Piloto', 'P-900', 'Piloto Sin Vinculo', NULL, 'Activo', NULL, '2026-01-01T00:00:00Z', 1),
+        ('${TRANSPORTISTA_ID}', 'Transportista', 'T-900', 'Transportista Sin Vinculo', NULL, 'Activo', NULL, '2026-01-01T00:00:00Z', 1);
+    `)
+    // Deliberadamente NO se inserta ninguna fila en VinculoPilotoTransportista:
+    // el par P/T no tiene enlace activo, ni siquiera un espejo obsoleto.
+    await arrancarServidor()
+  })
+
+  it('guarda localmente y encola para sync sin rechazar el par sin vínculo', async () => {
+    // Precondición explícita: confirma que el espejo local NO tiene ningún
+    // vínculo activo para este transportista antes de intentar el guardado.
+    expect(vinculosPorTransportistaLocal(TRANSPORTISTA_ID)).toEqual([])
+
+    const res = await fetch(`${baseUrl}/boletas`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        numeroBoletaPrefijo: 'REC',
+        codigoBascula: 'B01',
+        tipoMovimientoId: 'tm-1',
+        pesoIngreso: 18500,
+        origenPesoIngreso: 'Bascula',
+        usuarioIngreso: 'operador',
+        creadaOffline: true,
+        valores: [
+          { campoId: 'c-piloto', ocurrencia: 0, valorMaestroId: PILOTO_ID },
+          { campoId: 'c-transportista', ocurrencia: 0, valorMaestroId: TRANSPORTISTA_ID },
+        ],
+      }),
+    })
+
+    // El guardado local NUNCA rechaza por el par piloto+transportista —
+    // ninguna validación cruzada corre en este terminal (D3).
+    expect(res.status).toBe(201)
+    const boleta = (await res.json()) as { id: string }
+
+    expect(obtenerBoletaLocal(boleta.id)).not.toBeNull()
+
+    // Queda encolada para sync como cualquier otra boleta — el par sin
+    // vínculo no bloquea ni retrasa el Outbox.
+    const evento = listarOutboxLocal().find(
+      (e) => e.operacion === 'Crear' && e.entidadId === boleta.id,
+    )
+    expect(evento).toBeDefined()
   })
 })
 
