@@ -16,6 +16,7 @@ public record PreIngresoDto(
     decimal PesoEnviado,
     int? Racimos,
     int? Sacos,
+    string? Observaciones,
     EstadoPreIngreso Estado,
     Guid? BoletaId,
     string UsuarioCreacion,
@@ -26,7 +27,7 @@ public record PreIngresoDto(
 {
     public static PreIngresoDto FromEntity(PreIngreso p) => new(
         p.Id, p.CentroId, p.PilotoId, p.TransportistaId, p.EquipoId, p.RegionId, p.FincaId,
-        p.NumeroEnvio, p.PesoEnviado, p.Racimos, p.Sacos, p.Estado, p.BoletaId,
+        p.NumeroEnvio, p.PesoEnviado, p.Racimos, p.Sacos, p.Observaciones, p.Estado, p.BoletaId,
         p.UsuarioCreacion, p.UsuarioCancela, p.MotivoCancelacion,
         p.FechaCreacion, p.FechaModificacion);
 }
@@ -46,7 +47,8 @@ public record CrearPreIngresoRequest(
     Guid? FincaId = null,
     int? Racimos = null,
     int? Sacos = null,
-    string UsuarioCreacion = "");
+    string UsuarioCreacion = "",
+    string? Observaciones = null);
 
 /// <summary>
 /// Edición de un pre-ingreso. Solo se acepta mientras <c>Estado=Pendiente</c>
@@ -62,7 +64,14 @@ public record EditarPreIngresoRequest(
     Guid? RegionId = null,
     Guid? FincaId = null,
     int? Racimos = null,
-    int? Sacos = null);
+    int? Sacos = null,
+    string? Observaciones = null);
+
+/// <summary>
+/// Edición aislada de las observaciones. No depende del estado del
+/// pre-ingreso y acepta <see langword="null"/> para limpiar el campo.
+/// </summary>
+public record EditarObservacionesPreIngresoRequest(string? Observaciones);
 
 /// <summary>
 /// Cancelación de un pre-ingreso — doble campo de auditoría. Solo desde
