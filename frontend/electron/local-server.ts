@@ -132,6 +132,58 @@ function validarPesoManualLocal(
   return null
 }
 
+const CLAVES_MUESTRA_RACIMOS = [
+  'racimos_verdes',
+  'racimos_maduros',
+  'racimos_sobremaduros',
+  'racimos_pasados',
+] as const
+const MAXIMO_MUESTRA_RACIMOS = 30
+
+/**
+ * Espejo local de `GuardiaMuestraFruta` (central): 0 < verdes + maduros +
+ * sobremaduros + pasados <= 30 sobre los valores ya capturados en la boleta
+ * (cruza las ocurrencias de la sección repetible; `racimos_pedunculo_largo`
+ * NO suma, paridad legacy frmCalidadFruta). Sin ningún contador capturado el
+ * guard pasa. Se resuelve por Clave del espejo local de Campo, no por Id
+ * congelado, para atravesar versiones. Falla = 400, igual que central; la
+ * ingesta de sync NO revalida (D3/D8): acá se decide offline.
+ */
+function validarMuestraFrutaLocal(boletaId: string): { status: number; error: string } | null {
+  const placeholders = CLAVES_MUESTRA_RACIMOS.map(() => '?').join(',')
+  const filas = getDb()
+    .prepare(
+      `SELECT v.ValorNumero AS n
+         FROM BoletaValorCampo v
+         JOIN Campo c ON c.Id = v.CampoId
+        WHERE v.BoletaId = ? AND c.Clave IN (${placeholders})`,
+    )
+    .all(boletaId, ...CLAVES_MUESTRA_RACIMOS) as Array<{ n: string | number | null }>
+
+  if (filas.length === 0) return null
+
+  // `ValorNumero` sale como string por la afinidad TEXT de SQLite — Number()
+  // explícito antes de sumar (misma lectura que hace el motor local).
+  const suma = filas.reduce((acc, f) => acc + Number(f.n ?? 0), 0)
+  if (suma <= 0) {
+    return {
+      status: 400,
+      error:
+        'La muestra de racimos debe ser mayor a 0 — los contadores están ' +
+        `cargados pero su suma es ${suma}.`,
+    }
+  }
+  if (suma > MAXIMO_MUESTRA_RACIMOS) {
+    return {
+      status: 400,
+      error:
+        `La muestra de racimos no puede superar ${MAXIMO_MUESTRA_RACIMOS} — ` +
+        `suma actual: ${suma}.`,
+    }
+  }
+  return null
+}
+
 /**
  * Servidor HTTP local (127.0.0.1) embebido en el proceso principal de
  * Electron. El renderer habla con este mismo contrato tanto si la báscula
@@ -407,6 +459,14 @@ export function startLocalServer(port: number, esDev: boolean): Server {
     })
     if (errores.length > 0) {
       res.status(422).json(errores)
+      return
+    }
+
+    // Guard de muestra de racimos — espejo de `GuardiaMuestraFruta` (central).
+    // Regla de negocio entre campos, afuera del motor congelado por paridad.
+    const errorMuestra = validarMuestraFrutaLocal(boleta.id)
+    if (errorMuestra) {
+      res.status(errorMuestra.status).json({ error: errorMuestra.error })
       return
     }
 
