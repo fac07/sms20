@@ -205,16 +205,21 @@ describe('PreingresoPage (TestBed + HttpTestingController)', () => {
   });
 
   it('los 5 selects del formulario están enlazados a sus FormControls y muestran las opciones cargadas', () => {
-    const page = crear([], undefined, {
-      Piloto: [maestro({ id: 'piloto-1', tipoCatalogo: 'Piloto' as TipoCatalogo, nombre: 'Juan Pérez' })],
-    });
+    const page = crear(
+      [],
+      undefined,
+      { Piloto: [maestro({ id: 'piloto-1', tipoCatalogo: 'Piloto' as TipoCatalogo, nombre: 'Juan Pérez' })] },
+      // Vínculo activo requerido: sin él, seleccionar transportista-9 después
+      // limpiaría pilotoId por quedar fuera del alcance escopado (task 6.3).
+      [vinculo({ pilotoId: 'piloto-1', transportistaId: 'transportista-9' })],
+    );
 
     page.abrirModalCrear();
 
     expect(page.pilotos().map((m) => m.id)).toContain('piloto-1');
 
-    page.form.controls.pilotoId.setValue('piloto-1');
     page.form.controls.transportistaId.setValue('transportista-9');
+    page.form.controls.pilotoId.setValue('piloto-1');
     page.form.controls.equipoId.setValue('equipo-9');
     page.form.controls.fincaId.setValue('finca-9');
     page.form.controls.regionId.setValue('region-9');
