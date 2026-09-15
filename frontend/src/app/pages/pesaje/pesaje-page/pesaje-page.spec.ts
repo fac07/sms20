@@ -7,7 +7,7 @@ import { ComponentFixture, TestBed } from '@angular/core/testing';
 import { FormArray, FormControl, FormGroup } from '@angular/forms';
 import { NzMessageService } from 'ng-zorro-antd/message';
 import { CampoAplicable, ErrorCampo } from '../../../api/configuracion.models';
-import { BoletaLocal } from '../../../api/local-server.service';
+import { BoletaLocal, MaestroLocal } from '../../../api/local-server.service';
 import { PesajePage } from './pesaje-page';
 import {
   CLAVE_SECCION,
@@ -447,6 +447,105 @@ describe('PesajePage (TestBed + HttpTestingController)', () => {
 
     expect(grupo.get('c1')!.value).toBe('prov-1');
     expect(component.opcionesMaestro(refCampo).map((m) => m.id)).toContain('prov-1');
+  });
+
+  describe('selector de piloto escopado por transportista (PR5b — vínculo piloto-transportista, offline)', () => {
+    const campoTransportista = campo({
+      campoId: 'c-transportista',
+      campoClave: 'transportista',
+      seccionClave: 'transporte',
+      tipoCampo: 'ReferenciaMaestro',
+      tipoCatalogoRef: 'Transportista',
+    });
+    const campoPiloto = campo({
+      campoId: 'c-piloto',
+      campoClave: 'piloto',
+      seccionClave: 'transporte',
+      tipoCampo: 'ReferenciaMaestro',
+      tipoCatalogoRef: 'Piloto',
+    });
+
+    function maestroPiloto(id: string, nombre: string): MaestroLocal {
+      return {
+        id,
+        tipoCatalogo: 'Piloto',
+        codigo: id.toUpperCase(),
+        nombre,
+        datosAdicionales: null,
+        estado: 'Oficial',
+        fusionadoConId: null,
+        fechaModificacion: '',
+        activo: true,
+      };
+    }
+
+    /** Carga el formulario `transporte` (transportista + piloto) y flushea el batch de maestros. */
+    function seleccionarTipoConTransporte(pilotos: MaestroLocal[] = [maestroPiloto('p1', 'Piloto Uno'), maestroPiloto('p2', 'Piloto Dos')]): void {
+      component.tipoMovimientoCtrl.setValue('tm-1');
+      httpMock
+        .expectOne(`${LOCAL}/tipos-movimiento/tm-1/formulario`)
+        .flush([campoTransportista, campoPiloto]);
+      httpMock.expectOne(`${LOCAL}/maestros?tipoCatalogo=Transportista`).flush([]);
+      httpMock.expectOne(`${LOCAL}/maestros?tipoCatalogo=Piloto`).flush(pilotos);
+    }
+
+    it('sin transportista seleccionado, el piloto no ofrece ninguna opción', () => {
+      flushInit();
+      seleccionarTipoConTransporte();
+
+      expect(component.opcionesMaestro(campoPiloto)).toEqual([]);
+    });
+
+    it('seleccionar un transportista llama a GET /vinculos (servicio inyectado) y escopa el piloto a sus vínculos activos', () => {
+      flushInit();
+      seleccionarTipoConTransporte();
+
+      const grupo = component.formSecciones().get('transporte') as FormGroup;
+      grupo.get('c-transportista')!.setValue('t1');
+
+      const req = httpMock.expectOne(`${LOCAL}/vinculos?transportistaId=t1`);
+      expect(req.request.method).toBe('GET');
+      req.flush([{ id: 'v1', pilotoId: 'p1', transportistaId: 't1', activo: true, fechaModificacion: '' }]);
+
+      expect(component.opcionesMaestro(campoPiloto).map((m) => m.id)).toEqual(['p1']);
+    });
+
+    it('cambiar de transportista re-escopa el piloto y limpia una selección ya no válida', () => {
+      flushInit();
+      seleccionarTipoConTransporte();
+
+      const grupo = component.formSecciones().get('transporte') as FormGroup;
+      grupo.get('c-transportista')!.setValue('t1');
+      httpMock
+        .expectOne(`${LOCAL}/vinculos?transportistaId=t1`)
+        .flush([{ id: 'v1', pilotoId: 'p1', transportistaId: 't1', activo: true, fechaModificacion: '' }]);
+      grupo.get('c-piloto')!.setValue('p1');
+      expect(grupo.get('c-piloto')!.value).toBe('p1');
+
+      grupo.get('c-transportista')!.setValue('t2');
+      httpMock
+        .expectOne(`${LOCAL}/vinculos?transportistaId=t2`)
+        .flush([{ id: 'v2', pilotoId: 'p2', transportistaId: 't2', activo: true, fechaModificacion: '' }]);
+
+      expect(grupo.get('c-piloto')!.value).toBeNull();
+      expect(component.opcionesMaestro(campoPiloto).map((m) => m.id)).toEqual(['p2']);
+    });
+
+    it('limpiar el transportista (valor vacío) vuelve el piloto a sin opciones', () => {
+      flushInit();
+      seleccionarTipoConTransporte();
+
+      const grupo = component.formSecciones().get('transporte') as FormGroup;
+      grupo.get('c-transportista')!.setValue('t1');
+      httpMock
+        .expectOne(`${LOCAL}/vinculos?transportistaId=t1`)
+        .flush([{ id: 'v1', pilotoId: 'p1', transportistaId: 't1', activo: true, fechaModificacion: '' }]);
+
+      grupo.get('c-transportista')!.setValue(null);
+
+      httpMock.expectNone(`${LOCAL}/vinculos?transportistaId=null`);
+      expect(component.opcionesMaestro(campoPiloto)).toEqual([]);
+    });
   });
 
   it('ordena secciones por seccionOrden y campos por orden', () => {
