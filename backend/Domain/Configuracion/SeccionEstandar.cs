@@ -23,7 +23,8 @@ public static class SeccionEstandar
             ["detalle_fruta"] = new[]
             {
                 "finca", "lote", "numero_envio", "caporal", "racimos_verdes", "racimos_maduros",
-                "racimos_sobremaduros", "racimos_pasados", "racimos_pedunculo_largo", "sacos",
+                "racimos_sobremaduros", "racimos_pasados", "racimos_pedunculo_largo", "rampa_descarga",
+                "sacos",
                 "libras", "jornales", "hectareas", "fecha_corte", "ciclo", "seccion_finca",
             },
             ["marchamos"] = new[] { "numero", "placa", "equipo", "activo", "observaciones" },

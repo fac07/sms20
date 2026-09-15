@@ -21,7 +21,11 @@ public static class ConfiguracionSeeder
         string Etiqueta,
         TipoCampo TipoCampo,
         TipoCatalogo? TipoCatalogoRef,
-        bool Requerido);
+        bool Requerido,
+        // JSON crudo para el campo nuevo (p. ej. las 'opciones' de un Lista).
+        // Solo se usa AL CREAR: una vez creada la fila, la config es
+        // admin-owned y ni la creación ni la reconciliación la pisan.
+        string? Configuracion = null);
 
     private sealed record SeccionDef(
         string Clave,
@@ -86,6 +90,10 @@ public static class ConfiguracionSeeder
             new("racimos_sobremaduros", "Racimos sobremaduros", TipoCampo.Entero, null, Requerido: false),
             new("racimos_pasados", "Racimos pasados", TipoCampo.Entero, null, Requerido: false),
             new("racimos_pedunculo_largo", "Racimos con pedúnculo largo", TipoCampo.Entero, null, Requerido: false),
+            // Espejo del combo cerrado del legacy (frmCalidadFruta.cbxRampaDescarga):
+            // opciones fijas "01"/"02", no un catálogo.
+            new("rampa_descarga", "Rampa de descarga", TipoCampo.Lista, null, Requerido: false,
+                """{"opciones":["01","02"]}"""),
             new("sacos", "Sacos", TipoCampo.Entero, null, Requerido: false),
             new("libras", "Libras", TipoCampo.Decimal, null, Requerido: false),
             new("jornales", "Jornales", TipoCampo.Decimal, null, Requerido: false),
@@ -195,7 +203,7 @@ public static class ConfiguracionSeeder
                         TipoCampo = campoDef.TipoCampo,
                         TipoCatalogoRef = campoDef.TipoCatalogoRef,
                         Requerido = campoDef.Requerido,
-                        Configuracion = null,
+                        Configuracion = campoDef.Configuracion,
                         Orden = j + 1,
                         VigenteDesde = ahora,
                         VigenteHasta = null,
