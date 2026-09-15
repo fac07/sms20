@@ -9,6 +9,7 @@ import {
   listarOutboxLocal,
   obtenerBoletaLocal,
   upsertPreIngresosLocal,
+  upsertVinculosLocal,
   type PreIngresoLocal,
 } from './db'
 import { startLocalServer, stopLocalServer } from './local-server'
@@ -237,6 +238,42 @@ describe('cola de transporte (PreIngreso) — read path del selector de pesaje (
   })
 })
 
+describe('GET /vinculos — selector de piloto escopado por transportista (PR5)', () => {
+  beforeEach(async () => {
+    upsertVinculosLocal([
+      { id: 'v1', pilotoId: 'pi-1', transportistaId: 'tr-1', activo: true, fechaModificacion: '2026-09-01T00:00:00Z' },
+      { id: 'v2', pilotoId: 'pi-2', transportistaId: 'tr-1', activo: true, fechaModificacion: '2026-09-01T00:00:00Z' },
+      { id: 'v3', pilotoId: 'pi-3', transportistaId: 'tr-1', activo: false, fechaModificacion: '2026-09-01T00:00:00Z' },
+      { id: 'v4', pilotoId: 'pi-4', transportistaId: 'tr-2', activo: true, fechaModificacion: '2026-09-01T00:00:00Z' },
+    ])
+    await arrancarServidor()
+  })
+
+  it('sirve SOLO los vínculos activos del transportista pedido', async () => {
+    const res = await fetch(`${baseUrl}/vinculos?transportistaId=tr-1`)
+    expect(res.status).toBe(200)
+    const cuerpo = (await res.json()) as Array<{ pilotoId: string }>
+    expect(cuerpo.map((v) => v.pilotoId).sort()).toEqual(['pi-1', 'pi-2'])
+  })
+
+  it('otro transportista devuelve su propia lista, sin mezclar', async () => {
+    const res = await fetch(`${baseUrl}/vinculos?transportistaId=tr-2`)
+    const cuerpo = (await res.json()) as Array<{ pilotoId: string }>
+    expect(cuerpo.map((v) => v.pilotoId)).toEqual(['pi-4'])
+  })
+
+  it('sin transportistaId responde 400 en vez de devolver el catálogo entero', async () => {
+    const res = await fetch(`${baseUrl}/vinculos`)
+    expect(res.status).toBe(400)
+  })
+
+  it('un transportista sin enlaces devuelve [] (nunca 5xx)', async () => {
+    const res = await fetch(`${baseUrl}/vinculos?transportistaId=tr-sin-enlaces`)
+    expect(res.status).toBe(200)
+    expect(await res.json()).toEqual([])
+  })
+})
+
 describe('POST /aprovisionamiento — cold-start seed del trío', () => {
   beforeEach(arrancarServidor)
 
@@ -273,6 +310,11 @@ describe('POST /aprovisionamiento — cold-start seed del trío', () => {
           }
         }
         if (u.pathname === '/api/maestros') {
+          return { ok: true, status: 200, json: async () => [] }
+        }
+        // El seed inicial de /aprovisionamiento dispara sincronizarMaestros(),
+        // que ahora también delta-pide el vínculo piloto-transportista (PR5).
+        if (u.pathname === '/api/vinculos-piloto-transportista') {
           return { ok: true, status: 200, json: async () => [] }
         }
         return { ok: false, status: 404, json: async () => ({}) }
@@ -319,6 +361,9 @@ describe('POST /aprovisionamiento — cold-start seed del trío', () => {
           }
         }
         if (u.pathname === '/api/maestros') return { ok: true, status: 200, json: async () => [] }
+        if (u.pathname === '/api/vinculos-piloto-transportista') {
+          return { ok: true, status: 200, json: async () => [] }
+        }
         return { ok: false, status: 404, json: async () => ({}) }
       }) as unknown as typeof fetch,
     )

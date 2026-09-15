@@ -176,9 +176,15 @@ describe('sincronizarMaestros aplica la fusión del delta (M4b)', () => {
       fechaModificacion: '2026-09-07T00:00:00.000Z',
       activo: false,
     }
+    // sincronizarMaestros ahora también pide el delta de vínculos
+    // piloto-transportista en el mismo pase (PR5/D3) — el stub global rutea
+    // por pathname y no aporta vínculos a este escenario (irrelevante para M4b).
     vi.stubGlobal(
       'fetch',
-      (async () => ({ ok: true, status: 200, json: async () => [dto] })) as unknown as typeof fetch,
+      (async (url: string) => {
+        const esVinculos = new URL(url).pathname === '/api/vinculos-piloto-transportista'
+        return { ok: true, status: 200, json: async () => (esVinculos ? [] : [dto]) }
+      }) as unknown as typeof fetch,
     )
 
     const res = await sincronizarMaestros()
