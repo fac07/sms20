@@ -29,6 +29,7 @@ const NAV_ITEMS: NavItem[] = [
   { path: '/maestros', icon: 'database', label: 'Maestros', modos: ['admin'] },
   { path: '/maestros/provisionales', icon: 'inbox', label: 'Provisionales', modos: ['admin'] },
   { path: '/preingreso', icon: 'car', label: 'Cola de transporte', modos: ['admin'] },
+  { path: '/transporte', icon: 'link', label: 'Vínculos piloto-transportista', modos: ['admin'] },
   { path: '/boletas', icon: 'file-text', label: 'Boletas', modos: ['bascula', 'admin'] },
   { path: '/reportes', icon: 'bar-chart', label: 'Reportes', disabled: true, modos: ['admin'] },
 ];
@@ -55,6 +56,7 @@ const PAGE_TITLES: Record<string, string> = {
   '/maestros': 'Maestros',
   '/maestros/provisionales': 'Cola de provisionales',
   '/preingreso': 'Cola de transporte',
+  '/transporte': 'Vínculos piloto-transportista',
   '/boletas': 'Boletas',
 };
 

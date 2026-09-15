@@ -1,0 +1,74 @@
+<nz-card [nzTitle]="'Vínculos piloto-transportista'" [nzBodyStyle]="{ padding: '0' }">
+  <form nz-form [formGroup]="form" nzLayout="inline" class="form-crear">
+    <nz-form-item>
+      <nz-form-control>
+        <nz-select formControlName="pilotoId" nzPlaceHolder="Elegí el piloto" style="width: 220px">
+          @for (piloto of pilotos(); track piloto.id) {
+            <nz-option [nzValue]="piloto.id" [nzLabel]="piloto.nombre"></nz-option>
+          }
+        </nz-select>
+      </nz-form-control>
+    </nz-form-item>
+    <nz-form-item>
+      <nz-form-control>
+        <nz-select
+          formControlName="transportistaId"
+          nzPlaceHolder="Elegí el transportista"
+          style="width: 220px"
+        >
+          @for (transportista of transportistas(); track transportista.id) {
+            <nz-option [nzValue]="transportista.id" [nzLabel]="transportista.nombre"></nz-option>
+          }
+        </nz-select>
+      </nz-form-control>
+    </nz-form-item>
+    <nz-form-item>
+      <button nz-button nzType="primary" [nzLoading]="guardando()" (click)="crear()">
+        <span nz-icon nzType="plus"></span>
+        Vincular
+      </button>
+    </nz-form-item>
+  </form>
+
+  <nz-table #tabla [nzData]="vinculos()" [nzLoading]="cargando()" [nzPageSize]="10">
+    <thead>
+      <tr>
+        <th>Piloto</th>
+        <th>Transportista</th>
+        <th>Estado</th>
+        <th></th>
+      </tr>
+    </thead>
+    <tbody>
+      @for (v of tabla.data; track v.id) {
+        <tr>
+          <td>{{ nombrePiloto(v.pilotoId) }}</td>
+          <td>{{ nombreTransportista(v.transportistaId) }}</td>
+          <td>
+            <nz-tag [nzColor]="v.activo ? 'success' : 'default'">
+              {{ v.activo ? 'Activo' : 'Inactivo' }}
+            </nz-tag>
+          </td>
+          <td class="acciones">
+            @if (v.activo) {
+              <button
+                nz-button
+                nzType="text"
+                nzDanger
+                nz-popconfirm
+                nzPopconfirmTitle="¿Desactivar este vínculo?"
+                (nzOnConfirm)="desactivar(v)"
+              >
+                <span nz-icon nzType="stop"></span>
+              </button>
+            } @else {
+              <button nz-button nzType="text" (click)="reactivar(v)">
+                <span nz-icon nzType="reload"></span>
+              </button>
+            }
+          </td>
+        </tr>
+      }
+    </tbody>
+  </nz-table>
+</nz-card>
