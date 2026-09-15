@@ -1,3 +1,5 @@
+<nz-tabs>
+<nz-tab nzTitle="Vínculos">
 <nz-card [nzTitle]="'Vínculos piloto-transportista'" [nzBodyStyle]="{ padding: '0' }">
   <form nz-form [formGroup]="form" nzLayout="inline" class="form-crear">
     <nz-form-item>
@@ -72,3 +74,86 @@
     </tbody>
   </nz-table>
 </nz-card>
+</nz-tab>
+
+<nz-tab nzTitle="Asignación de unidades">
+<nz-card [nzTitle]="'Asignación de unidades'">
+  <form nz-form [formGroup]="seleccionUnidadForm" nzLayout="inline" class="form-crear">
+    <nz-form-item>
+      <nz-form-control>
+        <nz-select formControlName="unidadId" nzPlaceHolder="Elegí la unidad" style="width: 220px">
+          @for (unidad of unidades(); track unidad.id) {
+            <nz-option [nzValue]="unidad.id" [nzLabel]="unidad.nombre"></nz-option>
+          }
+        </nz-select>
+      </nz-form-control>
+    </nz-form-item>
+  </form>
+
+  @if (!unidadSeleccionadaId()) {
+    <p class="sin-seleccion">Seleccioná una unidad para ver y cambiar su transportista asignado.</p>
+  } @else {
+    <form nz-form [formGroup]="reasignarForm" nzLayout="inline" class="form-crear">
+      <nz-form-item>
+        <nz-form-control>
+          <nz-select
+            formControlName="transportistaId"
+            nzPlaceHolder="Nuevo transportista"
+            style="width: 220px"
+          >
+            @for (transportista of transportistas(); track transportista.id) {
+              <nz-option [nzValue]="transportista.id" [nzLabel]="transportista.nombre"></nz-option>
+            }
+          </nz-select>
+        </nz-form-control>
+      </nz-form-item>
+      <nz-form-item>
+        <nz-form-control>
+          <input
+            nz-input
+            formControlName="motivoCambio"
+            placeholder="Motivo del cambio (opcional)"
+            style="width: 260px"
+          />
+        </nz-form-control>
+      </nz-form-item>
+      <nz-form-item>
+        <button nz-button nzType="primary" [nzLoading]="reasignando()" (click)="reasignar()">
+          <span nz-icon nzType="swap"></span>
+          Reasignar
+        </button>
+      </nz-form-item>
+    </form>
+
+    <nz-table #historialTabla [nzData]="historial()" [nzLoading]="cargandoHistorial()" [nzPageSize]="10">
+      <thead>
+        <tr>
+          <th>Transportista</th>
+          <th>Vigente desde</th>
+          <th>Vigente hasta</th>
+          <th>Usuario</th>
+          <th>Motivo</th>
+        </tr>
+      </thead>
+      <tbody>
+        @for (a of historialTabla.data; track a.id) {
+          <tr>
+            <td>{{ nombreTransportista(a.transportistaId) }}</td>
+            <td>{{ a.vigenteDesde | date: 'short' }}</td>
+            <td>
+              @if (a.vigenteHasta) {
+                {{ a.vigenteHasta | date: 'short' }}
+              } @else {
+                <nz-tag nzColor="success">Actual</nz-tag>
+              }
+            </td>
+            <td>{{ a.usuarioAsigna }}</td>
+            <td>{{ a.motivoCambio || '-' }}</td>
+          </tr>
+        }
+      </tbody>
+    </nz-table>
+  }
+</nz-card>
+</nz-tab>
+</nz-tabs>

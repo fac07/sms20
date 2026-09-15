@@ -77,4 +77,50 @@ export class TransporteService {
       {},
     );
   }
+
+  /**
+   * Historial completo de asignaciones de una unidad, más reciente primero
+   * (`unidad-transportista-historial`, PR7 backend). La fila con
+   * `vigenteHasta` `null` es la asignación actual (G6); el resto es
+   * historial, nunca editable ni borrable.
+   */
+  historialUnidad(unidadId: string): Observable<AsignacionUnidadTransportista[]> {
+    return this.http.get<AsignacionUnidadTransportista[]>(
+      `${CENTRAL_API_URL}/api/transporte/unidades/${unidadId}/asignaciones`,
+    );
+  }
+
+  /**
+   * Reasigna el transportista de una unidad: PR7's endpoint cierra la fila
+   * abierta (si existe) e inserta la nueva, en un solo `SaveChanges` — no hay
+   * PUT/DELETE (design D4: ninguna fila se reescribe ni se borra jamás).
+   */
+  reasignar(unidadId: string, input: ReasignarUnidadInput): Observable<AsignacionUnidadTransportista> {
+    return this.http.post<AsignacionUnidadTransportista>(
+      `${CENTRAL_API_URL}/api/transporte/unidades/${unidadId}/asignaciones`,
+      input,
+    );
+  }
+}
+
+/**
+ * Proyección de lectura de una asignación unidad-transportista
+ * (`unidad-transportista-historial`, PR7 backend, design D4). La fila con
+ * `vigenteHasta` `null` es la asignación actual de la unidad (G6); el resto
+ * es historial, nunca editable ni borrable.
+ */
+export interface AsignacionUnidadTransportista {
+  id: string;
+  unidadId: string;
+  transportistaId: string;
+  vigenteDesde: string;
+  vigenteHasta: string | null;
+  usuarioAsigna: string;
+  motivoCambio: string | null;
+}
+
+export interface ReasignarUnidadInput {
+  transportistaId: string;
+  usuarioAsigna: string;
+  motivoCambio?: string;
 }
