@@ -13,11 +13,18 @@ import {
   marcarBoletasPreIngresoCancelado,
   obtenerBoletaDtoLocal,
   obtenerBoletaLocal,
+  obtenerMaestroLocal,
   obtenerPreIngresoLocal,
+  obtenerUltimaSincronizacionMaestros,
   obtenerUltimaSincronizacionPreIngresos,
+  obtenerUltimaSincronizacionVinculos,
   setConfig,
+  upsertMaestrosYVinculosLocal,
   upsertPreIngresosLocal,
+  upsertVinculosLocal,
+  vinculosPorTransportistaLocal,
   type PreIngresoLocal,
+  type VinculoPilotoTransportistaLocal,
 } from './db'
 
 // Config de ingreso manual de peso espejada en `ConfiguracionLocal` (S2a). El
@@ -219,7 +226,7 @@ describe('ESQUEMA_LOCAL_VERSION v3 — columnas de motivo de peso manual', () =>
     )?.Valor
 
   it('una DB nueva trae Boleta.MotivoPesoManual + Detalle y la versión de esquema vigente', () => {
-    expect(versionSellada(db)).toBe('4')
+    expect(versionSellada(db)).toBe('5')
     expect(columnasBoleta(db)).toEqual(
       expect.arrayContaining(['MotivoPesoManual', 'MotivoPesoManualDetalle']),
     )
@@ -254,7 +261,7 @@ describe('ESQUEMA_LOCAL_VERSION v3 — columnas de motivo de peso manual', () =>
 
     inicializarEsquemaLocal(dbV2)
 
-    expect(versionSellada(dbV2)).toBe('4')
+    expect(versionSellada(dbV2)).toBe('5')
     expect(columnasBoleta(dbV2)).toEqual(
       expect.arrayContaining(['MotivoPesoManual', 'MotivoPesoManualDetalle', 'MarcaPreIngreso']),
     )
@@ -285,8 +292,8 @@ describe('ESQUEMA_LOCAL_VERSION v4 — espejo PreIngreso (cola-transporte slice 
         .get() as { Valor: string } | undefined
     )?.Valor
 
-  it('una DB nueva nace en v4 con la tabla PreIngreso y Boleta.MarcaPreIngreso', () => {
-    expect(versionSellada(db)).toBe('4')
+  it('una DB nueva nace en v5 con la tabla PreIngreso y Boleta.MarcaPreIngreso', () => {
+    expect(versionSellada(db)).toBe('5')
     expect(tablaExiste(db, 'PreIngreso')).toBe(true)
     expect(columnasBoleta(db)).toEqual(expect.arrayContaining(['MarcaPreIngreso']))
   })
@@ -322,7 +329,7 @@ describe('ESQUEMA_LOCAL_VERSION v4 — espejo PreIngreso (cola-transporte slice 
 
     inicializarEsquemaLocal(dbV3)
 
-    expect(versionSellada(dbV3)).toBe('4')
+    expect(versionSellada(dbV3)).toBe('5')
     expect(tablaExiste(dbV3, 'PreIngreso')).toBe(true)
     expect(columnasBoleta(dbV3)).toEqual(expect.arrayContaining(['MarcaPreIngreso']))
     const fila = dbV3.prepare("SELECT * FROM Boleta WHERE Id = 'b1'").get() as Record<string, unknown>
@@ -332,6 +339,71 @@ describe('ESQUEMA_LOCAL_VERSION v4 — espejo PreIngreso (cola-transporte slice 
     // Idempotente: re-inicializar (reinicio de la app) no re-ejecuta el ALTER.
     expect(() => inicializarEsquemaLocal(dbV3)).not.toThrow()
     dbV3.close()
+  })
+})
+
+describe('ESQUEMA_LOCAL_VERSION v5 — espejo VinculoPilotoTransportista (PR5 — sync + selector escopado)', () => {
+  const tablaExiste = (base: Database.Database, tabla: string): boolean =>
+    (base
+      .prepare(`SELECT name FROM sqlite_master WHERE type = 'table' AND name = ?`)
+      .get(tabla) as { name: string } | undefined) !== undefined
+
+  const versionSellada = (base: Database.Database): string | undefined =>
+    (
+      base
+        .prepare("SELECT Valor FROM ConfiguracionLocal WHERE Clave = 'EsquemaLocalVersion'")
+        .get() as { Valor: string } | undefined
+    )?.Valor
+
+  it('una DB nueva nace en v5 con la tabla VinculoPilotoTransportista', () => {
+    expect(versionSellada(db)).toBe('5')
+    expect(tablaExiste(db, 'VinculoPilotoTransportista')).toBe(true)
+  })
+
+  it('una instalación en v4 (sin la tabla) la agrega de forma aditiva sin perder filas de Boleta', () => {
+    const dbV4 = new Database(':memory:')
+    dbV4.exec(`
+      CREATE TABLE ConfiguracionLocal (Clave TEXT PRIMARY KEY, Valor TEXT);
+      CREATE TABLE Boleta (
+        Id TEXT PRIMARY KEY,
+        NumeroBoleta TEXT NOT NULL UNIQUE,
+        TipoMovimientoId TEXT NOT NULL,
+        Estado TEXT NOT NULL,
+        EstadoSync TEXT NOT NULL,
+        PesoIngreso REAL NOT NULL,
+        OrigenPesoIngreso TEXT NOT NULL,
+        FechaHoraIngreso TEXT NOT NULL,
+        UsuarioIngreso TEXT NOT NULL,
+        CreadaOffline INTEGER NOT NULL,
+        MotivoPesoManual TEXT,
+        MotivoPesoManualDetalle TEXT,
+        MarcaPreIngreso TEXT
+      );
+    `)
+    dbV4.prepare("INSERT INTO ConfiguracionLocal (Clave, Valor) VALUES ('EsquemaLocalVersion', '4')").run()
+    dbV4
+      .prepare(
+        `INSERT INTO Boleta (Id, NumeroBoleta, TipoMovimientoId, Estado, EstadoSync,
+          PesoIngreso, OrigenPesoIngreso, FechaHoraIngreso, UsuarioIngreso, CreadaOffline)
+         VALUES ('b1', 'REC-B1-000001', 'tm1', 'EnTransito', 'Local', 1500, 'Bascula',
+          '2026-01-01T00:00:00.000Z', 'operador', 1)`,
+      )
+      .run()
+
+    inicializarEsquemaLocal(dbV4)
+
+    expect(versionSellada(dbV4)).toBe('5')
+    expect(tablaExiste(dbV4, 'VinculoPilotoTransportista')).toBe(true)
+    const fila = dbV4.prepare("SELECT * FROM Boleta WHERE Id = 'b1'").get() as Record<string, unknown>
+    expect(fila.PesoIngreso).toBe(1500)
+
+    dbV4.close()
+  })
+
+  it('re-inicializar sobre una DB ya v5 es un no-op idempotente', () => {
+    expect(() => inicializarEsquemaLocal(db)).not.toThrow()
+    expect(versionSellada(db)).toBe('5')
+    expect(tablaExiste(db, 'VinculoPilotoTransportista')).toBe(true)
   })
 })
 
@@ -454,6 +526,130 @@ describe('espejo PreIngreso — helpers de sync', () => {
       { Id: 'b1', MarcaPreIngreso: 'PreIngresoCancelado' },
       { Id: 'b2', MarcaPreIngreso: 'VinculoRechazado' },
     ])
+  })
+})
+
+describe('espejo VinculoPilotoTransportista — helpers de sync (PR5)', () => {
+  const vinculoLocal = (
+    id: string,
+    pilotoId: string,
+    transportistaId: string,
+    activo: boolean,
+    fechaModificacion: string,
+  ): VinculoPilotoTransportistaLocal => ({ id, pilotoId, transportistaId, activo, fechaModificacion })
+
+  it('upsertVinculosLocal inserta la tanda entera y re-upsertea por Id', () => {
+    upsertVinculosLocal([
+      vinculoLocal('v1', 'p1', 't1', true, '2026-09-01T00:00:00Z'),
+      vinculoLocal('v2', 'p2', 't1', true, '2026-09-01T00:00:00Z'),
+    ])
+    expect(vinculosPorTransportistaLocal('t1').map((v) => v.pilotoId).sort()).toEqual(['p1', 'p2'])
+
+    upsertVinculosLocal([vinculoLocal('v1', 'p1', 't1', false, '2026-09-02T00:00:00Z')])
+    expect(vinculosPorTransportistaLocal('t1').map((v) => v.pilotoId)).toEqual(['p2'])
+  })
+
+  it('vinculosPorTransportistaLocal devuelve SOLO los enlaces activos de ESE transportista', () => {
+    upsertVinculosLocal([
+      vinculoLocal('v1', 'p1', 't1', true, '2026-09-01T00:00:00Z'),
+      vinculoLocal('v2', 'p2', 't1', false, '2026-09-01T00:00:00Z'),
+      vinculoLocal('v3', 'p3', 't2', true, '2026-09-01T00:00:00Z'),
+    ])
+
+    expect(vinculosPorTransportistaLocal('t1').map((v) => v.pilotoId)).toEqual(['p1'])
+    expect(vinculosPorTransportistaLocal('t2').map((v) => v.pilotoId)).toEqual(['p3'])
+    expect(vinculosPorTransportistaLocal('t-sin-enlaces')).toEqual([])
+  })
+
+  it('obtenerUltimaSincronizacionVinculos es MAX(FechaModificacion) y null sin filas', () => {
+    expect(obtenerUltimaSincronizacionVinculos()).toBeNull()
+    upsertVinculosLocal([
+      vinculoLocal('v1', 'p1', 't1', true, '2026-09-01T00:00:00Z'),
+      vinculoLocal('v2', 'p2', 't1', true, '2026-09-05T00:00:00Z'),
+    ])
+    expect(obtenerUltimaSincronizacionVinculos()).toBe('2026-09-05T00:00:00Z')
+  })
+
+  it('upsertMaestrosYVinculosLocal comitea Maestro y Vinculo en UNA sola transacción', () => {
+    upsertMaestrosYVinculosLocal(
+      [
+        {
+          id: 'p1',
+          tipoCatalogo: 'Piloto',
+          codigo: 'P-1',
+          nombre: 'Juan',
+          datosAdicionales: null,
+          estado: 'Oficial',
+          fusionadoConId: null,
+          fechaModificacion: '2026-09-01T00:00:00Z',
+          activo: true,
+        },
+      ],
+      [vinculoLocal('v1', 'p1', 't1', true, '2026-09-01T00:00:00Z')],
+    )
+
+    expect(obtenerMaestroLocal('p1')?.nombre).toBe('Juan')
+    expect(vinculosPorTransportistaLocal('t1').map((v) => v.pilotoId)).toEqual(['p1'])
+  })
+
+  it('G4: si el upsert de Vinculo falla, NINGÚN watermark avanza (ni Maestro ni Vinculo)', () => {
+    const watermarkMaestroPrevio = obtenerUltimaSincronizacionMaestros()
+
+    // Rompe upsertVinculosLocal -> la transacción exterior (Maestro + Vinculo)
+    // entera tiene que revertirse, no solo la mitad de Vinculo.
+    db.exec('DROP TABLE VinculoPilotoTransportista')
+
+    expect(() =>
+      upsertMaestrosYVinculosLocal(
+        [
+          {
+            id: 'p2',
+            tipoCatalogo: 'Piloto',
+            codigo: 'P-2',
+            nombre: 'Ana',
+            datosAdicionales: null,
+            estado: 'Oficial',
+            fusionadoConId: null,
+            fechaModificacion: '2026-09-09T00:00:00Z',
+            activo: true,
+          },
+        ],
+        [vinculoLocal('v2', 'p2', 't2', true, '2026-09-09T00:00:00Z')],
+      ),
+    ).toThrow()
+
+    expect(obtenerUltimaSincronizacionMaestros()).toBe(watermarkMaestroPrevio)
+    // El Maestro tampoco quedó persistido — la transacción entera se revirtió,
+    // no solo la mitad de VinculoPilotoTransportista.
+    expect(obtenerMaestroLocal('p2')).toBeNull()
+  })
+
+  it('G4 (simétrico): si el upsert de Maestro falla, el watermark de Vinculo tampoco avanza', () => {
+    const watermarkVinculoPrevio = obtenerUltimaSincronizacionVinculos()
+
+    db.exec('DROP TABLE Maestro')
+
+    expect(() =>
+      upsertMaestrosYVinculosLocal(
+        [
+          {
+            id: 'p3',
+            tipoCatalogo: 'Piloto',
+            codigo: 'P-3',
+            nombre: 'Zoe',
+            datosAdicionales: null,
+            estado: 'Oficial',
+            fusionadoConId: null,
+            fechaModificacion: '2026-09-10T00:00:00Z',
+            activo: true,
+          },
+        ],
+        [vinculoLocal('v3', 'p3', 't3', true, '2026-09-10T00:00:00Z')],
+      ),
+    ).toThrow()
+
+    expect(obtenerUltimaSincronizacionVinculos()).toBe(watermarkVinculoPrevio)
+    expect(vinculosPorTransportistaLocal('t3')).toEqual([])
   })
 })
 
