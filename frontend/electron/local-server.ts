@@ -132,6 +132,66 @@ function validarPesoManualLocal(
   return null
 }
 
+const CLAVES_MUESTRA_RACIMOS = [
+  'racimos_verdes',
+  'racimos_maduros',
+  'racimos_sobremaduros',
+  'racimos_pasados',
+] as const
+const MAXIMO_MUESTRA_RACIMOS = 30
+
+/**
+ * Espejo local de `GuardiaMuestraFruta` (central): 0 < verdes + maduros +
+ * sobremaduros + pasados <= 30 evaluado INDEPENDIENTEMENTE POR OCURRENCIA de
+ * detalle_fruta — cada ocurrencia es un envío/lote con su propia muestra
+ * física (el cap de 30 es por muestra, no por camión). Una ocurrencia con
+ * alguno de los cuatro contadores cargado se evalúa sola (suma 0 ⇒ rechazo);
+ * una sin contadores no participa. `racimos_pedunculo_largo` NO suma
+ * (paridad legacy frmCalidadFruta). Sin ningún contador en ninguna
+ * ocurrencia el guard pasa. Se resuelve por Clave del espejo local de Campo,
+ * no por Id congelado, para atravesar versiones. Falla = 400, igual que
+ * central; la ingesta de sync NO revalida (D3/D8): acá se decide offline.
+ */
+function validarMuestraFrutaLocal(boletaId: string): { status: number; error: string } | null {
+  const placeholders = CLAVES_MUESTRA_RACIMOS.map(() => '?').join(',')
+  const filas = getDb()
+    .prepare(
+      `SELECT v.Ocurrencia AS occ, v.ValorNumero AS n
+         FROM BoletaValorCampo v
+         JOIN Campo c ON c.Id = v.CampoId
+        WHERE v.BoletaId = ? AND c.Clave IN (${placeholders})`,
+    )
+    .all(boletaId, ...CLAVES_MUESTRA_RACIMOS) as Array<{ occ: number; n: string | number | null }>
+
+  // `ValorNumero` sale como string por la afinidad TEXT de SQLite — Number()
+  // explícito antes de sumar (misma lectura que hace el motor local).
+  const sumasPorOcurrencia = new Map<number, number>()
+  for (const f of filas) {
+    sumasPorOcurrencia.set(f.occ, (sumasPorOcurrencia.get(f.occ) ?? 0) + Number(f.n ?? 0))
+  }
+
+  for (const [occ, suma] of sumasPorOcurrencia) {
+    if (suma <= 0) {
+      return {
+        status: 400,
+        error:
+          `La muestra de racimos de la ocurrencia ${occ} debe ser mayor a 0 — ` +
+          'los contadores están cargados pero su suma es ' +
+          `${suma}.`,
+      }
+    }
+    if (suma > MAXIMO_MUESTRA_RACIMOS) {
+      return {
+        status: 400,
+        error:
+          `La muestra de racimos de la ocurrencia ${occ} no puede superar ` +
+          `${MAXIMO_MUESTRA_RACIMOS} — suma actual: ${suma}.`,
+      }
+    }
+  }
+  return null
+}
+
 /**
  * Servidor HTTP local (127.0.0.1) embebido en el proceso principal de
  * Electron. El renderer habla con este mismo contrato tanto si la báscula
@@ -407,6 +467,14 @@ export function startLocalServer(port: number, esDev: boolean): Server {
     })
     if (errores.length > 0) {
       res.status(422).json(errores)
+      return
+    }
+
+    // Guard de muestra de racimos — espejo de `GuardiaMuestraFruta` (central).
+    // Regla de negocio entre campos, afuera del motor congelado por paridad.
+    const errorMuestra = validarMuestraFrutaLocal(boleta.id)
+    if (errorMuestra) {
+      res.status(errorMuestra.status).json({ error: errorMuestra.error })
       return
     }
 

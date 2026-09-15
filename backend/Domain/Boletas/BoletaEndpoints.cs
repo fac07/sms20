@@ -164,6 +164,12 @@ public static class BoletaEndpoints
                 return Results.UnprocessableEntity(errores);
             }
 
+            // Guard de muestra de racimos (espejo legacy frmCalidadFruta):
+            // regla entre campos, afuera del motor congelado. 400 y la boleta
+            // se queda EnTransito.
+            var errorMuestra = await GuardiaMuestraFruta.ValidarCierreAsync(db, boleta.Id, ct);
+            if (errorMuestra is not null) return errorMuestra;
+
             if (request.OrigenPesoSalida == OrigenPeso.Manual)
             {
                 var bascula = await db.Basculas.AsNoTracking().FirstOrDefaultAsync(b => b.Id == boleta.BasculaId, ct);
