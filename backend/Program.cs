@@ -89,6 +89,7 @@ app.MapBasculas();
 app.MapBoletas();
 app.MapPreIngresos();
 app.MapVinculosPilotoTransportista();
+app.MapAsignacionesUnidadTransportista();
 app.MapSecciones();
 app.MapCampos();
 

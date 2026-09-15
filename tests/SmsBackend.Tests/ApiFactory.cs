@@ -68,18 +68,21 @@ public sealed class ApiFactory : WebApplicationFactory<Program>, IAsyncLifetime
     public IServiceScope CreateScope() => Services.CreateScope();
 
     /// <summary>
-    /// Limpia las filas transaccionales (<c>VinculoPilotoTransportista</c> +
-    /// <c>PreIngreso</c> + <c>BoletaValorCampo</c> + <c>Boleta</c>) entre tests
-    /// y deja intacto el seed de configuración. <c>PreIngreso</c> va antes que
-    /// <c>Boleta</c>: su FK real hacia <c>Boleta</c> es <c>Restrict</c>.
-    /// <c>VinculoPilotoTransportista</c> no tiene FK real hacia nada (design
-    /// D1 — referencias lógicas a Maestro), así que su posición en el orden
-    /// no importa; va primero por prolijidad.
+    /// Limpia las filas transaccionales (<c>AsignacionUnidadTransportista</c> +
+    /// <c>VinculoPilotoTransportista</c> + <c>PreIngreso</c> +
+    /// <c>BoletaValorCampo</c> + <c>Boleta</c>) entre tests y deja intacto el
+    /// seed de configuración. <c>PreIngreso</c> va antes que <c>Boleta</c>: su
+    /// FK real hacia <c>Boleta</c> es <c>Restrict</c>.
+    /// <c>AsignacionUnidadTransportista</c> y <c>VinculoPilotoTransportista</c>
+    /// no tienen FK real hacia nada (design D1/D4 — referencias lógicas a
+    /// Maestro), así que su posición en el orden no importa; van primero por
+    /// prolijidad.
     /// </summary>
     public async Task ResetAsync()
     {
         using var scope = Services.CreateScope();
         var db = scope.ServiceProvider.GetRequiredService<SmsDbContext>();
+        await db.AsignacionesUnidadTransportista.ExecuteDeleteAsync();
         await db.VinculosPilotoTransportista.ExecuteDeleteAsync();
         await db.PreIngresos.ExecuteDeleteAsync();
         await db.BoletaValores.ExecuteDeleteAsync();

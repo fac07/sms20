@@ -32,6 +32,8 @@ public class SmsDbContext(DbContextOptions<SmsDbContext> options) : DbContext(op
 
     public DbSet<VinculoPilotoTransportista> VinculosPilotoTransportista => Set<VinculoPilotoTransportista>();
 
+    public DbSet<AsignacionUnidadTransportista> AsignacionesUnidadTransportista => Set<AsignacionUnidadTransportista>();
+
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
         modelBuilder.ApplyConfigurationsFromAssembly(typeof(SmsDbContext).Assembly);
