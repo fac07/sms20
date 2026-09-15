@@ -474,6 +474,167 @@ describe('sincronizarConfig — propagación del ingreso manual de peso (S2a)', 
 
     expect(pings).toHaveLength(0)
   })
+
+  // --- Config de transferencia del centro (GET /api/centros/{id}/configuracion) ---
+  // Mismo posture que el trío de ingreso manual: fetch aislado en su propio
+  // try/catch, nunca aborta el tick, último valor conocido si el central no
+  // responde, default-deny (clave ausente) si nunca sincronizó.
+
+  const CENTRO_ID = 'ce4770ce-0000-0000-0000-000000000001'
+
+  function conConfigCentro(
+    bascula: Record<string, unknown> | null | 'throw',
+    config: Record<string, unknown> | null | 'throw',
+    calls: string[],
+  ): Fetcher {
+    const base = fakeCentralConBascula(baseData(), calls, bascula)
+    return async (rawUrl: string, init?: { method?: string }) => {
+      const p = new URL(rawUrl).pathname
+      if (p.startsWith('/api/centros/')) {
+        calls.push(rawUrl)
+        if (config === 'throw') throw new Error('red caída en el GET de config de centro')
+        if (config === null) return { ok: false, status: 404, json: async () => ({ error: 'no existe' }) }
+        return { ok: true, status: 200, json: async () => config }
+      }
+      return base(rawUrl, init)
+    }
+  }
+
+  const seedCentroId = () =>
+    db.prepare(
+      `INSERT INTO ConfiguracionLocal (Clave, Valor) VALUES ('BasculaCentroId', ?)
+       ON CONFLICT(Clave) DO UPDATE SET Valor = excluded.Valor`,
+    ).run(CENTRO_ID)
+
+  const seedDefaultsPrevios = (json: string) =>
+    db.prepare(
+      `INSERT INTO ConfiguracionLocal (Clave, Valor) VALUES ('UbicacionDefaults', ?)
+       ON CONFLICT(Clave) DO UPDATE SET Valor = excluded.Valor`,
+    ).run(json)
+
+  const BASCULA_SIN_CENTRO = {
+    id: BASCULA_ID,
+    permiteIngresoManual: false,
+    pesoMinimoManual: null,
+    pesoMaximoManual: null,
+  }
+
+  const configConValores = {
+    centroId: CENTRO_ID,
+    sitioOrigenDefaultId: 'sit-org',
+    sitioDestinoDefaultId: null,
+    almacenOrigenDefaultId: 'alm-org',
+    almacenDestinoDefaultId: 'alm-des',
+  }
+
+  it('baja la config del centro conocido y la persiste en ConfiguracionLocal', async () => {
+    seedBasculaId()
+    seedCentroId()
+    const calls: string[] = []
+
+    await sincronizarConfig(db, {
+      fetcher: conConfigCentro(BASCULA_SIN_CENTRO, configConValores, calls),
+      baseUrl: BASE,
+    })
+
+    expect(calls.some((u) => u.endsWith(`/api/centros/${CENTRO_ID}/configuracion`))).toBe(true)
+    expect(JSON.parse(leerConfig('UbicacionDefaults')!)).toEqual({
+      sitioOrigenDefaultId: 'sit-org',
+      sitioDestinoDefaultId: null,
+      almacenOrigenDefaultId: 'alm-org',
+      almacenDestinoDefaultId: 'alm-des',
+    })
+    // El resto del batch no se inmuta.
+    expect(contar('Seccion')).toBe(1)
+  })
+
+  it('en el primer tick usa el centroId de la respuesta de la báscula', async () => {
+    seedBasculaId()
+    const calls: string[] = []
+
+    await sincronizarConfig(db, {
+      fetcher: conConfigCentro(
+        { ...BASCULA_SIN_CENTRO, centroId: CENTRO_ID },
+        configConValores,
+        calls,
+      ),
+      baseUrl: BASE,
+    })
+
+    expect(calls.some((u) => u.endsWith(`/api/centros/${CENTRO_ID}/configuracion`))).toBe(true)
+    expect(JSON.parse(leerConfig('UbicacionDefaults')!).sitioOrigenDefaultId).toBe('sit-org')
+  })
+
+  it('un 404 en la config de centro deja el último valor conocido intacto', async () => {
+    seedBasculaId()
+    seedCentroId()
+    seedDefaultsPrevios('{"sitioOrigenDefaultId":"previo"}')
+    const calls: string[] = []
+
+    await sincronizarConfig(db, {
+      fetcher: conConfigCentro(BASCULA_SIN_CENTRO, null, calls),
+      baseUrl: BASE,
+    })
+
+    expect(leerConfig('UbicacionDefaults')).toBe('{"sitioOrigenDefaultId":"previo"}')
+  })
+
+  it('un throw de red en la config de centro no aborta el sync', async () => {
+    seedBasculaId()
+    seedCentroId()
+    seedDefaultsPrevios('{"sitioOrigenDefaultId":"previo"}')
+    const calls: string[] = []
+
+    const resultado = await sincronizarConfig(db, {
+      fetcher: conConfigCentro(BASCULA_SIN_CENTRO, 'throw', calls),
+      baseUrl: BASE,
+    })
+
+    expect(resultado.secciones).toBe(1)
+    expect(contar('Seccion')).toBe(1)
+    expect(leerConfig('UbicacionDefaults')).toBe('{"sitioOrigenDefaultId":"previo"}')
+  })
+
+  it('los nulls explícitos del central limpian defaults previos', async () => {
+    seedBasculaId()
+    seedCentroId()
+    seedDefaultsPrevios('{"sitioOrigenDefaultId":"previo"}')
+    const calls: string[] = []
+
+    await sincronizarConfig(db, {
+      fetcher: conConfigCentro(
+        BASCULA_SIN_CENTRO,
+        {
+          centroId: CENTRO_ID,
+          sitioOrigenDefaultId: null,
+          sitioDestinoDefaultId: null,
+          almacenOrigenDefaultId: null,
+          almacenDestinoDefaultId: null,
+        },
+        calls,
+      ),
+      baseUrl: BASE,
+    })
+
+    expect(JSON.parse(leerConfig('UbicacionDefaults')!)).toEqual({
+      sitioOrigenDefaultId: null,
+      sitioDestinoDefaultId: null,
+      almacenOrigenDefaultId: null,
+      almacenDestinoDefaultId: null,
+    })
+  })
+
+  it('sin BasculaId no se pide la config de centro', async () => {
+    const calls: string[] = []
+
+    await sincronizarConfig(db, {
+      fetcher: conConfigCentro({ id: 'x', permiteIngresoManual: true }, configConValores, calls),
+      baseUrl: BASE,
+    })
+
+    expect(calls.some((u) => u.includes('/api/centros/'))).toBe(false)
+    expect(leerConfig('UbicacionDefaults')).toBeUndefined()
+  })
 })
 
 describe('sincronizarConfigLocal — guardia de sync en vuelo', () => {
