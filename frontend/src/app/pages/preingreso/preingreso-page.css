@@ -6,3 +6,14 @@
   text-align: right;
   white-space: nowrap;
 }
+
+.filtros-cola {
+  align-items: center;
+  display: flex;
+  gap: 12px;
+  margin-bottom: 16px;
+}
+
+.filtros-cola nz-select {
+  min-width: 280px;
+}

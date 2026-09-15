@@ -266,6 +266,56 @@ public sealed class PreIngresoEndpointsTests : IAsyncLifetime
     }
 
     [Fact]
+    public async Task El_listado_ordena_por_FechaCreacion_ascendente()
+    {
+        var escenario = await TestData.NuevoEscenarioAsync(_client);
+        var antiguoPrimero = Guid.Parse("00000000-0000-0000-0000-000000000001");
+        var antiguoSegundo = Guid.Parse("00000000-0000-0000-0000-000000000002");
+        var masReciente = Guid.Parse("00000000-0000-0000-0000-000000000003");
+        var ahora = DateTime.UtcNow;
+
+        await ConScope(async db =>
+        {
+            db.PreIngresos.AddRange(
+                new PreIngreso
+                {
+                    Id = masReciente,
+                    CentroId = escenario.CentroId,
+                    NumeroEnvio = "ENV-RECIENTE",
+                    PesoEnviado = 20000m,
+                    Estado = EstadoPreIngreso.Pendiente,
+                    UsuarioCreacion = "seed",
+                    FechaCreacion = ahora.AddMinutes(-5),
+                },
+                new PreIngreso
+                {
+                    Id = antiguoSegundo,
+                    CentroId = escenario.CentroId,
+                    NumeroEnvio = "ENV-ANTIGUO-2",
+                    PesoEnviado = 20000m,
+                    Estado = EstadoPreIngreso.Pendiente,
+                    UsuarioCreacion = "seed",
+                    FechaCreacion = ahora.AddHours(-2),
+                },
+                new PreIngreso
+                {
+                    Id = antiguoPrimero,
+                    CentroId = escenario.CentroId,
+                    NumeroEnvio = "ENV-ANTIGUO-1",
+                    PesoEnviado = 20000m,
+                    Estado = EstadoPreIngreso.Pendiente,
+                    UsuarioCreacion = "seed",
+                    FechaCreacion = ahora.AddHours(-2),
+                });
+            await db.SaveChangesAsync();
+        });
+
+        var lista = (await ListarAsync($"?centroId={escenario.CentroId}&estado=Pendiente"))!;
+
+        Assert.Equal(new[] { antiguoPrimero, antiguoSegundo, masReciente }, lista.Select(p => p.Id));
+    }
+
+    [Fact]
     public async Task El_delta_ignora_el_filtro_estado_para_arrastrar_vinculados_y_cancelados()
     {
         var escenario = await TestData.NuevoEscenarioAsync(_client);

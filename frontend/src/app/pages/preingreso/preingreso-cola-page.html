@@ -1,0 +1,43 @@
+<nz-card nzTitle="Informe de cola pendiente">
+  <div class="filtros-cola">
+    <label for="centro-cola">Centro</label>
+    <nz-select
+      id="centro-cola"
+      nzAllowClear
+      nzPlaceHolder="Todos los centros"
+      [ngModel]="centroId()"
+      (ngModelChange)="filtrarPorCentro($event)"
+    >
+      @for (centro of centros(); track centro.id) {
+        <nz-option [nzValue]="centro.id" [nzLabel]="centro.nombre"></nz-option>
+      }
+    </nz-select>
+  </div>
+
+  <nz-table #tabla [nzData]="preingresos()" [nzLoading]="cargando()" [nzPageSize]="10">
+    <thead>
+      <tr>
+        <th>Número de envío</th>
+        <th>Centro</th>
+        <th>Fecha de creación</th>
+        <th>Antigüedad</th>
+        <th>Peso enviado (kg)</th>
+        <th>Racimos</th>
+        <th>Sacos</th>
+      </tr>
+    </thead>
+    <tbody>
+      @for (p of tabla.data; track p.id) {
+        <tr>
+          <td class="numero-envio">{{ p.numeroEnvio }}</td>
+          <td>{{ nombreCentro(p.centroId) }}</td>
+          <td>{{ p.fechaCreacion | date: 'dd/MM/yyyy HH:mm' }}</td>
+          <td>{{ antiguedad(p.fechaCreacion) }}</td>
+          <td>{{ p.pesoEnviado }}</td>
+          <td>{{ p.racimos ?? '—' }}</td>
+          <td>{{ p.sacos ?? '—' }}</td>
+        </tr>
+      }
+    </tbody>
+  </nz-table>
+</nz-card>

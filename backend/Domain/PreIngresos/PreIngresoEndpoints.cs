@@ -46,8 +46,13 @@ public static class PreIngresoEndpoints
                 query = query.Where(p => p.Estado == estado);
             }
 
-            var preingresos = await query
-                .OrderBy(p => p.FechaModificacion)
+            // La consulta operativa es una cola FIFO; el delta conserva el
+            // orden de su watermark para no mezclar ambos contratos.
+            var consultaOrdenada = modificadoDesde is null
+                ? query.OrderBy(p => p.FechaCreacion).ThenBy(p => p.Id)
+                : query.OrderBy(p => p.FechaModificacion).ThenBy(p => p.Id);
+
+            var preingresos = await consultaOrdenada
                 .Select(p => PreIngresoDto.FromEntity(p))
                 .ToListAsync();
 
