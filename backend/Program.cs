@@ -10,6 +10,7 @@ using SmsBackend.Domain.Configuracion;
 using SmsBackend.Domain.Maestros;
 using SmsBackend.Domain.PreIngresos;
 using SmsBackend.Domain.Reportes;
+using SmsBackend.Domain.Seguridad;
 using SmsBackend.Domain.TiposMovimiento;
 using SmsBackend.Domain.Transporte;
 
@@ -53,6 +54,26 @@ builder.Services.AddSingleton<IncidenciasSyncStore>();
 // conectividad de verdad, no solo "el proceso está vivo".
 builder.Services.AddHealthChecks().AddDbContextCheck<SmsDbContext>("database");
 
+// Puerto de identidad (design "Technical Approach"): scoped porque depende
+// del SmsDbContext (scoped). Ningún consumidor referencia MockProveedorIdentidad
+// directamente — el swap a Entra ID cambia SOLO esta línea.
+builder.Services.AddScoped<IProveedorIdentidad, MockProveedorIdentidad>();
+
+// Registra el scheme mock que traduce "Authorization: Bearer <token>" en un
+// ClaimsPrincipal (0.8). Sin UseAuthentication()/UseAuthorization() todavía
+// en el pipeline — eso y el primer endpoint gateado llegan en PR2.
+builder.Services
+    .AddAuthentication(MockAuthenticationOptions.SchemeName)
+    .AddScheme<MockAuthenticationOptions, MockAuthenticationHandler>(MockAuthenticationOptions.SchemeName, options => { });
+
+// Tres políticas de rol jerárquico (design D4). Sin RequireAuthorization() en
+// ningún endpoint todavía, y sin UseAuthentication()/UseAuthorization() en el
+// pipeline HTTP — el primer endpoint gateado llega en PR2 (Phase 1).
+builder.Services.AddAuthorizationBuilder()
+    .AddPolicy(Politicas.Operador, p => p.RequireAssertion(ctx => Politicas.CumpleRolMinimo(ctx, Rol.Operador)))
+    .AddPolicy(Politicas.Supervisor, p => p.RequireAssertion(ctx => Politicas.CumpleRolMinimo(ctx, Rol.Supervisor)))
+    .AddPolicy(Politicas.Administrador, p => p.RequireAssertion(ctx => Politicas.CumpleRolMinimo(ctx, Rol.Administrador)));
+
 var app = builder.Build();
 
 if (app.Environment.IsDevelopment())
@@ -74,6 +95,13 @@ if (app.Environment.IsDevelopment())
     var seederLogger = scope.ServiceProvider.GetRequiredService<ILoggerFactory>()
         .CreateLogger("SmsBackend.Data.Seeding.ConfiguracionSeeder");
     await ConfiguracionSeeder.SeedAsync(db, seederLogger);
+
+    // Usuarios mock fijos por rol (design "Mock data source"). Idempotente,
+    // mismo patrón que ConfiguracionSeeder — sin esto, el login mock (PR2) no
+    // tendría credenciales contra las que autenticar en dev.
+    var seguridadSeederLogger = scope.ServiceProvider.GetRequiredService<ILoggerFactory>()
+        .CreateLogger("SmsBackend.Data.Seeding.SeguridadSeeder");
+    await SeguridadSeeder.SeedAsync(db, seguridadSeederLogger);
 }
 
 app.UseHttpsRedirection();
