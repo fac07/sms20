@@ -1,4 +1,4 @@
-import { HttpClient } from '@angular/common/http';
+import { HttpClient, HttpParams } from '@angular/common/http';
 import { Injectable, inject } from '@angular/core';
 import { Observable } from 'rxjs';
 import { environment } from '../../environments/environment';
@@ -15,6 +15,13 @@ export interface ResumenBasculaDia {
   pesoNetoTotal: number;
 }
 
+/** Una fila del informe diario de `GET /api/reportes/diario`. */
+export interface ReporteDiarioFila {
+  fecha: string;
+  cantidadBoletas: number;
+  pesoNetoTotal: number;
+}
+
 @Injectable({ providedIn: 'root' })
 export class ReportesService {
   private readonly http = inject(HttpClient);
@@ -26,5 +33,15 @@ export class ReportesService {
     return this.http.get<ResumenBasculaDia[]>(
       `${CENTRAL_API_URL}/api/reportes/resumen-basculas?desde=${desde}&hasta=${hasta}`,
     );
+  }
+
+  diario(tipoMovimientoId: string, desde: string, hasta: string): Observable<ReporteDiarioFila[]> {
+    const params = new HttpParams()
+      .set('tipoMovimientoId', tipoMovimientoId)
+      .set('desde', desde)
+      .set('hasta', hasta);
+    return this.http.get<ReporteDiarioFila[]>(`${CENTRAL_API_URL}/api/reportes/diario`, {
+      params,
+    });
   }
 }

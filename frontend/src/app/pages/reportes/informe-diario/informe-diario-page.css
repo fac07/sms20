@@ -1,0 +1,29 @@
+.filtros {
+  align-items: end;
+  display: grid;
+  gap: 16px;
+  grid-template-columns: minmax(260px, 2fr) repeat(2, minmax(150px, 1fr)) auto;
+  margin-bottom: 20px;
+}
+
+.filtros label {
+  display: grid;
+  gap: 6px;
+}
+
+.filtros input {
+  border: 1px solid #d9d9d9;
+  border-radius: 2px;
+  height: 32px;
+  padding: 4px 11px;
+}
+
+.numero {
+  text-align: right;
+}
+
+@media (max-width: 900px) {
+  .filtros {
+    grid-template-columns: 1fr;
+  }
+}

@@ -13,6 +13,8 @@ import { ProvisionalesPage } from './pages/maestros/provisionales-page/provision
 import { PesajePage } from './pages/pesaje/pesaje-page/pesaje-page';
 import { PreingresoPage } from './pages/preingreso/preingreso-page';
 import { PreingresoColaPage } from './pages/preingreso/preingreso-cola-page';
+import { InformeDiarioPage } from './pages/reportes/informe-diario/informe-diario-page';
+import { ResumenBasculasPage } from './pages/reportes/resumen-basculas/resumen-basculas-page';
 import { SeccionesPage } from './pages/secciones/secciones-page/secciones-page';
 import { TiposMovimientoPage } from './pages/tipos-movimiento/tipos-movimiento-page/tipos-movimiento-page';
 import { TransportePage } from './pages/transporte/transporte-page';
@@ -99,6 +101,18 @@ export const routes: Routes = [
         component: BoletasPage,
         canActivate: [modoGuard],
         data: { modo: ['bascula', 'admin'] },
+      },
+      {
+        path: 'reportes',
+        component: InformeDiarioPage,
+        canActivate: [modoGuard],
+        data: { modo: 'admin' },
+      },
+      {
+        path: 'reportes/basculas',
+        component: ResumenBasculasPage,
+        canActivate: [modoGuard],
+        data: { modo: 'admin' },
       },
       {
         path: 'outbox',

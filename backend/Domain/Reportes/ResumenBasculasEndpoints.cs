@@ -6,7 +6,7 @@ namespace SmsBackend.Domain.Reportes;
 
 public static class ResumenBasculasEndpoints
 {
-    public static RouteGroupBuilder MapReportes(this IEndpointRouteBuilder app)
+    public static RouteGroupBuilder MapResumenBasculas(this IEndpointRouteBuilder app)
     {
         var group = app.MapGroup("/api/reportes").WithTags("Reportes");
 
