@@ -198,8 +198,6 @@ public static class BoletaEndpoints
         // Anulación — doble control (UsuarioAnula + UsuarioAutoriza), igual
         // que el legacy. Solo cambia Estado: los pesos de una boleta ya
         // cerrada quedan como registro histórico, no se borran.
-        // TODO: BoletaReemplazoId (re-emisión enlazando la boleta nueva) queda
-        // fuera de alcance acá — este endpoint no crea ni enlaza reemplazos.
         group.MapPost("/{id:guid}/anular", async (Guid id, AnularBoletaRequest request, SmsDbContext db) =>
         {
             var boleta = await db.Boletas.FirstOrDefaultAsync(b => b.Id == id);
@@ -219,6 +217,115 @@ public static class BoletaEndpoints
 
             var dto = await Proyectar(db.Boletas.AsNoTracking().Where(b => b.Id == id), db).FirstAsync();
             return Results.Ok(dto);
+        });
+
+        // Re-emisión — el legado (NAT_Basculas: guard de CountEstaReEmitida +
+        // Update_Boleta_Boleta_Nueva_X_Anulacion) la modelaba como un link
+        // unidireccional puesto DESPUÉS de anular: la original queda Reemitida
+        // conservando su cadena de anulación intacta como historia, y la nueva
+        // nace como un pesaje propio (EnTransito, correlativo nuevo). Nunca se
+        // anula ni se borra nada acá — /anular sigue siendo prerrequisito.
+        group.MapPost("/{id:guid}/reemitir", async (
+            Guid id, ReemitirBoletaRequest request, MotorCampos motor, SmsDbContext db, CancellationToken ct) =>
+        {
+            var original = await db.Boletas.FirstOrDefaultAsync(b => b.Id == id, ct);
+            if (original is null) return Results.NotFound();
+            if (original.Estado != EstadoBoleta.Anulada)
+            {
+                return Results.Conflict(
+                    $"Solo se puede re-emitir una boleta anulada — estado actual: {original.Estado}.");
+            }
+            if (original.BoletaReemplazoId is not null)
+            {
+                return Results.Conflict("La boleta ya fue re-emitida.");
+            }
+
+            // El contexto operativo se hereda de la original — se arma el
+            // request sintético solo para reusar el mismo ValidarCreacion
+            // (correlativo único, báscula activa, tipo activo).
+            var creacion = new CrearBoletaRequest(
+                request.NumeroBoleta, original.BasculaId, original.TipoMovimientoId,
+                request.PesoIngreso, request.OrigenPesoIngreso, request.UsuarioIngreso, false);
+            var error = await ValidarCreacion(creacion, db);
+            if (error is not null) return error;
+
+            MotivoPesoManual? motivoIngreso = null;
+            if (request.OrigenPesoIngreso == OrigenPeso.Manual)
+            {
+                var bascula = await db.Basculas.AsNoTracking().FirstAsync(b => b.Id == original.BasculaId, ct);
+                var errorManual = ValidarPesoManualTipado(
+                    bascula, request.PesoIngreso,
+                    request.MotivoPesoManual, request.MotivoPesoManualDetalle, out motivoIngreso);
+                if (errorManual is not null) return errorManual;
+            }
+
+            // Valores explícitos del cliente → misma ruta que POST / (el motor
+            // valida contra el conjunto vigente a la nueva FechaHoraIngreso).
+            // Sin valores → copia de los almacenados en la original, que son
+            // un snapshot del pasado: se redirigen por FusionadoConId ANTES del
+            // motor, igual que la rama "Crear" de /sync, para que una boleta
+            // cuyo provisional fue fusionado después de pesada siga siendo
+            // re-emisible sin que el motor vea el id muerto.
+            var copiados = request.Valores is null;
+            var valores = request.Valores ?? await db.BoletaValores.AsNoTracking()
+                .Where(v => v.BoletaId == original.Id)
+                .Select(v => new ValorCampoDto(
+                    v.CampoId, v.Ocurrencia, v.ValorTexto, v.ValorNumero,
+                    v.ValorFecha, v.ValorBooleano, v.ValorMaestroId))
+                .ToListAsync(ct);
+            if (copiados)
+            {
+                valores = await RedirigirMaestrosFusionadosAsync(db, valores, ct);
+            }
+
+            var (pilotoIdTipado, transportistaIdTipado) = await LeerParTransporteAsync(db, valores, ct);
+            if (pilotoIdTipado is Guid pilotoTipado && transportistaIdTipado is Guid transportistaTipado)
+            {
+                var errorVinculo = await GuardiaVinculoTransporte.ValidarAsync(
+                    db, pilotoTipado, transportistaTipado, ct);
+                if (errorVinculo is not null) return errorVinculo;
+            }
+
+            var errores = await motor.ValidarValoresAsync(
+                original.TipoMovimientoId, DateTime.UtcNow, valores, ct);
+            if (errores.Count > 0)
+            {
+                return Results.BadRequest(errores);
+            }
+
+            var nueva = new Boleta
+            {
+                Id = Guid.NewGuid(),
+                NumeroBoleta = request.NumeroBoleta,
+                BasculaId = original.BasculaId,
+                TipoMovimientoId = original.TipoMovimientoId,
+                Estado = EstadoBoleta.EnTransito,
+                EstadoSync = EstadoSyncBoleta.SincronizadoCentral,
+                PesoIngreso = request.PesoIngreso,
+                OrigenPesoIngreso = request.OrigenPesoIngreso,
+                FechaHoraIngreso = DateTime.UtcNow,
+                UsuarioIngreso = request.UsuarioIngreso,
+                CreadaOffline = false,
+                MotivoPesoManual = motivoIngreso,
+                MotivoPesoManualDetalle = request.OrigenPesoIngreso == OrigenPeso.Manual
+                    ? request.MotivoPesoManualDetalle
+                    : null,
+            };
+
+            db.Boletas.Add(nueva);
+            await AgregarValoresAsync(db, nueva.Id, valores, ct);
+
+            original.Estado = EstadoBoleta.Reemitida;
+            original.BoletaReemplazoId = nueva.Id;
+
+            // Un solo SaveChanges: o se crea la nueva con su vínculo y la
+            // original pasa a Reemitida, o nada — nunca una Reemitida sin
+            // reemplazo ni un reemplazo huérfano.
+            await db.SaveChangesAsync(ct);
+
+            var dto = await Proyectar(db.Boletas.AsNoTracking().Where(b => b.Id == nueva.Id), db)
+                .FirstAsync(ct);
+            return Results.Created($"/api/boletas/{nueva.Id}", dto);
         });
 
         // Recepción del Outbox local (Electron/SQLite, ver diseño
