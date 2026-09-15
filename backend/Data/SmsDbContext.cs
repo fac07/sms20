@@ -2,6 +2,7 @@ using Microsoft.EntityFrameworkCore;
 using SmsBackend.Domain.Basculas;
 using SmsBackend.Domain.Boletas;
 using SmsBackend.Domain.Boletas.Valores;
+using SmsBackend.Domain.Centros;
 using SmsBackend.Domain.Configuracion;
 using SmsBackend.Domain.Maestros;
 using SmsBackend.Domain.PreIngresos;
@@ -33,6 +34,9 @@ public class SmsDbContext(DbContextOptions<SmsDbContext> options) : DbContext(op
     public DbSet<VinculoPilotoTransportista> VinculosPilotoTransportista => Set<VinculoPilotoTransportista>();
 
     public DbSet<AsignacionUnidadTransportista> AsignacionesUnidadTransportista => Set<AsignacionUnidadTransportista>();
+
+    /// <summary>Config de rutas de transferencia por Centro — 1:1 con Maestro/Centro.</summary>
+    public DbSet<ConfiguracionCentro> ConfiguracionesCentro => Set<ConfiguracionCentro>();
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {

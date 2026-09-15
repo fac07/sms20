@@ -512,6 +512,44 @@ export function obtenerConfigIngresoManual(): ConfigIngresoManualLocal {
 }
 
 /**
+ * Defaults de rutas de transferencia del Centro, espejados por `config-sync.ts`
+ * bajo `ConfiguracionLocal.UbicacionDefaults` (JSON con el cuarteto
+ * `*DefaultId`, null = "sin default"). Clave ausente => `{}` — default-deny:
+ * el formulario abre sin precarga, nunca 404/5xx. JSON corrupto degrada igual
+ * a `{}` (datos espejados, no de negocio: preferimos formulario limpio a
+ * tumbar el read path). Solo valores string no vacíos sobreviven.
+ */
+export interface UbicacionDefaultsLocal {
+  sitioOrigenDefaultId?: string | null
+  sitioDestinoDefaultId?: string | null
+  almacenOrigenDefaultId?: string | null
+  almacenDestinoDefaultId?: string | null
+}
+
+export function leerUbicacionDefaultsLocal(
+  database: Database.Database,
+): UbicacionDefaultsLocal {
+  const json = (
+    database
+      .prepare(`SELECT Valor FROM ConfiguracionLocal WHERE Clave = 'UbicacionDefaults'`)
+      .get() as { Valor: string | null } | undefined
+  )?.Valor
+  if (!json) return {}
+  try {
+    const parsed = JSON.parse(json) as Record<string, unknown>
+    const id = (v: unknown): string | null => (typeof v === 'string' && v.length > 0 ? v : null)
+    return {
+      sitioOrigenDefaultId: id(parsed.sitioOrigenDefaultId),
+      sitioDestinoDefaultId: id(parsed.sitioDestinoDefaultId),
+      almacenOrigenDefaultId: id(parsed.almacenOrigenDefaultId),
+      almacenDestinoDefaultId: id(parsed.almacenDestinoDefaultId),
+    }
+  } catch {
+    return {}
+  }
+}
+
+/**
  * Upsertea el trío de ingreso manual en `ConfiguracionLocal` desde un handle
  * `db` explícito. Lo llaman `config-sync.ts` (dentro de su transacción) y
  * `POST /aprovisionamiento`. `null` en una cota se guarda como `''` (== sin

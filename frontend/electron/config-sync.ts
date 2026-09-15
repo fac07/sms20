@@ -90,6 +90,19 @@ interface BasculaPropiaDto {
   pesoMaximoManual: number | null
 }
 
+// Defaults de rutas de transferencia del Centro (espejo de NAT_BSC_
+// Configuraciones del legacy) — shape camelCase del `ConfiguracionCentroDto`
+// central. Se persiste tal cual bajo `ConfiguracionLocal.UbicacionDefaults`
+// (cuarteto JSON; null = "sin default", explícito y propagable) y lo sirve la
+// ruta local `GET /configuracion-centro` para la precarga del formulario.
+interface ConfiguracionCentroCentral {
+  centroId?: string
+  sitioOrigenDefaultId: string | null
+  sitioDestinoDefaultId: string | null
+  almacenOrigenDefaultId: string | null
+  almacenDestinoDefaultId: string | null
+}
+
 export interface ResultadoConfigSync {
   secciones: number
   campos: number
@@ -305,9 +318,10 @@ export async function sincronizarConfig(
       | undefined
   )?.Valor
   let ingresoManual: BasculaPropiaDto | null = null
+  let configuracionCentro: ConfiguracionCentroCentral | null = null
   if (basculaId) {
     // Ping de conectividad — fire-and-forget ANTES del GET: marca presence en
-    // Central (Bascula.UltimaConexion) incluso si el GET de config revienta o
+    // Central (Bascula.UltimaConexion) incluso si el GET de config reviente o
     // 404ea. Nunca aborta el tick: la rejection se traga acá y el próximo
     // ciclo (60s) reintenta. No depende de ninguna respuesta.
     void fetcher(`${baseUrl}/api/basculas/${basculaId}/ping`, { method: 'POST' }).catch(() => {})
@@ -318,6 +332,33 @@ export async function sincronizarConfig(
       }
     } catch {
       // Degrada a "saltear este tick" — el último valor conocido persiste.
+    }
+
+    // Config de transferencia del Centro — fetch PROPIO, en su propio
+    // try/catch, mismo posture que el trío de ingreso manual de arriba: un
+    // 404/throw acá no puede tumbar el sync del que depende la creación de
+    // boletas. El centro a consultar es el que responde la báscula ahora
+    // (cubre el primer tick, antes del backfill de `BasculaCentroId`) o el
+    // ya conocido del espejo — si ninguno, se saltea en silencio.
+    const centroIdConocido =
+      ingresoManual?.centroId ??
+      (
+        db.prepare(`SELECT Valor FROM ConfiguracionLocal WHERE Clave = 'BasculaCentroId'`).get() as
+          | { Valor: string | null }
+          | undefined
+      )?.Valor ??
+      null
+    if (centroIdConocido) {
+      try {
+        const respuesta = await fetcher(
+          `${baseUrl}/api/centros/${centroIdConocido}/configuracion`,
+        )
+        if (respuesta.ok) {
+          configuracionCentro = (await respuesta.json()) as ConfiguracionCentroCentral
+        }
+      } catch {
+        // Ídem: último valor conocido (o ausencia) sigue vigente.
+      }
     }
   }
 
@@ -355,6 +396,24 @@ export async function sincronizarConfig(
            ON CONFLICT(Clave) DO UPDATE SET Valor = excluded.Valor`,
         ).run({ valor: ingresoManual.centroId })
       }
+    }
+
+    // Cuarteto de defaults del Centro — solo si el GET respondió (arriba).
+    // Se normaliza a las 4 claves con nulls explícitos: un "borrado" del admin
+    // viaja como nulls y PISA el previo (no es un fetch fallido), así el
+    // formulario deja de precargar lo que el centro ya no considera default.
+    if (configuracionCentro) {
+      db.prepare(
+        `INSERT INTO ConfiguracionLocal (Clave, Valor) VALUES ('UbicacionDefaults', @valor)
+         ON CONFLICT(Clave) DO UPDATE SET Valor = excluded.Valor`,
+      ).run({
+        valor: JSON.stringify({
+          sitioOrigenDefaultId: configuracionCentro.sitioOrigenDefaultId ?? null,
+          sitioDestinoDefaultId: configuracionCentro.sitioDestinoDefaultId ?? null,
+          almacenOrigenDefaultId: configuracionCentro.almacenOrigenDefaultId ?? null,
+          almacenDestinoDefaultId: configuracionCentro.almacenDestinoDefaultId ?? null,
+        }),
+      })
     }
   })
   persistir()

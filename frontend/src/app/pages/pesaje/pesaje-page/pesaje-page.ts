@@ -36,6 +36,7 @@ import {
   LocalServerService,
   MaestroLocal,
   PreIngresoLocal,
+  UbicacionDefaults,
   VinculoPilotoTransportistaLocal,
 } from '../../../api/local-server.service';
 import { hayDivergenciaPeso } from './advertencia-peso';
@@ -257,6 +258,13 @@ export class PesajePage implements OnInit, OnDestroy {
   // FormGroups, uno por ocurrencia.
   formSecciones = signal<FormGroup>(this.fb.group({}));
 
+  // Defaults de rutas de transferencia del Centro (espejo de
+  // NAT_BSC_Configuraciones del legacy), bajados junto con cada formulario en
+  // `cargarFormulario`. Solo alimentan el `valorInicial` de los cuatro campos
+  // de `ubicacion` (ver `valorInicialUbicacion`): el operador los edita como
+  // cualquier otro campo — nunca se bloquean ni se re-ponen tras tocarlos.
+  private ubicacionDefaults: UbicacionDefaults = {};
+
   readonly secciones = computed<SeccionRenderizada[]>(() =>
     agruparSecciones(this.camposAplicables()),
   );
@@ -417,15 +425,24 @@ export class PesajePage implements OnInit, OnDestroy {
     if (tipoMovimientoId === '') return;
 
     this.cargandoFormulario.set(true);
-    this.localServer
-      .formulario(tipoMovimientoId)
+    // El formulario y los defaults del centro viajan EN PARALELO. Los defaults
+    // son no-críticos: un fallo ahí degrada a `{}` (sin precarga) en vez de
+    // tumbar el formulario, del que sí depende la captura.
+    forkJoin({
+      campos: this.localServer.formulario(tipoMovimientoId),
+      defaults: this.localServer
+        .configuracionCentro()
+        .pipe(catchError(() => of<UbicacionDefaults>({}))),
+    })
       .pipe(catchError(() => of(null)))
-      .subscribe((campos) => {
+      .subscribe((par) => {
         this.cargandoFormulario.set(false);
-        if (campos === null) {
+        if (par === null) {
           this.message.error('No se pudo cargar el formulario del tipo de movimiento.');
           return;
         }
+        const { campos, defaults } = par;
+        this.ubicacionDefaults = defaults;
         this.camposAplicables.set(campos);
         this.formSecciones.set(this.construirFormulario(campos));
         this.cargarMaestrosReferencia(campos);
@@ -551,8 +568,35 @@ export class PesajePage implements OnInit, OnDestroy {
       if (max !== undefined) validators.push(Validators.max(max));
     }
 
-    const inicial: unknown = campo.tipoCampo === 'Booleano' ? (campo.requerido ? false : null) : null;
+    const inicial: unknown =
+      campo.tipoCampo === 'Booleano' ? (campo.requerido ? false : null) : this.valorInicialUbicacion(campo);
     return this.fb.control(inicial, validators);
+  }
+
+  /**
+   * Default del centro para un campo de `ubicacion`, o null. Escopado a la
+   * sección y al tipo exactos (ReferenciaMaestro) para no tocar ningún otro
+   * campo del formulario; el mapeo clave→default replica el cuarteto de
+   * `ConfiguracionCentroDto` central. `agregarOcurrencia` reusa este mismo
+   * path (`ubicacion` es Unica, pero la consistencia no depende de eso).
+   */
+  private valorInicialUbicacion(campo: CampoAplicable): string | null {
+    if (campo.seccionClave !== 'ubicacion' || campo.tipoCampo !== 'ReferenciaMaestro') {
+      return null;
+    }
+    const id = (v: string | null | undefined): string | null => v ?? null;
+    switch (campo.campoClave) {
+      case 'sitio_origen':
+        return id(this.ubicacionDefaults.sitioOrigenDefaultId);
+      case 'sitio_destino':
+        return id(this.ubicacionDefaults.sitioDestinoDefaultId);
+      case 'almacen_origen':
+        return id(this.ubicacionDefaults.almacenOrigenDefaultId);
+      case 'almacen_destino':
+        return id(this.ubicacionDefaults.almacenDestinoDefaultId);
+      default:
+        return null;
+    }
   }
 
   opciones(campo: CampoAplicable): string[] {

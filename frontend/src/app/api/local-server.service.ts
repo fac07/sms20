@@ -83,6 +83,18 @@ export interface ConfigEstado {
   lastConfigSyncAt: string | null;
 }
 
+// Defaults de rutas de transferencia del Centro espejados por config-sync
+// (ver `leerUbicacionDefaultsLocal` en frontend/electron/db.ts). `{}` = nunca
+// sincronizó o espejo corrupto: el formulario abre sin precarga, igual que
+// antes de este endpoint. Los nulls explícitos significan "ese rol no tiene
+// default" (un borrado del admin viaja como null, no como ausencia).
+export interface UbicacionDefaults {
+  sitioOrigenDefaultId?: string | null;
+  sitioDestinoDefaultId?: string | null;
+  almacenOrigenDefaultId?: string | null;
+  almacenDestinoDefaultId?: string | null;
+}
+
 // Espejo del resultado de `sincronizarConfig` en frontend/electron/config-sync.ts
 // — cuántas filas tocó el último sync de configuración por tabla.
 export interface ResultadoConfigSync {
@@ -226,6 +238,12 @@ export class LocalServerService {
   // Nunca falla: si nunca sincronizó, lastConfigSyncAt es null.
   configEstado(): Observable<ConfigEstado> {
     return this.http.get<ConfigEstado>(`${LOCAL_SERVER_URL}/config/estado`);
+  }
+
+  // Defaults del centro para la precarga del formulario de pesaje — solo
+  // lectura sobre el espejo local (ver GET /configuracion-centro).
+  configuracionCentro(): Observable<UbicacionDefaults> {
+    return this.http.get<UbicacionDefaults>(`${LOCAL_SERVER_URL}/configuracion-centro`);
   }
 
   // Tipos de movimiento — read path local del espejo (ver GET /tipos-movimiento

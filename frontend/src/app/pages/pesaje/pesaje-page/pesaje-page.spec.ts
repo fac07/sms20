@@ -313,6 +313,9 @@ describe('PesajePage (TestBed + HttpTestingController)', () => {
   function seleccionarTipo(campos: CampoAplicable[]): void {
     component.tipoMovimientoCtrl.setValue('tm-1');
     httpMock.expectOne(`${LOCAL}/tipos-movimiento/tm-1/formulario`).flush(campos);
+    // El formulario se construye cuando el forkJoin completa: los defaults
+    // viajan en paralelo y se flushean sin precarga salvo test explícito.
+    httpMock.expectOne(`${LOCAL}/configuracion-centro`).flush({});
   }
 
   it('construye el formulario a partir de /formulario, con validators required', () => {
@@ -376,6 +379,80 @@ describe('PesajePage (TestBed + HttpTestingController)', () => {
     expect(component.ocurrenciasDe('producto').length).toBe(1);
   });
 
+  // --- Precarga de defaults de ubicacion por Centro (frente 6 pto 7) ---
+  // El formulario y `GET /configuracion-centro` viajan en paralelo; los
+  // valores espejados son valorInicial de los controles de `ubicacion` — el
+  // operador puede sobreescribirlos como con cualquier otro campo.
+
+  function camposUbicacion(): CampoAplicable[] {
+    return [
+      campo({
+        campoId: 'c-sitio',
+        campoClave: 'sitio_origen',
+        seccionClave: 'ubicacion',
+        tipoCampo: 'ReferenciaMaestro',
+        tipoCatalogoRef: 'Centro',
+      }),
+      campo({
+        campoId: 'c-alm',
+        campoClave: 'almacen_destino',
+        seccionClave: 'ubicacion',
+        tipoCampo: 'ReferenciaMaestro',
+        tipoCatalogoRef: 'Almacen',
+      }),
+    ];
+  }
+
+  it('precarga los defaults de ubicacion del centro en el formulario', () => {
+    flushInit();
+    component.tipoMovimientoCtrl.setValue('tm-1');
+    httpMock.expectOne(`${LOCAL}/tipos-movimiento/tm-1/formulario`).flush(camposUbicacion());
+    httpMock.expectOne(`${LOCAL}/configuracion-centro`).flush({
+      sitioOrigenDefaultId: 'centro-x',
+      sitioDestinoDefaultId: null,
+      almacenOrigenDefaultId: null,
+      almacenDestinoDefaultId: 'alm-d',
+    });
+    httpMock.expectOne(`${LOCAL}/maestros?tipoCatalogo=Centro`).flush([]);
+    httpMock.expectOne(`${LOCAL}/maestros?tipoCatalogo=Almacen`).flush([]);
+
+    const grupo = component.formSecciones().get('ubicacion') as FormGroup;
+    expect(grupo.get('c-sitio')!.value).toBe('centro-x');
+    expect(grupo.get('c-alm')!.value).toBe('alm-d');
+  });
+
+  it('un default null no precarga: el control abre vacío como siempre', () => {
+    flushInit();
+    component.tipoMovimientoCtrl.setValue('tm-1');
+    httpMock.expectOne(`${LOCAL}/tipos-movimiento/tm-1/formulario`).flush(camposUbicacion());
+    httpMock.expectOne(`${LOCAL}/configuracion-centro`).flush({
+      sitioOrigenDefaultId: null,
+      sitioDestinoDefaultId: null,
+      almacenOrigenDefaultId: null,
+      almacenDestinoDefaultId: null,
+    });
+    httpMock.expectOne(`${LOCAL}/maestros?tipoCatalogo=Centro`).flush([]);
+    httpMock.expectOne(`${LOCAL}/maestros?tipoCatalogo=Almacen`).flush([]);
+
+    const grupo = component.formSecciones().get('ubicacion') as FormGroup;
+    expect(grupo.get('c-sitio')!.value).toBeNull();
+    expect(grupo.get('c-alm')!.value).toBeNull();
+  });
+
+  it('si la config de centro falla, el formulario abre igual y sin precarga', () => {
+    flushInit();
+    component.tipoMovimientoCtrl.setValue('tm-1');
+    httpMock.expectOne(`${LOCAL}/tipos-movimiento/tm-1/formulario`).flush(camposUbicacion());
+    httpMock
+      .expectOne(`${LOCAL}/configuracion-centro`)
+      .error(new ErrorEvent('network error'));
+    httpMock.expectOne(`${LOCAL}/maestros?tipoCatalogo=Centro`).flush([]);
+    httpMock.expectOne(`${LOCAL}/maestros?tipoCatalogo=Almacen`).flush([]);
+
+    const grupo = component.formSecciones().get('ubicacion') as FormGroup;
+    expect(grupo.get('c-sitio')!.value).toBeNull();
+  });
+
   it('carga opciones de ReferenciaMaestro por TipoCatalogoRef (batch)', () => {
     flushInit();
     const refCampo = campo({
@@ -387,6 +464,7 @@ describe('PesajePage (TestBed + HttpTestingController)', () => {
     });
     component.tipoMovimientoCtrl.setValue('tm-1');
     httpMock.expectOne(`${LOCAL}/tipos-movimiento/tm-1/formulario`).flush([refCampo]);
+    httpMock.expectOne(`${LOCAL}/configuracion-centro`).flush({});
     httpMock.expectOne(`${LOCAL}/maestros?tipoCatalogo=Transportista`).flush([
       { id: 'm1', tipoCatalogo: 'Transportista', codigo: 'T1', nombre: 'Transporte 1', datosAdicionales: null, estado: 'Oficial', fusionadoConId: null, fechaModificacion: '', activo: true },
     ]);
@@ -414,6 +492,7 @@ describe('PesajePage (TestBed + HttpTestingController)', () => {
 
     component.tipoMovimientoCtrl.setValue('tm-1');
     httpMock.expectOne(`${LOCAL}/tipos-movimiento/tm-1/formulario`).flush([refCampo, noHabilitado]);
+    httpMock.expectOne(`${LOCAL}/configuracion-centro`).flush({});
     httpMock.expectOne(`${LOCAL}/maestros?tipoCatalogo=Transportista`).flush([]);
     httpMock.expectOne(`${LOCAL}/maestros?tipoCatalogo=Finca`).flush([]);
 
@@ -491,6 +570,7 @@ describe('PesajePage (TestBed + HttpTestingController)', () => {
       httpMock
         .expectOne(`${LOCAL}/tipos-movimiento/tm-1/formulario`)
         .flush([campoTransportista, campoPiloto]);
+      httpMock.expectOne(`${LOCAL}/configuracion-centro`).flush({});
       httpMock.expectOne(`${LOCAL}/maestros?tipoCatalogo=Transportista`).flush([]);
       httpMock.expectOne(`${LOCAL}/maestros?tipoCatalogo=Piloto`).flush(pilotos);
     }
