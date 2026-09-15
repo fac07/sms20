@@ -244,6 +244,23 @@ public sealed class ReemisionBoletaTests : IAsyncLifetime
     }
 
     [Fact]
+    public async Task Anular_boleta_reemitida_es_409_y_no_pisa_la_historia_de_reemision()
+    {
+        var escenario = await TestData.NuevoEscenarioAsync(_client);
+        var original = await CrearYAnularAsync(escenario);
+        Assert.Equal(HttpStatusCode.Created, (await ReemitirAsync(original.Id)).StatusCode);
+
+        var resp = await AnularAsync(original.Id, "re-anulacion indebida");
+
+        Assert.Equal(HttpStatusCode.Conflict, resp.StatusCode);
+        var recargada = await TestData.GetBoletaAsync(_client, original.Id);
+        Assert.Equal(EstadoBoleta.Reemitida, recargada.Estado);
+        Assert.NotNull(recargada.BoletaReemplazoId);
+        // La anulación original sigue intacta: motivo y timestamp de la primera.
+        Assert.Equal("error de captura", recargada.MotivoAnulacion);
+    }
+
+    [Fact]
     public async Task Reemitir_peso_manual_en_bascula_sin_habilitar_es_422_y_no_vincula()
     {
         var escenario = await TestData.NuevoEscenarioAsync(_client);

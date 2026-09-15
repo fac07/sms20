@@ -206,6 +206,13 @@ public static class BoletaEndpoints
             {
                 return Results.Conflict("La boleta ya está anulada.");
             }
+            if (boleta.Estado == EstadoBoleta.Reemitida)
+            {
+                // Reemitida conserva su cadena de anulación como historia;
+                // re-anularla pisaría ese registro (motivo/fecha) y rompería
+                // el guard de re-emisión única de /reemitir.
+                return Results.Conflict("La boleta ya fue re-emitida — no se puede anular.");
+            }
 
             boleta.Estado = EstadoBoleta.Anulada;
             boleta.UsuarioAnula = request.UsuarioAnula;
