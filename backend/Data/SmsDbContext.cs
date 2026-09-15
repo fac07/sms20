@@ -6,6 +6,7 @@ using SmsBackend.Domain.Centros;
 using SmsBackend.Domain.Configuracion;
 using SmsBackend.Domain.Maestros;
 using SmsBackend.Domain.PreIngresos;
+using SmsBackend.Domain.Seguridad;
 using SmsBackend.Domain.TiposMovimiento;
 using SmsBackend.Domain.Transporte;
 
@@ -37,6 +38,15 @@ public class SmsDbContext(DbContextOptions<SmsDbContext> options) : DbContext(op
 
     /// <summary>Config de rutas de transferencia por Centro — 1:1 con Maestro/Centro.</summary>
     public DbSet<ConfiguracionCentro> ConfiguracionesCentro => Set<ConfiguracionCentro>();
+
+    /// <summary>Identidad humana mock (design D1/D3) — reemplazable por el proveedor real.</summary>
+    public DbSet<Usuario> Usuarios => Set<Usuario>();
+
+    /// <summary>Asociación Usuario-Centro; cardinalidad depende del Rol (design D1).</summary>
+    public DbSet<UsuarioCentro> UsuariosCentro => Set<UsuarioCentro>();
+
+    /// <summary>Sesiones mock emitidas por el login (design D3) — token opaco, expira, revocable.</summary>
+    public DbSet<SesionMock> SesionesMock => Set<SesionMock>();
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {

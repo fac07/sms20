@@ -95,6 +95,7 @@ public sealed class ApiFactory : WebApplicationFactory<Program>, IAsyncLifetime
         var db = scope.ServiceProvider.GetRequiredService<SmsDbContext>();
         await db.Database.MigrateAsync();
         await ConfiguracionSeeder.SeedAsync(db, NullLogger.Instance);
+        await SeguridadSeeder.SeedAsync(db, NullLogger.Instance);
     }
 
     async Task IAsyncLifetime.DisposeAsync()
