@@ -10,6 +10,7 @@ import {
   getDb,
   guardarConfigIngresoManual,
   leerConfigIngresoManual,
+  leerUbicacionDefaultsLocal,
   listarBoletasDtoLocal,
   listarEventosTrabados,
   listarMaestrosLocal,
@@ -247,6 +248,14 @@ export function startLocalServer(port: number, esDev: boolean): Server {
       basculaModoComunicacion: getConfig('BasculaModoComunicacion') || null,
       dev: esDev,
     })
+  })
+
+  // Defaults de transferencia del Centro espejados por config-sync, para la
+  // precarga del formulario de pesaje (`ubicacion`). Read-only y defensivo:
+  // nunca sincronizó o JSON corrupto => `{}` (200), nunca 404/5xx — el
+  // formulario abre sin precarga, igual que antes de este endpoint.
+  app.get('/configuracion-centro', (_req, res) => {
+    res.json(leerUbicacionDefaultsLocal(getDb()))
   })
 
   app.get('/peso', (_req, res) => {

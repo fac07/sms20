@@ -463,3 +463,49 @@ describe('POST /aprovisionamiento — cold-start seed del trío', () => {
     expect(centroId).toBe('centro-9')
   })
 })
+
+describe('GET /configuracion-centro — defaults de ubicacion espejados', () => {
+  beforeEach(arrancarServidor)
+
+  const seedUbicacionDefaults = (json: string) =>
+    db.prepare(
+      `INSERT INTO ConfiguracionLocal (Clave, Valor) VALUES ('UbicacionDefaults', ?)
+       ON CONFLICT(Clave) DO UPDATE SET Valor = excluded.Valor`,
+    ).run(json)
+
+  it('devuelve objeto vacio si nunca sincronizo (default-deny, nunca 404/5xx)', async () => {
+    const res = await fetch(`${baseUrl}/configuracion-centro`)
+    expect(res.status).toBe(200)
+    expect(await res.json()).toEqual({})
+  })
+
+  it('devuelve el cuarteto espejado, nulls incluidos', async () => {
+    seedUbicacionDefaults(
+      JSON.stringify({
+        sitioOrigenDefaultId: 'sit-org',
+        sitioDestinoDefaultId: null,
+        almacenOrigenDefaultId: 'alm-org',
+        almacenDestinoDefaultId: 'alm-des',
+      }),
+    )
+
+    const res = await fetch(`${baseUrl}/configuracion-centro`)
+
+    expect(res.status).toBe(200)
+    expect(await res.json()).toEqual({
+      sitioOrigenDefaultId: 'sit-org',
+      sitioDestinoDefaultId: null,
+      almacenOrigenDefaultId: 'alm-org',
+      almacenDestinoDefaultId: 'alm-des',
+    })
+  })
+
+  it('JSON corrupto en el espejo degrada a vacio sin tumbar el server', async () => {
+    seedUbicacionDefaults('no-es-json')
+
+    const res = await fetch(`${baseUrl}/configuracion-centro`)
+
+    expect(res.status).toBe(200)
+    expect(await res.json()).toEqual({})
+  })
+})
