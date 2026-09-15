@@ -9,6 +9,7 @@ using SmsBackend.Domain.Centros;
 using SmsBackend.Domain.Configuracion;
 using SmsBackend.Domain.Maestros;
 using SmsBackend.Domain.PreIngresos;
+using SmsBackend.Domain.Reportes;
 using SmsBackend.Domain.TiposMovimiento;
 using SmsBackend.Domain.Transporte;
 
@@ -90,6 +91,7 @@ app.MapBasculas();
 app.MapCentros();
 app.MapBoletas();
 app.MapPreIngresos();
+app.MapReportes();
 app.MapVinculosPilotoTransportista();
 app.MapAsignacionesUnidadTransportista();
 app.MapSecciones();
