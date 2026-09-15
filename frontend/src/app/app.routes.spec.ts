@@ -41,4 +41,10 @@ describe('app.routes — coherencia de modo entre rutas y nav', () => {
   it('pesaje es solo báscula', () => {
     expect(modosDeRuta('pesaje')).toEqual(['bascula']);
   });
+
+  it('el informe diario está disponible en /reportes para admin', () => {
+    expect(modosDeRuta('reportes')).toEqual(['admin']);
+    const reportes = navItemsParaModo('admin').find((item) => item.path === '/reportes');
+    expect(reportes?.disabled).toBeFalsy();
+  });
 });
