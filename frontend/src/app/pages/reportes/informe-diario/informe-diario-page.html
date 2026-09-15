@@ -1,0 +1,54 @@
+<nz-card nzTitle="Informe diario">
+  <div class="filtros">
+    <label>
+      <span>Tipo de movimiento</span>
+      <nz-select
+        [formControl]="tipoMovimientoId"
+        nzPlaceHolder="Seleccioná un tipo de movimiento"
+        nzShowSearch
+      >
+        @for (tipo of tiposMovimiento(); track tipo.id) {
+          <nz-option [nzValue]="tipo.id" [nzLabel]="tipo.nombre"></nz-option>
+        }
+      </nz-select>
+    </label>
+
+    <label>
+      <span>Desde</span>
+      <input type="date" [formControl]="desde" />
+    </label>
+
+    <label>
+      <span>Hasta</span>
+      <input type="date" [formControl]="hasta" />
+    </label>
+
+    <button nz-button nzType="primary" type="button" (click)="consultar()">Consultar</button>
+  </div>
+
+  <nz-table #tabla [nzData]="filas()" [nzLoading]="cargando()" [nzPageSize]="31">
+    <thead>
+      <tr>
+        <th>Fecha</th>
+        <th nzAlign="right">Cantidad de boletas</th>
+        <th nzAlign="right">Peso neto total</th>
+      </tr>
+    </thead>
+    <tbody>
+      @for (fila of tabla.data; track fila.fecha) {
+        <tr>
+          <td>{{ fila.fecha | date: 'dd/MM/yyyy' : 'UTC' }}</td>
+          <td class="numero">{{ fila.cantidadBoletas }}</td>
+          <td class="numero">{{ fila.pesoNetoTotal | number: '1.2-2' }}</td>
+        </tr>
+      }
+    </tbody>
+    <tfoot>
+      <tr>
+        <th>Total general</th>
+        <th class="numero">{{ total().cantidadBoletas }}</th>
+        <th class="numero">{{ total().pesoNetoTotal | number: '1.2-2' }}</th>
+      </tr>
+    </tfoot>
+  </nz-table>
+</nz-card>
