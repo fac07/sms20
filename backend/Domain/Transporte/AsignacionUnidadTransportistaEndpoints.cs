@@ -1,5 +1,6 @@
 using Microsoft.EntityFrameworkCore;
 using SmsBackend.Data;
+using SmsBackend.Domain.Seguridad;
 
 namespace SmsBackend.Domain.Transporte;
 
@@ -55,7 +56,7 @@ public static class AsignacionUnidadTransportistaEndpoints
             return Results.Created(
                 $"/api/transporte/unidades/{unidadId}/asignaciones/{nueva.Id}",
                 AsignacionUnidadTransportistaDto.FromEntity(nueva));
-        });
+        }).RequireAuthorization(Politicas.Administrador);
 
         // Historial completo de la unidad, más reciente primero. La primera
         // fila (VigenteHasta == null, si existe) es el transportista actual
@@ -71,7 +72,7 @@ public static class AsignacionUnidadTransportistaEndpoints
                 .ToListAsync();
 
             return Results.Ok(historial);
-        });
+        }).RequireAuthorization(Politicas.Operador);
 
         // Deliberadamente sin PUT ni DELETE (design D4): ninguna fila de esta
         // tabla se reescribe ni se borra jamás. La única escritura

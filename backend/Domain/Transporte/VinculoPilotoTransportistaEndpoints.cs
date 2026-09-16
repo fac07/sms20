@@ -1,5 +1,6 @@
 using Microsoft.EntityFrameworkCore;
 using SmsBackend.Data;
+using SmsBackend.Domain.Seguridad;
 
 namespace SmsBackend.Domain.Transporte;
 
@@ -18,6 +19,7 @@ public static class VinculoPilotoTransportistaEndpoints
         //     que se desactivó después del watermark tiene que llegar igual a
         //     cada báscula, o el combo local lo seguiría ofreciendo para
         //     siempre.
+        // Sync central→terminal: la báscula todavía no tiene identidad humana.
         group.MapGet("/", async (
             SmsDbContext db,
             Guid? transportistaId = null,
@@ -53,7 +55,7 @@ public static class VinculoPilotoTransportistaEndpoints
             return vinculo is null
                 ? Results.NotFound()
                 : Results.Ok(VinculoPilotoTransportistaDto.FromEntity(vinculo));
-        });
+        }).RequireAuthorization(Politicas.Operador);
 
         // Alta — 409 si ya existe una fila para el par (PilotoId,
         // TransportistaId), sin importar su Activo: el par nunca tiene dos
@@ -91,7 +93,7 @@ public static class VinculoPilotoTransportistaEndpoints
             return Results.Created(
                 $"/api/vinculos-piloto-transportista/{vinculo.Id}",
                 VinculoPilotoTransportistaDto.FromEntity(vinculo));
-        });
+        }).RequireAuthorization(Politicas.Administrador);
 
         // Soft-delete — nunca se borra en duro, misma convención que
         // Maestro/PreIngreso (auditoría de vínculos pasados).
@@ -107,7 +109,7 @@ public static class VinculoPilotoTransportistaEndpoints
             await db.SaveChangesAsync();
 
             return Results.Ok(VinculoPilotoTransportistaDto.FromEntity(vinculo));
-        });
+        }).RequireAuthorization(Politicas.Administrador);
 
         // Reactivar un par previamente desactivado — acción explícita y
         // separada del alta (que siempre 409 si la fila del par ya existe,
@@ -124,7 +126,7 @@ public static class VinculoPilotoTransportistaEndpoints
             await db.SaveChangesAsync();
 
             return Results.Ok(VinculoPilotoTransportistaDto.FromEntity(vinculo));
-        });
+        }).RequireAuthorization(Politicas.Administrador);
 
         return group;
     }

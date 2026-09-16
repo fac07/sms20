@@ -1,5 +1,6 @@
 using Microsoft.EntityFrameworkCore;
 using SmsBackend.Data;
+using SmsBackend.Domain.Seguridad;
 
 namespace SmsBackend.Domain.Configuracion;
 
@@ -9,6 +10,7 @@ public static class SeccionEndpoints
     {
         var group = app.MapGroup("/api/secciones").WithTags("Secciones");
 
+        // Sync central→terminal: la báscula todavía no tiene identidad humana.
         group.MapGet("/", async (
             SmsDbContext db, bool incluirInactivas = false, DateTime? modificadoDesde = null) =>
         {
@@ -40,7 +42,7 @@ public static class SeccionEndpoints
         {
             var seccion = await db.Secciones.AsNoTracking().FirstOrDefaultAsync(s => s.Id == id);
             return seccion is null ? Results.NotFound() : Results.Ok(SeccionDto.FromEntity(seccion));
-        });
+        }).RequireAuthorization(Politicas.Operador);
 
         group.MapPost("/", async (CrearSeccionRequest request, SmsDbContext db) =>
         {
@@ -70,7 +72,7 @@ public static class SeccionEndpoints
             await db.SaveChangesAsync();
 
             return Results.Created($"/api/secciones/{seccion.Id}", SeccionDto.FromEntity(seccion));
-        });
+        }).RequireAuthorization(Politicas.Administrador);
 
         group.MapPut("/{id:guid}", async (Guid id, ActualizarSeccionRequest request, SmsDbContext db) =>
         {
@@ -109,7 +111,7 @@ public static class SeccionEndpoints
             await db.SaveChangesAsync();
 
             return Results.Ok(SeccionDto.FromEntity(seccion));
-        });
+        }).RequireAuthorization(Politicas.Administrador);
 
         group.MapDelete("/{id:guid}", async (Guid id, SmsDbContext db) =>
         {
@@ -135,7 +137,7 @@ public static class SeccionEndpoints
             await db.SaveChangesAsync();
 
             return Results.NoContent();
-        });
+        }).RequireAuthorization(Politicas.Administrador);
 
         return group;
     }
