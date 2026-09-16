@@ -1,6 +1,7 @@
 using Microsoft.EntityFrameworkCore;
 using SmsBackend.Data;
 using SmsBackend.Domain.Maestros;
+using SmsBackend.Domain.Seguridad;
 
 namespace SmsBackend.Domain.Centros;
 
@@ -24,7 +25,8 @@ public static class ConfiguracionCentroEndpoints
                 .FirstOrDefaultAsync(c => c.CentroId == centroId);
 
             return Results.Ok(ToDto(centroId, config));
-        });
+        })
+        .RequireAuthorization(Politicas.Administrador);
 
         // Upsert declarativo total — campo nulo limpia el default del rol.
         // Validación réplica de BasculaEndpoints.ValidarRequest: maestro
@@ -74,7 +76,8 @@ public static class ConfiguracionCentroEndpoints
             await db.SaveChangesAsync();
 
             return Results.Ok(ToDto(centroId, config));
-        });
+        })
+        .RequireAuthorization(Politicas.Administrador);
 
         return group;
     }
