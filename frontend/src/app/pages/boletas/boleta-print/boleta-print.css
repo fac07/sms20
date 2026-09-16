@@ -1,0 +1,117 @@
+/* Layout imprimible de la boleta. Encapsulación None a propósito: las reglas
+   de @media print deben alcanzar a `body` (clase `boleta-print-open`, puesta
+   mientras el componente está montado) para aislar el papel del resto de la
+   app sin esconder el diálogo nativo de impresión. */
+
+app-boleta-print {
+  position: fixed;
+  inset: 0;
+  z-index: 1100;
+  overflow: auto;
+  background: #fff;
+}
+
+.boleta-print {
+  max-width: 720px;
+  margin: 0 auto;
+  padding: 24px;
+  font-size: 13px;
+  color: #000;
+}
+
+.boleta-print header {
+  text-align: center;
+  border-bottom: 2px solid #000;
+  margin-bottom: 16px;
+}
+
+.boleta-print header h1 {
+  font-size: 18px;
+  margin: 0 0 4px;
+}
+
+.boleta-print .numero {
+  font-size: 16px;
+  font-weight: 700;
+}
+
+.boleta-print table.fijos,
+.boleta-print table.valores {
+  width: 100%;
+  border-collapse: collapse;
+  margin-bottom: 12px;
+}
+
+.boleta-print table.fijos th,
+.boleta-print table.valores th {
+  text-align: left;
+  font-weight: 600;
+  width: 22%;
+  padding: 2px 4px;
+}
+
+.boleta-print table.fijos td,
+.boleta-print table.valores td {
+  padding: 2px 4px;
+}
+
+.boleta-print .neto {
+  font-weight: 700;
+}
+
+.boleta-print section.seccion h2 {
+  font-size: 14px;
+  border-bottom: 1px solid #000;
+  margin: 16px 0 4px;
+}
+
+.boleta-print section.seccion h3 {
+  font-size: 12px;
+  margin: 8px 0 2px;
+}
+
+.boleta-print .reimpresion {
+  font-size: 11px;
+  color: #444;
+  margin-bottom: 8px;
+}
+
+.boleta-print .barra-acciones {
+  display: flex;
+  gap: 8px;
+  justify-content: flex-end;
+  margin-bottom: 12px;
+}
+
+.boleta-print .barra-acciones button {
+  padding: 6px 14px;
+  cursor: pointer;
+}
+
+@media print {
+  body.boleta-print-open * {
+    visibility: hidden;
+  }
+
+  body.boleta-print-open .boleta-print,
+  body.boleta-print-open .boleta-print * {
+    visibility: visible;
+  }
+
+  body.boleta-print-open app-boleta-print {
+    position: static;
+    overflow: visible;
+  }
+
+  body.boleta-print-open .boleta-print {
+    position: absolute;
+    left: 0;
+    top: 0;
+    width: 100%;
+    max-width: none;
+  }
+
+  body.boleta-print-open .sin-print {
+    display: none !important;
+  }
+}

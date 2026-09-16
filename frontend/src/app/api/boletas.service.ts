@@ -64,6 +64,12 @@ export interface BoletaDto {
   marcaPreIngreso: string | null;
   respuestaD365Id: string | null;
   creadaOffline: boolean;
+  // Auditoría de reimpresión (POST /{id}/reimprimir). Opcionales: el espejo
+  // local de Electron no persiste estos campos — la terminal imprime sin
+  // rastro y la cuenta real la lleva central.
+  cantidadReimpresiones?: number;
+  ultimaReimpresionUsuario?: string | null;
+  ultimaReimpresionFecha?: string | null;
   valores: ValorCampoLeidoDto[];
 }
 
@@ -107,4 +113,15 @@ export class BoletasService {
   obtener(id: string): Observable<BoletaDto> {
     return this.http.get<BoletaDto>(`${this.baseUrl}/${id}`);
   }
+
+  // Registra una reimpresión en central (contador + último usuario/fecha) y
+  // devuelve el dto actualizado. Gate Operador: acción de mostrador.
+  reimprimir(id: string, usuario: string): Observable<BoletaDto> {
+    return this.http.post<BoletaDto>(`${this.baseUrl}/${id}/reimprimir`, { usuario });
+  }
 }
+
+// Mismo placeholder que usa pesaje-page en usuarioIngreso/usuarioSalida — la
+// pantalla no tiene identidad de login propia todavía; es un string plano de
+// auditoría (patrón UsuarioAnula del backend).
+export const USUARIO_MOSTRADOR = 'operador@naturaceites.com';

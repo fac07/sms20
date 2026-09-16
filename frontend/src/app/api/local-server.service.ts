@@ -2,6 +2,7 @@ import { HttpClient } from '@angular/common/http';
 import { Injectable, inject } from '@angular/core';
 import { Observable, map } from 'rxjs';
 import { environment } from '../../environments/environment';
+import { BoletaDto } from './boletas.service';
 import { CampoAplicable, TipoMovimiento, ValorCampoDto } from './configuracion.models';
 import { MotivoPesoManual } from './motivo-peso-manual';
 
@@ -288,6 +289,14 @@ export class LocalServerService {
 
   cerrarBoleta(id: string, input: CerrarBoletaInput): Observable<BoletaLocal> {
     return this.http.post<BoletaLocal>(`${LOCAL_SERVER_URL}/boletas/${id}/cerrar`, input);
+  }
+
+  // Detalle completo de una boleta local (BoletaDto con `valores` embebidos,
+  // mismo shape camelCase que el central) — lo consume el layout de impresión
+  // después de cerrar, porque la respuesta de /cerrar trae la fila cruda sin
+  // valores. Ver GET /boletas/:id en frontend/electron/local-server.ts.
+  boletaDetalle(id: string): Observable<BoletaDto> {
+    return this.http.get<BoletaDto>(`${LOCAL_SERVER_URL}/boletas/${id}`);
   }
 
   // Maestros — read path local de los combos de Pesaje (ver GET /maestros en

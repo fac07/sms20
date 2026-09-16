@@ -13,10 +13,17 @@ import { NzStatisticModule } from 'ng-zorro-antd/statistic';
 import { NzTableModule } from 'ng-zorro-antd/table';
 import { NzTagModule } from 'ng-zorro-antd/tag';
 import { NzTooltipModule } from 'ng-zorro-antd/tooltip';
-import { BoletaDto, BoletasService, EstadoBoleta, OrigenPeso } from '../../../api/boletas.service';
+import {
+  BoletaDto,
+  BoletasService,
+  EstadoBoleta,
+  OrigenPeso,
+  USUARIO_MOSTRADOR,
+} from '../../../api/boletas.service';
 import { ValorCampoLeidoDto } from '../../../api/configuracion.models';
 import { etiquetaMotivoPesoManual } from '../../../api/motivo-peso-manual';
-import { agruparValores } from './valores-agrupados';
+import { BoletaPrint } from '../boleta-print/boleta-print';
+import { agruparValores, valorLegible } from './valores-agrupados';
 
 /**
  * `MarcaPreIngreso` central (backend/Domain/Boletas/MarcaPreIngreso.cs) — marca
@@ -35,6 +42,7 @@ export function etiquetaMarcaPreIngreso(marca: string): string {
 @Component({
   imports: [
     CommonModule,
+    BoletaPrint,
     FormsModule,
     NzButtonModule,
     NzCardModule,
@@ -61,6 +69,10 @@ export class BoletasPage {
   readonly filtroEstado = signal<EstadoBoleta | null>(null);
   readonly filtroOrigenPeso = signal<OrigenPeso | null>(null);
   readonly detalle = signal<BoletaDto | null>(null);
+
+  // Overlay de impresión: el dto ya actualizado que devuelve /reimprimir
+  // (contador + último usuario/fecha incluidos) — sin fetch extra.
+  readonly boletaParaImprimir = signal<BoletaDto | null>(null);
 
   readonly etiquetaMotivo = etiquetaMotivoPesoManual;
   readonly etiquetaMarca = etiquetaMarcaPreIngreso;
@@ -123,18 +135,31 @@ export class BoletasPage {
     this.detalle.set(null);
   }
 
-  // Vista de solo lectura de un valor de campo configurable. El orden refleja
-  // la prioridad del backend: nombre de maestro resuelto primero, después los
-  // slots tipados. Booleano se muestra como Sí/No y la fecha localizada.
+  /** El botón "Reimprimir" solo aplica a boletas que ya existieron en papel. */
+  canReimprimir(boleta: BoletaDto): boolean {
+    return boleta.estado === 'Cerrada' || boleta.estado === 'Reemitida';
+  }
+
+  // Registra la reimpresión en central (contador + auditoría) y usa el MISMO
+  // dto devuelto para abrir el layout — nada de segundo GET: el POST responde
+  // la boleta completa ya actualizada.
+  reimprimir(boleta: BoletaDto): void {
+    this.service.reimprimir(boleta.id, USUARIO_MOSTRADOR).subscribe({
+      next: (actualizada) => {
+        this.boletaParaImprimir.set(actualizada);
+        setTimeout(() => globalThis.print?.(), 0);
+      },
+      error: () => this.message.error('No se pudo registrar la reimpresión.'),
+    });
+  }
+
+  descartarImpresion(): void {
+    this.boletaParaImprimir.set(null);
+  }
+
+  // Vista de solo lectura de un valor de campo configurable — la lógica vive
+  // en `valorLegible` puro (valores-agrupados.ts), compartida con boleta-print.
   valorLegible(v: ValorCampoLeidoDto): string {
-    if (v.valorMaestroNombre != null && v.valorMaestroNombre !== '') return v.valorMaestroNombre;
-    if (v.valorTexto != null && v.valorTexto !== '') return v.valorTexto;
-    if (v.valorNumero != null) return String(v.valorNumero);
-    if (v.valorFecha != null && v.valorFecha !== '') {
-      const fecha = new Date(v.valorFecha);
-      return Number.isNaN(fecha.getTime()) ? v.valorFecha : fecha.toLocaleDateString();
-    }
-    if (v.valorBooleano != null) return v.valorBooleano ? 'Sí' : 'No';
-    return '—';
+    return valorLegible(v);
   }
 }

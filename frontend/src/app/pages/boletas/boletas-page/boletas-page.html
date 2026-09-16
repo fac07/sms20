@@ -123,6 +123,17 @@
             >
               <span nz-icon nzType="eye"></span>
             </button>
+            @if (canReimprimir(b)) {
+              <button
+                nz-button
+                nzType="text"
+                nz-tooltip
+                nzTooltipTitle="Reimprimir"
+                (click)="reimprimir(b)"
+              >
+                <span nz-icon nzType="printer"></span>
+              </button>
+            }
           </td>
         </tr>
       }
@@ -236,3 +247,7 @@
     }
   </ng-container>
 </nz-modal>
+
+@if (boletaParaImprimir(); as boleta) {
+  <app-boleta-print [boleta]="boleta" (cerrar)="descartarImpresion()" />
+}

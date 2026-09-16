@@ -1069,4 +1069,91 @@ describe('PesajePage (TestBed + HttpTestingController)', () => {
       expect(component.puedeCerrar()).toBe(true);
     });
   });
+
+  describe('impresión tras cierre (Frente 4)', () => {
+    const BOLETA_CERRADA = {
+      id: 'b-1', numeroBoleta: 'IF-B01-000001', basculaId: 'ba-1', basculaCodigo: 'B01',
+      tipoMovimientoId: 'tm-1', tipoMovimientoNombre: 'Ingreso fruta', estado: 'Cerrada',
+      estadoSync: 'Local', pesoIngreso: 20000, pesoSalida: 3000, pesoNeto: 17000,
+      origenPesoIngreso: 'Bascula', origenPesoSalida: 'Bascula',
+      fechaHoraIngreso: '2026-09-10T12:00:00Z', fechaHoraSalida: '2026-09-10T13:00:00Z',
+      usuarioIngreso: 'op', usuarioSalida: 'op', valores: [],
+    };
+
+    beforeEach(() => {
+      // jsdom no define window.print — se stubbea para espiar la convocatoria.
+      vi.stubGlobal('print', vi.fn());
+      // Fake timers a propósito: con macrotareas reales el auto-detect de
+      // TestBed corre el PRIMER change detection y Angular re-invoca ngOnInit
+      // (ronda doble de requests). El setTimeout(0) del print se adelanta a
+      // mano con advanceTimersByTime.
+      vi.useFakeTimers();
+    });
+    afterEach(() => {
+      vi.useRealTimers();
+      vi.unstubAllGlobals();
+    });
+
+    function cerrarYEsperarImpresion(): void {
+      const boletaEnTransito: BoletaLocal = {
+        id: 'b-1', numeroBoleta: 'IF-B01-000001', tipoMovimientoId: 'tm-1',
+        estado: 'EnTransito', estadoSync: 'Local', pesoIngreso: 20000, pesoSalida: null,
+        pesoNeto: null, origenPesoIngreso: 'Bascula', origenPesoSalida: null,
+        fechaHoraIngreso: '2026-09-10T12:00:00Z', fechaHoraSalida: null,
+        usuarioIngreso: 'op', usuarioSalida: null, usuarioAnula: null, usuarioAutoriza: null,
+        motivoAnulacion: null, fechaHoraAnulacion: null, preIngresoId: null,
+        boletaReemplazoId: null, boletaOrigenId: null, basculaSalidaId: null,
+        respuestaD365Id: null, creadaOffline: true,
+      };
+      flushInit({ peso: { peso: 3000, origen: 'Bascula' } });
+      component.abrirCierre(boletaEnTransito);
+      component.confirmarCierre();
+      httpMock.expectOne(`${LOCAL}/boletas/b-1/cerrar`).flush(BOLETA_CERRADA);
+      // El handler de éxito recarga la lista de en-transito.
+      httpMock.expectOne(`${LOCAL}/boletas?estado=EnTransito`).flush([]);
+      httpMock.expectOne(`${LOCAL}/boletas/b-1`).flush(BOLETA_CERRADA);
+      vi.advanceTimersByTime(5); // dispara el setTimeout(() => print()) del componente
+    }
+
+    it('tras cerrar abre el layout de impresión y dispara window.print()', () => {
+      cerrarYEsperarImpresion();
+
+      expect(component.boletaParaImprimir()).not.toBeNull();
+      expect(component.boletaParaImprimir()!.numeroBoleta).toBe('IF-B01-000001');
+      expect(globalThis.print).toHaveBeenCalledTimes(1);
+    });
+
+    it('descartar la impresión deja de mostrar el layout sin afectar el cierre', () => {
+      cerrarYEsperarImpresion();
+
+      component.descartarImpresion();
+
+      expect(component.boletaParaImprimir()).toBeNull();
+    });
+
+    it('un fallo al traer el detalle local no impide el cierre ni lanza la impresión', () => {
+      const boletaEnTransito: BoletaLocal = {
+        id: 'b-1', numeroBoleta: 'IF-B01-000001', tipoMovimientoId: 'tm-1',
+        estado: 'EnTransito', estadoSync: 'Local', pesoIngreso: 20000, pesoSalida: null,
+        pesoNeto: null, origenPesoIngreso: 'Bascula', origenPesoSalida: null,
+        fechaHoraIngreso: '2026-09-10T12:00:00Z', fechaHoraSalida: null,
+        usuarioIngreso: 'op', usuarioSalida: null, usuarioAnula: null, usuarioAutoriza: null,
+        motivoAnulacion: null, fechaHoraAnulacion: null, preIngresoId: null,
+        boletaReemplazoId: null, boletaOrigenId: null, basculaSalidaId: null,
+        respuestaD365Id: null, creadaOffline: true,
+      };
+      flushInit({ peso: { peso: 3000, origen: 'Bascula' } });
+      component.abrirCierre(boletaEnTransito);
+      component.confirmarCierre();
+      httpMock.expectOne(`${LOCAL}/boletas/b-1/cerrar`).flush(BOLETA_CERRADA);
+      httpMock.expectOne(`${LOCAL}/boletas?estado=EnTransito`).flush([]);
+      httpMock.expectOne(`${LOCAL}/boletas/b-1`).error(new ErrorEvent('network'));
+
+      expect(component.boletaParaImprimir()).toBeNull();
+      expect(globalThis.print).not.toHaveBeenCalled();
+      expect(message.error).toHaveBeenCalledWith(
+        'La boleta cerró, pero no se pudo preparar la impresión.',
+      );
+    });
+  });
 });
