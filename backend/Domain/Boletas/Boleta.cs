@@ -69,6 +69,22 @@ public class Boleta
     /// <summary>Instante de la anulación — null mientras la boleta no está anulada.</summary>
     public DateTime? FechaHoraAnulacion { get; set; }
 
+    // --- Reimpresión (mejora sobre el legacy: reimprimir era libre y sin huella) ---
+
+    /// <summary>
+    /// Cuántas veces se reimprimió la boleta. Auditoría simple sobre la propia
+    /// fila — mismo patrón de string plano que <see cref="UsuarioAnula"/>, sin
+    /// tabla de historia: el rastro que pide planta es "cuántas y quién última
+    /// vez", no el detalle de cada ocurrencia.
+    /// </summary>
+    public int CantidadReimpresiones { get; set; }
+
+    /// <summary>UPN plano de quien imprimió por última vez.</summary>
+    public string? UltimaReimpresionUsuario { get; set; }
+
+    /// <summary>Instante UTC de la última impresión.</summary>
+    public DateTime? UltimaReimpresionFecha { get; set; }
+
     /// <summary>
     /// Enlace lógico (sin navigation property) hacia el pre-ingreso de la cola
     /// de transporte que originó esta boleta — lo captura el operador durante
