@@ -746,6 +746,7 @@ export interface BoletaDtoLocal extends BoletaLocal {
   basculaId: string
   basculaCodigo: string | null
   tipoMovimientoNombre: string | null
+  generaQR: boolean
   // Resueltos por join contra el espejo local `PreIngreso` (ver
   // `obtenerPreIngresoLocal`) cuando `preIngresoId` no es null — espejo del
   // `join ... into ... DefaultIfEmpty()` que hace `Proyectar` en central
@@ -835,8 +836,8 @@ export function listarBoletasLocal(estado?: string): BoletaLocal[] {
 
 function proyectarBoletaLocal(boleta: BoletaLocal): BoletaDtoLocal {
   const tipoMovimiento = getDb()
-    .prepare('SELECT Nombre FROM TipoMovimiento WHERE Id = ?')
-    .get(boleta.tipoMovimientoId) as { Nombre: string } | undefined
+    .prepare('SELECT Nombre, GeneraQR FROM TipoMovimiento WHERE Id = ?')
+    .get(boleta.tipoMovimientoId) as { Nombre: string; GeneraQR: number } | undefined
 
   // Join contra el espejo local PreIngreso — solo cuando hay enlace. Nunca
   // llama a central: el mismo espejo que alimenta el selector de Pesaje.
@@ -848,6 +849,7 @@ function proyectarBoletaLocal(boleta: BoletaLocal): BoletaDtoLocal {
     basculaId: getConfig('BasculaId') ?? '',
     basculaCodigo: getConfig('BasculaCodigo') ?? null,
     tipoMovimientoNombre: tipoMovimiento?.Nombre ?? null,
+    generaQR: Boolean(tipoMovimiento?.GeneraQR),
     preIngresoNumeroEnvio: preIngreso?.numeroEnvio ?? null,
     preIngresoEstado: preIngreso?.estado ?? null,
     valores: listarValoresLeidosLocal(boleta.id),

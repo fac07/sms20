@@ -10,6 +10,7 @@ public record BoletaDto(
     string? BasculaCodigo,
     Guid TipoMovimientoId,
     string? TipoMovimientoNombre,
+    bool GeneraQR,
     EstadoBoleta Estado,
     EstadoSyncBoleta EstadoSync,
     decimal PesoIngreso,

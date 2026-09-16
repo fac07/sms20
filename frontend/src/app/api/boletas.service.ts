@@ -29,6 +29,7 @@ export interface BoletaDto {
   basculaCodigo: string | null;
   tipoMovimientoId: string;
   tipoMovimientoNombre: string | null;
+  generaQR: boolean;
   estado: EstadoBoleta;
   estadoSync: EstadoSyncBoleta;
   pesoIngreso: number;

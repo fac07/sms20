@@ -85,7 +85,7 @@ describe('GET /boletas — proyección local de consulta', () => {
         ('BasculaId', 'ba-1'), ('BasculaCodigo', 'B01')
       ON CONFLICT(Clave) DO UPDATE SET Valor = excluded.Valor;
       INSERT INTO TipoMovimiento (Id, Codigo, Nombre, Prefijo, Direccion, OperacionD365, GeneraQR, FormatoBoletaId, Activo)
-        VALUES ('tm-1', 'REC', 'Recepcion', 'REC', 'Entrada', NULL, 0, NULL, 1);
+        VALUES ('tm-1', 'REC', 'Recepcion', 'REC', 'Entrada', NULL, 1, NULL, 1);
       INSERT INTO Seccion (Id, Clave, Nombre, Cardinalidad, Reportable, Estandar, Orden, Activa, FechaModificacion)
         VALUES ('s-1', 'producto', 'Producto', 'Unica', 0, 1, 1, 1, '2026-01-01T00:00:00Z');
       INSERT INTO Campo (Id, SeccionId, Clave, Etiqueta, TipoCampo, TipoCatalogoRef, Requerido, Configuracion, Orden, VigenteDesde, VigenteHasta, FechaModificacion)
@@ -118,6 +118,7 @@ describe('GET /boletas — proyección local de consulta', () => {
       basculaId: 'ba-1',
       basculaCodigo: 'B01',
       tipoMovimientoNombre: 'Recepcion',
+      generaQR: true,
       motivoPesoManual: 'Otro',
       motivoPesoManualDetalle: 'Captura autorizada',
     })

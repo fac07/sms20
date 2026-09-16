@@ -77,4 +77,10 @@
       }
     </section>
   }
+
+  @if (qrDataUrl(); as qr) {
+    <div class="boleta-qr">
+      <img [src]="qr" [alt]="'QR de la boleta ' + boleta().numeroBoleta" />
+    </div>
+  }
 </div>

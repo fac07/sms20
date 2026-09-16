@@ -76,6 +76,17 @@ app-boleta-print {
   margin-bottom: 8px;
 }
 
+.boleta-print .boleta-qr {
+  display: flex;
+  justify-content: center;
+  margin-top: 16px;
+}
+
+.boleta-print .boleta-qr img {
+  width: 144px;
+  height: 144px;
+}
+
 .boleta-print .barra-acciones {
   display: flex;
   gap: 8px;
