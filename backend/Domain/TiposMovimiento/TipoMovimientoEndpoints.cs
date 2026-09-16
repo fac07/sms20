@@ -2,6 +2,7 @@ using Microsoft.EntityFrameworkCore;
 using SmsBackend.Data;
 using SmsBackend.Domain.Boletas.Valores;
 using SmsBackend.Domain.Configuracion;
+using SmsBackend.Domain.Seguridad;
 
 namespace SmsBackend.Domain.TiposMovimiento;
 
@@ -26,6 +27,9 @@ public static class TipoMovimientoEndpoints
 
             return Results.Ok(tipos);
         });
+        // GET / SIN gate (corrección PR5): config-sync.ts:295 lo baja como
+        // incluirInactivos=true en cada ciclo, sin token — identidad de
+        // dispositivo (fan-out de secciones incluído abajo).
 
         group.MapGet("/{id:guid}", async (Guid id, SmsDbContext db) =>
         {
@@ -35,7 +39,8 @@ public static class TipoMovimientoEndpoints
             return tipo is null
                 ? Results.NotFound()
                 : Results.Ok(TipoMovimientoDto.FromEntity(tipo));
-        });
+        })
+            .RequireAuthorization(Politicas.Operador);
 
         group.MapPost("/", async (GuardarTipoMovimientoRequest request, SmsDbContext db) =>
         {
@@ -61,7 +66,8 @@ public static class TipoMovimientoEndpoints
             await db.SaveChangesAsync();
 
             return Results.Created($"/api/tipos-movimiento/{tipo.Id}", TipoMovimientoDto.FromEntity(tipo));
-        });
+        })
+            .RequireAuthorization(Politicas.Administrador);
 
         group.MapPut("/{id:guid}", async (Guid id, GuardarTipoMovimientoRequest request, SmsDbContext db) =>
         {
@@ -89,7 +95,8 @@ public static class TipoMovimientoEndpoints
             await db.SaveChangesAsync();
 
             return Results.Ok(TipoMovimientoDto.FromEntity(tipo));
-        });
+        })
+            .RequireAuthorization(Politicas.Administrador);
 
         // Soft-delete — igual criterio que el resto del esquema (BoletaMarchamo.Activo,
         // Maestro.Activo): un TipoMovimiento nunca se borra, se desactiva. Boletas
@@ -106,7 +113,8 @@ public static class TipoMovimientoEndpoints
             await db.SaveChangesAsync();
 
             return Results.NoContent();
-        });
+        })
+            .RequireAuthorization(Politicas.Administrador);
 
         // --- Secciones asignadas al tipo de movimiento -----------------------
 
@@ -147,6 +155,9 @@ public static class TipoMovimientoEndpoints
 
             return Results.Ok(filas);
         });
+        // GET /{id}/secciones SIN gate (corrección PR5): el fan-out de
+        // config-sync.ts:298-301 lo baja por cada tipo en cada ciclo, sin
+        // token — identidad de dispositivo.
 
         // PUT declarativo del set de secciones. Desasignar = poner VigenteHasta,
         // nunca borrado físico (candado temporal del design D1). Un cambio de
@@ -225,7 +236,8 @@ public static class TipoMovimientoEndpoints
                 .ToListAsync();
 
             return Results.Ok(vigentes);
-        });
+        })
+            .RequireAuthorization(Politicas.Administrador);
 
         // Formulario vigente ahora: el conjunto de campos que aplica a una boleta
         // creada en este instante, resuelto por el mismo motor que valida el cierre.
@@ -239,7 +251,8 @@ public static class TipoMovimientoEndpoints
 
             var campos = await motor.ResolverCamposAsync(id, DateTime.UtcNow, ct);
             return Results.Ok(campos);
-        });
+        })
+            .RequireAuthorization(Politicas.Operador);
 
         return group;
     }
