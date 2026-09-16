@@ -1,6 +1,7 @@
 using Microsoft.EntityFrameworkCore;
 using SmsBackend.Data;
 using SmsBackend.Domain.Boletas;
+using SmsBackend.Domain.Seguridad;
 
 namespace SmsBackend.Domain.Reportes;
 
@@ -52,7 +53,8 @@ public static class ReporteDiarioEndpoints
 
             return Results.Ok(filas.Select(f => new ReporteDiarioDto(
                 DateOnly.FromDateTime(f.Fecha), f.CantidadBoletas, f.PesoNetoTotal)));
-        });
+        })
+        .RequireAuthorization(Politicas.Supervisor);
 
         return group;
     }
