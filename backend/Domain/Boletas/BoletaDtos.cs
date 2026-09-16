@@ -41,6 +41,11 @@ public record BoletaDto(
     MarcaPreIngreso? MarcaPreIngreso,
     // Marca de revisión del par piloto+transportista — ver MarcaVinculoTransporte.
     MarcaVinculoTransporte? MarcaVinculoTransporte,
+    // Auditoría de reimpresión (mejora sobre el legacy sin huella) — 0/null
+    // hasta el primer POST /{id}/reimprimir.
+    int CantidadReimpresiones,
+    string? UltimaReimpresionUsuario,
+    DateTime? UltimaReimpresionFecha,
     IReadOnlyList<ValorCampoLeidoDto> Valores);
 
 /// <summary>
@@ -81,6 +86,14 @@ public record AnularBoletaRequest(
     string UsuarioAnula,
     string UsuarioAutoriza,
     string MotivoAnulacion);
+
+/// <summary>
+/// Registro de una reimpresión en el mostrador. El <c>Usuario</c> es un UPN
+/// plano (string) — el mismo patrón que <see cref="AnularBoletaRequest"/> y
+/// legacy <c>clsBoleta</c>: el backend no valida el formato, solo lo guarda
+/// como rastro de quién imprimió por última vez.
+/// </summary>
+public record ReimprimirBoletaRequest(string Usuario);
 
 /// <summary>
 /// Re-emisión de una boleta anulada — pesaje nuevo con correlativo propio.

@@ -509,3 +509,7 @@
     </div>
   }
 </ng-template>
+
+@if (boletaParaImprimir(); as boleta) {
+  <app-boleta-print [boleta]="boleta" (cerrar)="descartarImpresion()" />
+}

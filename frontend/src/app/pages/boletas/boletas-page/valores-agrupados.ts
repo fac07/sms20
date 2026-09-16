@@ -62,3 +62,22 @@ export function agruparValores(
 
   return [...secciones.values()];
 }
+
+/**
+ * Vista de solo lectura de un valor de campo configurable. El orden refleja
+ * la prioridad del backend: nombre de maestro resuelto primero, después los
+ * slots tipados. Booleano se muestra como Sí/No y la fecha localizada.
+ * Exportado como función pura — lo consumen el detalle de BoletasPage y el
+ * layout de impresión (boleta-print) con la misma semántica.
+ */
+export function valorLegible(v: ValorCampoLeidoDto): string {
+  if (v.valorMaestroNombre != null && v.valorMaestroNombre !== '') return v.valorMaestroNombre;
+  if (v.valorTexto != null && v.valorTexto !== '') return v.valorTexto;
+  if (v.valorNumero != null) return String(v.valorNumero);
+  if (v.valorFecha != null && v.valorFecha !== '') {
+    const fecha = new Date(v.valorFecha);
+    return Number.isNaN(fecha.getTime()) ? v.valorFecha : fecha.toLocaleDateString();
+  }
+  if (v.valorBooleano != null) return v.valorBooleano ? 'Sí' : 'No';
+  return '—';
+}

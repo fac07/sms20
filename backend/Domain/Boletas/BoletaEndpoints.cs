@@ -233,6 +233,39 @@ public static class BoletaEndpoints
             return Results.Ok(dto);
         }).RequireAuthorization(Politicas.Administrador);
 
+        // Reimpresión — el legacy (Informes/frmBoletas.cs) reabría el preview
+        // sin restricción ni huella; acá es la misma acción operativa pero con
+        // rastro: contador + último usuario/fecha sobre la propia fila
+        // (patrón UsuarioAnula, sin tabla nueva). Solo Cerrada/Reemitida.
+        // Gate deliberadamente Operador (no Administrador como las demás
+        // escrituras del dominio): el chofer perdió el papel y el mostrador
+        // repone — es rutina sin side effects de negocio ni transición de
+        // estado.
+        group.MapPost("/{id:guid}/reimprimir", async (
+            Guid id, ReimprimirBoletaRequest request, SmsDbContext db, CancellationToken ct) =>
+        {
+            var boleta = await db.Boletas.FirstOrDefaultAsync(b => b.Id == id, ct);
+            if (boleta is null) return Results.NotFound();
+            if (boleta.Estado is not (EstadoBoleta.Cerrada or EstadoBoleta.Reemitida))
+            {
+                return Results.Conflict(
+                    $"Solo se puede reimprimir una boleta Cerrada o Reemitida — estado actual: {boleta.Estado}.");
+            }
+            if (string.IsNullOrWhiteSpace(request.Usuario))
+            {
+                return Results.BadRequest("Usuario es obligatorio para registrar la reimpresión.");
+            }
+
+            boleta.CantidadReimpresiones += 1;
+            boleta.UltimaReimpresionUsuario = request.Usuario;
+            boleta.UltimaReimpresionFecha = DateTime.UtcNow;
+            await db.SaveChangesAsync(ct);
+
+            var dto = await Proyectar(db.Boletas.AsNoTracking().Where(b => b.Id == id), db)
+                .FirstAsync(ct);
+            return Results.Ok(dto);
+        }).RequireAuthorization(Politicas.Operador);
+
         // Re-emisión — el legado (NAT_Basculas: guard de CountEstaReEmitida +
         // Update_Boleta_Boleta_Nueva_X_Anulacion) la modelaba como un link
         // unidireccional puesto DESPUÉS de anular: la original queda Reemitida
@@ -996,6 +1029,7 @@ public static class BoletaEndpoints
             b.MotivoPesoManual, b.MotivoPesoManualDetalle,
             b.MarcaPreIngreso,
             b.MarcaVinculoTransporte,
+            b.CantidadReimpresiones, b.UltimaReimpresionUsuario, b.UltimaReimpresionFecha,
             // Valores capturados: se unen por el CampoId ALMACENADO (sin filtro
             // VigenteHasta) para que un Campo retirado siga resolviendo. El join
             // a Maestro es un subquery escalar por columna (ReferenciaMaestro).

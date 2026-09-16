@@ -39,6 +39,8 @@ import {
   UbicacionDefaults,
   VinculoPilotoTransportistaLocal,
 } from '../../../api/local-server.service';
+import { BoletaDto } from '../../../api/boletas.service';
+import { BoletaPrint } from '../../boletas/boleta-print/boleta-print';
 import { hayDivergenciaPeso } from './advertencia-peso';
 import { ControlCapturado, armarValores, valoresPrefillPreIngreso } from './armar-valores';
 import {
@@ -116,6 +118,7 @@ function esErrorCampoArray(cuerpo: unknown): cuerpo is ErrorCampo[] {
 @Component({
   imports: [
     CommonModule,
+    BoletaPrint,
     ReactiveFormsModule,
     NzAlertModule,
     NzButtonModule,
@@ -212,6 +215,12 @@ export class PesajePage implements OnInit, OnDestroy {
   readonly cargandoTransito = signal(false);
   readonly boletasEnTransito = signal<BoletaLocal[]>([]);
   readonly boletaCerrando = signal<BoletaLocal | null>(null);
+
+  // Detalle (con `valores` embebidos del espejo local) de la última boleta
+  // cerrada, listo para el overlay de impresión. Se programa solo tras un
+  // cierre exitoso — el legacy abría el preview y quedaba a criterio del
+  // operador; acá imprime directo y deja el layout descartable.
+  readonly boletaParaImprimir = signal<BoletaDto | null>(null);
   readonly cerrando = signal(false);
 
   // --- Cola de transporte (PreIngreso) — selector, prefill y advertencia de peso ---
@@ -1044,6 +1053,7 @@ export class PesajePage implements OnInit, OnDestroy {
         this.limpiarResumenErrores();
         this.salirModoIngresoManual();
         this.cargarBoletasEnTransito();
+        this.abrirImpresion(cerrada.id);
       },
       error: (err) => {
         // 422 con `ErrorCampo[]`: los errores `(seccion)` de `validarCierre` se
@@ -1052,5 +1062,23 @@ export class PesajePage implements OnInit, OnDestroy {
         this.cerrando.set(false);
       },
     });
+  }
+
+  /** Trae el detalle local (con valores) y abre el overlay imprimible. */
+  private abrirImpresion(id: string): void {
+    this.localServer.boletaDetalle(id).subscribe({
+      next: (detalle) => {
+        this.boletaParaImprimir.set(detalle);
+        // setTimeout deja que Angular monte el overlay antes de que el diálogo
+        // nativo congele el hilo; window.print() es síncrono en Chromium.
+        setTimeout(() => globalThis.print?.(), 0);
+      },
+      error: () =>
+        this.message.error('La boleta cerró, pero no se pudo preparar la impresión.'),
+    });
+  }
+
+  descartarImpresion(): void {
+    this.boletaParaImprimir.set(null);
   }
 }

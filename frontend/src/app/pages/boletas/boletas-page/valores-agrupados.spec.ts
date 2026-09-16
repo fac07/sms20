@@ -1,5 +1,5 @@
 import { ValorCampoLeidoDto } from '../../../api/configuracion.models';
-import { agruparValores } from './valores-agrupados';
+import { agruparValores, valorLegible } from './valores-agrupados';
 
 function valor(
   parcial: Partial<ValorCampoLeidoDto> &
@@ -88,5 +88,29 @@ describe('agruparValores', () => {
 
   it('lista vacía -> sin secciones', () => {
     expect(agruparValores([])).toEqual([]);
+  });
+});
+
+describe('valorLegible (helper puro, exportado para el layout de impresión)', () => {
+  it('nombre de maestro resuelto tiene prioridad sobre los slots tipados', () => {
+    expect(
+      valorLegible(valor({ campoId: 'a', seccionClave: 't', campoClave: 'piloto', valorTexto: null, valorMaestroNombre: 'Ana Pérez' })),
+    ).toBe('Ana Pérez');
+  });
+
+  it('texto > número > booleano > fecha, y guión si no hay nada', () => {
+    expect(valorLegible(valor({ campoId: 'a', seccionClave: 't', campoClave: 'c', valorTexto: 'LOTE-1' }))).toBe('LOTE-1');
+    expect(
+      valorLegible(valor({ campoId: 'a', seccionClave: 't', campoClave: 'c', tipoCampo: 'Entero', valorTexto: null, valorNumero: 25 })),
+    ).toBe('25');
+    expect(
+      valorLegible(valor({ campoId: 'a', seccionClave: 't', campoClave: 'c', tipoCampo: 'Booleano', valorTexto: null, valorBooleano: true })),
+    ).toBe('Sí');
+    expect(
+      valorLegible(valor({ campoId: 'a', seccionClave: 't', campoClave: 'c', tipoCampo: 'Fecha', valorTexto: null, valorFecha: '2026-09-10T00:00:00Z' })),
+    ).not.toBe('—');
+    expect(
+      valorLegible(valor({ campoId: 'a', seccionClave: 't', campoClave: 'c', valorTexto: null })),
+    ).toBe('—');
   });
 });

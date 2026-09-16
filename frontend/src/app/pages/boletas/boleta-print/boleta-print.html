@@ -1,0 +1,80 @@
+<div class="boleta-print">
+  <div class="sin-print barra-acciones">
+    <button type="button" (click)="imprimir()">Imprimir</button>
+    <button type="button" (click)="cerrar.emit()">Cerrar</button>
+  </div>
+
+  <header>
+    <h1> Naturaceites — Boleta de báscula</h1>
+    <div class="numero">{{ boleta().numeroBoleta }}</div>
+    <div class="estado">Estado: {{ boleta().estado }}</div>
+  </header>
+
+  <table class="fijos">
+    <tbody>
+      <tr>
+        <th>Báscula</th>
+        <td>{{ boleta().basculaCodigo ?? '—' }}</td>
+        <th>Tipo de movimiento</th>
+        <td>{{ boleta().tipoMovimientoNombre ?? '—' }}</td>
+      </tr>
+      <tr>
+        <th>Ingreso</th>
+        <td>{{ boleta().fechaHoraIngreso | date: 'dd/MM/yyyy HH:mm' }} — {{ boleta().usuarioIngreso }}</td>
+        <th>Salida</th>
+        <td>
+          @if (boleta().fechaHoraSalida) {
+            {{ boleta().fechaHoraSalida | date: 'dd/MM/yyyy HH:mm' }} — {{ boleta().usuarioSalida ?? '—' }}
+          } @else {
+            —
+          }
+        </td>
+      </tr>
+      <tr>
+        <th>Peso bruto</th>
+        <td>{{ boleta().pesoIngreso }}</td>
+        <th>Peso tara</th>
+        <td>{{ boleta().pesoSalida ?? '—' }}</td>
+      </tr>
+      <tr>
+        <th>Peso neto</th>
+        <td class="neto">{{ boleta().pesoNeto ?? '—' }}</td>
+        <th>Origen pesajes</th>
+        <td>{{ boleta().origenPesoIngreso }} / {{ boleta().origenPesoSalida ?? '—' }}</td>
+      </tr>
+    </tbody>
+  </table>
+
+  @if (boleta().cantidadReimpresiones) {
+    <div class="reimpresion">
+      Reimpresiones: {{ boleta().cantidadReimpresiones }}
+      @if (boleta().ultimaReimpresionUsuario) {
+        — último: {{ boleta().ultimaReimpresionUsuario }}
+        @if (boleta().ultimaReimpresionFecha) {
+          ({{ boleta().ultimaReimpresionFecha | date: 'dd/MM/yyyy HH:mm' }})
+        }
+      }
+    </div>
+  }
+
+  @for (seccion of secciones(); track seccion.clave) {
+    <section class="seccion">
+      <h2>{{ seccion.titulo }}</h2>
+      @for (ocurrencia of seccion.ocurrencias; track ocurrencia.ocurrencia) {
+        @if (seccion.repetible) {
+          <h3>Ocurrencia {{ ocurrencia.ocurrencia + 1 }}</h3>
+        }
+        <table class="valores">
+          <tbody>
+            @for (valor of ocurrencia.valores; track valor.campoId) {
+              <tr>
+                <th>{{ valor.etiqueta }}</th>
+                <td>{{ valorLegible(valor) }}</td>
+              </tr>
+            }
+          </tbody>
+        </table>
+      }
+    </section>
+  }
+</div>

@@ -128,3 +128,89 @@ describe('BoletasPage — detalle de consulta (cola-transporte slice 6)', () => 
     );
   });
 });
+
+describe('BoletasPage — reimprimir + impresión (Frente 4)', () => {
+  let component: BoletasPage;
+  let httpMock: HttpTestingController;
+  const message = { error: vi.fn(), success: vi.fn() };
+  const modoOriginal = environment.modo;
+
+  beforeEach(async () => {
+    (environment as { modo: typeof environment.modo }).modo = 'admin';
+    vi.stubGlobal('print', vi.fn());
+    // Fake timers: el print del overlay va en setTimeout(0); con timers reales
+    // el auto-detect de TestBed corre el primer CD y re-invoca ngOnInit.
+    vi.useFakeTimers();
+    await TestBed.configureTestingModule({
+      imports: [BoletasPage],
+      providers: [
+        provideHttpClient(),
+        provideHttpClientTesting(),
+        { provide: NzMessageService, useValue: message },
+      ],
+    }).compileComponents();
+    component = TestBed.createComponent(BoletasPage).componentInstance;
+    httpMock = TestBed.inject(HttpTestingController);
+    httpMock.expectOne(BASE).flush([]);
+  });
+
+  afterEach(() => {
+    // advanceTimersByTime deja correr el auto-detect de TestBed: el primer CD
+    // renderiza la tabla y los nz-icon piden sus SVG. Se flushean para que
+    // verify() solo mida requests reales del feature bajo prueba.
+    for (const req of httpMock.match((r) => r.url.includes('assets/'))) req.flush('<svg></svg>');
+    httpMock.verify();
+    vi.useRealTimers();
+    vi.unstubAllGlobals();
+    (environment as { modo: typeof environment.modo }).modo = modoOriginal;
+  });
+
+  it('canReimprimir es true solo para Cerrada y Reemitida', () => {
+    expect(component.canReimprimir(boletaFixture({ estado: 'Cerrada' }))).toBe(true);
+    expect(component.canReimprimir(boletaFixture({ estado: 'Reemitida' }))).toBe(true);
+    expect(component.canReimprimir(boletaFixture({ estado: 'EnTransito' }))).toBe(false);
+    expect(component.canReimprimir(boletaFixture({ estado: 'Anulada' }))).toBe(false);
+  });
+
+  it('reimprimir registra en central, abre el layout con el dto respondido e imprime', () => {
+    component.reimprimir(boletaFixture({ id: 'b-9', estado: 'Cerrada' }));
+
+    const req = httpMock.expectOne(`${BASE}/b-9/reimprimir`);
+    expect(req.request.body).toEqual({ usuario: 'operador@naturaceites.com' });
+    req.flush(
+      boletaFixture({
+        id: 'b-9',
+        estado: 'Cerrada',
+        cantidadReimpresiones: 3,
+        ultimaReimpresionUsuario: 'operador2',
+        ultimaReimpresionFecha: '2026-09-16T12:00:00Z',
+      }),
+    );
+    vi.advanceTimersByTime(5);
+
+    expect(component.boletaParaImprimir()!.cantidadReimpresiones).toBe(3);
+    expect(globalThis.print).toHaveBeenCalledTimes(1);
+  });
+
+  it('un error en el registro avisa y no abre el overlay', () => {
+    component.reimprimir(boletaFixture({ id: 'b-9', estado: 'Cerrada' }));
+
+    httpMock.expectOne(`${BASE}/b-9/reimprimir`).error(new ErrorEvent('server'));
+
+    expect(message.error).toHaveBeenCalledWith('No se pudo registrar la reimpresión.');
+    expect(component.boletaParaImprimir()).toBeNull();
+    expect(globalThis.print).not.toHaveBeenCalled();
+  });
+
+  it('descartarImpresion limpia el overlay', () => {
+    component.reimprimir(boletaFixture({ id: 'b-9', estado: 'Cerrada' }));
+    httpMock
+      .expectOne(`${BASE}/b-9/reimprimir`)
+      .flush(boletaFixture({ id: 'b-9', estado: 'Cerrada', cantidadReimpresiones: 1 }));
+    vi.advanceTimersByTime(5);
+
+    component.descartarImpresion();
+
+    expect(component.boletaParaImprimir()).toBeNull();
+  });
+});
