@@ -6,6 +6,7 @@ using SmsBackend.Domain.Boletas.Valores;
 using SmsBackend.Domain.Configuracion;
 using SmsBackend.Domain.Maestros;
 using SmsBackend.Domain.PreIngresos;
+using SmsBackend.Domain.Seguridad;
 using SmsBackend.Domain.Transporte;
 
 namespace SmsBackend.Domain.Boletas;
@@ -49,14 +50,14 @@ public static class BoletaEndpoints
             var boletas = await Proyectar(query.OrderByDescending(b => b.FechaHoraIngreso), db)
                 .ToListAsync();
             return Results.Ok(boletas);
-        });
+        }).RequireAuthorization(Politicas.Operador);
 
         group.MapGet("/{id:guid}", async (Guid id, SmsDbContext db) =>
         {
             var boleta = await Proyectar(db.Boletas.AsNoTracking().Where(b => b.Id == id), db)
                 .FirstOrDefaultAsync();
             return boleta is null ? Results.NotFound() : Results.Ok(boleta);
-        });
+        }).RequireAuthorization(Politicas.Operador);
 
         // Ingreso — abre la boleta con el primer pesaje.
         group.MapPost("/", async (CrearBoletaRequest request, MotorCampos motor, SmsDbContext db, CancellationToken ct) =>
@@ -142,7 +143,7 @@ public static class BoletaEndpoints
             var dto = await Proyectar(db.Boletas.AsNoTracking().Where(b => b.Id == boleta.Id), db)
                 .FirstAsync(ct);
             return Results.Created($"/api/boletas/{boleta.Id}", dto);
-        });
+        }).RequireAuthorization(Politicas.Administrador);
 
         // Salida — segundo pesaje, cierra la boleta y calcula el neto.
         group.MapPost("/{id:guid}/cerrar", async (
@@ -199,7 +200,7 @@ public static class BoletaEndpoints
 
             var dto = await Proyectar(db.Boletas.AsNoTracking().Where(b => b.Id == id), db).FirstAsync(ct);
             return Results.Ok(dto);
-        });
+        }).RequireAuthorization(Politicas.Administrador);
 
         // Anulación — doble control (UsuarioAnula + UsuarioAutoriza), igual
         // que el legacy. Solo cambia Estado: los pesos de una boleta ya
@@ -230,7 +231,7 @@ public static class BoletaEndpoints
 
             var dto = await Proyectar(db.Boletas.AsNoTracking().Where(b => b.Id == id), db).FirstAsync();
             return Results.Ok(dto);
-        });
+        }).RequireAuthorization(Politicas.Administrador);
 
         // Re-emisión — el legado (NAT_Basculas: guard de CountEstaReEmitida +
         // Update_Boleta_Boleta_Nueva_X_Anulacion) la modelaba como un link
@@ -339,7 +340,7 @@ public static class BoletaEndpoints
             var dto = await Proyectar(db.Boletas.AsNoTracking().Where(b => b.Id == nueva.Id), db)
                 .FirstAsync(ct);
             return Results.Created($"/api/boletas/{nueva.Id}", dto);
-        });
+        }).RequireAuthorization(Politicas.Administrador);
 
         // Recepción del Outbox local (Electron/SQLite, ver diseño
         // #sincronizacion) — el dispatcher reenvía acá cada evento

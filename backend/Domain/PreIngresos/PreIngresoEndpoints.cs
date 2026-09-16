@@ -1,6 +1,7 @@
 using Microsoft.EntityFrameworkCore;
 using SmsBackend.Data;
 using SmsBackend.Domain.Maestros;
+using SmsBackend.Domain.Seguridad;
 using SmsBackend.Domain.Transporte;
 
 namespace SmsBackend.Domain.PreIngresos;
@@ -12,6 +13,8 @@ public static class PreIngresoEndpoints
         var group = app.MapGroup("/api/preingresos").WithTags("PreIngresos");
 
         // Listado admin Y delta-sync del terminal en un solo endpoint.
+        // El terminal no tiene usuario humano: este GET queda intencionalmente
+        // sin RequireAuthorization, igual que los endpoints device/sync de PR3.
         //   - ?centroId= siempre scopea (el delta del terminal filtra por su centro).
         //   - ?modificadoDesde= activa el modo delta: predicado estrictamente
         //     mayor al watermark e IGNORA ?estado= — una fila que pasó a
@@ -25,7 +28,9 @@ public static class PreIngresoEndpoints
             string? numeroEnvio = null,
             DateTime? modificadoDesde = null) =>
         {
-            var query = db.PreIngresos.AsNoTracking();
+            // Sin claims humanos el filtro global de Centro falla cerrado; el
+            // terminal lo omite y queda acotado por centroId + watermark delta.
+            var query = db.PreIngresos.IgnoreQueryFilters().AsNoTracking();
 
             if (centroId is not null)
             {
@@ -63,7 +68,7 @@ public static class PreIngresoEndpoints
         {
             var preingreso = await db.PreIngresos.AsNoTracking().FirstOrDefaultAsync(p => p.Id == id);
             return preingreso is null ? Results.NotFound() : Results.Ok(PreIngresoDto.FromEntity(preingreso));
-        });
+        }).RequireAuthorization(Politicas.Operador);
 
         group.MapPost("/", async (CrearPreIngresoRequest request, SmsDbContext db, CancellationToken ct) =>
         {
@@ -100,7 +105,7 @@ public static class PreIngresoEndpoints
 
             return Results.Created(
                 $"/api/preingresos/{preingreso.Id}", PreIngresoDto.FromEntity(preingreso));
-        });
+        }).RequireAuthorization(Politicas.Administrador);
 
         group.MapPut("/{id:guid}", async (Guid id, EditarPreIngresoRequest request, SmsDbContext db, CancellationToken ct) =>
         {
@@ -135,7 +140,7 @@ public static class PreIngresoEndpoints
             await db.SaveChangesAsync();
 
             return Results.Ok(PreIngresoDto.FromEntity(preingreso));
-        });
+        }).RequireAuthorization(Politicas.Administrador);
 
         // Las observaciones son una anotación operativa, no una transición de
         // estado. Por eso se editan mediante un subrecurso independiente aun
@@ -150,7 +155,7 @@ public static class PreIngresoEndpoints
             await db.SaveChangesAsync();
 
             return Results.Ok(PreIngresoDto.FromEntity(preingreso));
-        });
+        }).RequireAuthorization(Politicas.Administrador);
 
         // Cancelación admin — solo desde Pendiente. Vinculado es terminal
         // (design D4): un pre-ingreso ya enlazado no se cancela por estado, la
@@ -177,7 +182,7 @@ public static class PreIngresoEndpoints
             await db.SaveChangesAsync();
 
             return Results.Ok(PreIngresoDto.FromEntity(preingreso));
-        });
+        }).RequireAuthorization(Politicas.Administrador);
 
         // Sin DELETE — soft-state vía Cancelado, igual que la convención de
         // Maestro / Bascula / TipoMovimiento (nunca se borra en duro).
