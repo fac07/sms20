@@ -2,6 +2,7 @@ using System.Text.Json;
 using System.Text.RegularExpressions;
 using Microsoft.EntityFrameworkCore;
 using SmsBackend.Data;
+using SmsBackend.Domain.Seguridad;
 
 namespace SmsBackend.Domain.Maestros;
 
@@ -81,12 +82,18 @@ public static class MaestroEndpoints
 
             return Results.Ok(maestros);
         });
+        // GET / SIN gate (corrección PR4): es el pull del delta-sync de
+        // maestros-sync.ts:63 — identidad de dispositivo sin token, mismo
+        // tratamiento que ping/aprovisionar (PR3) y POST /sync. El
+        // carve-out original de PR3 cubrió solo escrituras; las lecturas
+        // periódicas del terminal necesitan el mismo.
 
         group.MapGet("/{id:guid}", async (Guid id, SmsDbContext db) =>
         {
             var maestro = await db.Maestros.AsNoTracking().FirstOrDefaultAsync(m => m.Id == id);
             return maestro is null ? Results.NotFound() : Results.Ok(MaestroDto.FromEntity(maestro));
-        });
+        })
+            .RequireAuthorization(Politicas.Operador);
 
         // El admin crea directo como Oficial — el flujo de Provisional nace
         // en la báscula offline (todavía no implementado), no acá.
@@ -122,7 +129,8 @@ public static class MaestroEndpoints
             await db.SaveChangesAsync();
 
             return Results.Created($"/api/maestros/{maestro.Id}", MaestroDto.FromEntity(maestro));
-        });
+        })
+            .RequireAuthorization(Politicas.Administrador);
 
         // Ingesta del Outbox local (Electron/SQLite) — el dispatcher reenvía acá
         // el evento MaestroProvisional/Crear coinado offline en una báscula.
@@ -226,7 +234,8 @@ public static class MaestroEndpoints
             await db.SaveChangesAsync();
 
             return Results.Ok(MaestroDto.FromEntity(maestro));
-        });
+        })
+            .RequireAuthorization(Politicas.Administrador);
 
         // Soft-delete — mismo criterio que TipoMovimiento: nunca se borra, se desactiva.
         group.MapDelete("/{id:guid}", async (Guid id, SmsDbContext db) =>
@@ -242,7 +251,8 @@ public static class MaestroEndpoints
             await db.SaveChangesAsync();
 
             return Results.NoContent();
-        });
+        })
+            .RequireAuthorization(Politicas.Administrador);
 
         // Sugerencia de código oficial para aprobar un provisional del tipo dado.
         // Regex-extrae el run de dígitos final de los códigos Oficial activos,
@@ -276,7 +286,8 @@ public static class MaestroEndpoints
 
             var sugerido = SugerirSiguienteCodigo(codigos);
             return Results.Ok(new SiguienteCodigoResponse(sugerido));
-        });
+        })
+            .RequireAuthorization(Politicas.Operador);
 
         // Aprobar: un provisional pasa a Oficial sin fusionarse con nada. El
         // cuerpo es obligatorio — el admin confirma el código oficial (y puede
@@ -322,7 +333,8 @@ public static class MaestroEndpoints
             await db.SaveChangesAsync();
 
             return Results.Ok(MaestroDto.FromEntity(maestro));
-        });
+        })
+            .RequireAuthorization(Politicas.Administrador);
 
         // Fusionar: el provisional se descarta (Activo=false) y queda apuntando
         // al oficial vía FusionadoConId. En la MISMA transacción se reescribe
@@ -384,12 +396,16 @@ public static class MaestroEndpoints
             await db.SaveChangesAsync(ct);
 
             return Results.Ok(MaestroDto.FromEntity(provisional));
-        });
+        })
+            .RequireAuthorization(Politicas.Administrador);
 
         // Incidencias de sync (M-D3): el dispatcher del Outbox de una báscula
         // reporta acá un evento MaestroProvisional trabado a 5+ intentos. Store
         // en memoria, TTL 1h, sin tabla — volátil a propósito (el terminal
         // re-reporta cada ciclo). Idempotente por (basculaCodigo, entidadId).
+        // POST de incidencias SIN gate: lo dispara el outbox-dispatcher de la
+        // terminal (identidad de dispositivo, sin token) — mismo espíritu de
+        // bypass que PR3 resolvió para ping/aprovisionar/boletas-sync/maestros-sync.
         group.MapPost("/incidencias-sync", (ReportarIncidenciaSyncRequest request, IncidenciasSyncStore store) =>
         {
             if (string.IsNullOrWhiteSpace(request.BasculaCodigo) || request.EntidadId == Guid.Empty)
@@ -403,7 +419,8 @@ public static class MaestroEndpoints
 
         // Lista de incidencias de sync vigentes — la consume el panel del admin
         // (M5b). `ultimoError` va verbatim (decisión de producto 9).
-        group.MapGet("/incidencias-sync", (IncidenciasSyncStore store) => Results.Ok(store.Listar()));
+        group.MapGet("/incidencias-sync", (IncidenciasSyncStore store) => Results.Ok(store.Listar()))
+            .RequireAuthorization(Politicas.Operador);
 
         return group;
     }
