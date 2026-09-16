@@ -85,6 +85,10 @@ public sealed class AuthEndpointsTests : IAsyncLifetime
     [Fact]
     public async Task Yo_sin_token_retorna_401()
     {
+        // ApiFactory (PR3) adjunta un token de Administrador por default a todo
+        // cliente nuevo — este test prueba específicamente el caso SIN token.
+        _client.DefaultRequestHeaders.Authorization = null;
+
         var resp = await _client.GetAsync("/api/auth/yo");
 
         Assert.Equal(HttpStatusCode.Unauthorized, resp.StatusCode);

@@ -44,6 +44,12 @@ public sealed class ConfiguracionCentroAuthTests : IAsyncLifetime
     {
         var escenario = await TestData.NuevoEscenarioAsync(_client);
 
+        // ApiFactory (PR3) adjunta un token de Administrador por default a
+        // todo cliente nuevo — este test prueba específicamente el caso SIN
+        // token, así que lo limpia recién acá (NuevoEscenarioAsync de arriba
+        // sí necesita quedar autenticado para poder crear el escenario).
+        _client.DefaultRequestHeaders.Authorization = null;
+
         var resp = await _client.GetAsync($"/api/centros/{escenario.CentroId}/configuracion");
 
         Assert.Equal(HttpStatusCode.Unauthorized, resp.StatusCode);

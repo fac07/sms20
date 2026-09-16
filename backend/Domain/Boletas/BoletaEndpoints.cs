@@ -356,7 +356,14 @@ public static class BoletaEndpoints
         group.MapPost("/sync", async (
             SincronizarEventoRequest request, MotorCampos motor, SmsDbContext db, CancellationToken ct) =>
         {
-            var bascula = await db.Basculas.AsNoTracking()
+            // IgnoreQueryFilters (design D6, PR3): identidad de terminal, sin
+            // ClaimsPrincipal humano — el outbox dispatcher de Electron solo
+            // conoce el Codigo de SU báscula, nunca un token de usuario. Sin
+            // esto, el HasQueryFilter de Centro (2.4) filtraría a cero filas
+            // para el caller real de este endpoint -> "no existe la báscula"
+            // para TODA báscula, siempre, rompiendo la sincronización offline
+            // (design D6, "Two gaps").
+            var bascula = await db.Basculas.AsNoTracking().IgnoreQueryFilters()
                 .FirstOrDefaultAsync(b => b.Codigo == request.BasculaCodigo && b.Activa, ct);
             if (bascula is null)
             {
@@ -393,10 +400,14 @@ public static class BoletaEndpoints
 
                     // Idempotencia: si ya existe, este evento 'Crear' ya se
                     // aplicó antes (reintento tras una respuesta perdida) —
-                    // no-op, se devuelve la boleta tal cual está.
-                    if (await db.Boletas.AnyAsync(b => b.Id == id, ct))
+                    // no-op, se devuelve la boleta tal cual está. Todo este
+                    // método corre para identidad de terminal (design D6,
+                    // PR3): IgnoreQueryFilters en cada acceso a Boleta/PreIngreso,
+                    // igual que la báscula ya resuelta por el caller.
+                    if (await db.Boletas.IgnoreQueryFilters().AnyAsync(b => b.Id == id, ct))
                     {
-                        var existente = await Proyectar(db.Boletas.AsNoTracking().Where(b => b.Id == id), db)
+                        var existente = await Proyectar(
+                                db.Boletas.AsNoTracking().IgnoreQueryFilters().Where(b => b.Id == id), db, ignorarFiltrosCentro: true)
                             .FirstAsync(ct);
                         return Results.Ok(existente);
                     }
@@ -433,7 +444,8 @@ public static class BoletaEndpoints
                     // Defensivo: no debería pasar (el correlativo es único por
                     // báscula), pero no nos salteamos el chequeo solo porque
                     // el evento venga de un dispatcher de confianza.
-                    var numeroEnUso = await db.Boletas.AnyAsync(b => b.NumeroBoleta == numeroBoleta && b.Id != id, ct);
+                    var numeroEnUso = await db.Boletas.IgnoreQueryFilters()
+                        .AnyAsync(b => b.NumeroBoleta == numeroBoleta && b.Id != id, ct);
                     if (numeroEnUso)
                     {
                         return Results.Conflict($"Ya existe una boleta con NumeroBoleta '{numeroBoleta}'.");
@@ -515,17 +527,19 @@ public static class BoletaEndpoints
                     var preIngresoId = LeerGuidNullable(request.Payload, "preIngresoId");
                     if (preIngresoId is Guid pid)
                     {
-                        await VincularPreIngresoAsync(db, boleta, pid, ct);
+                        await VincularPreIngresoAsync(db, boleta, pid, ct, ignorarFiltrosCentro: true);
                     }
 
-                    var dto = await Proyectar(db.Boletas.AsNoTracking().Where(b => b.Id == id), db).FirstAsync(ct);
+                    var dto = await Proyectar(
+                            db.Boletas.AsNoTracking().IgnoreQueryFilters().Where(b => b.Id == id), db, ignorarFiltrosCentro: true)
+                        .FirstAsync(ct);
                     return Results.Ok(dto);
                 }
 
                 case "Cerrar":
                 {
                     var id = ObtenerGuid(request.Payload, "id");
-                    var boleta = await db.Boletas.FirstOrDefaultAsync(b => b.Id == id, ct);
+                    var boleta = await db.Boletas.IgnoreQueryFilters().FirstOrDefaultAsync(b => b.Id == id, ct);
                     if (boleta is null)
                     {
                         // No debería pasar (el dispatcher procesa en orden
@@ -592,14 +606,16 @@ public static class BoletaEndpoints
 
                     await db.SaveChangesAsync(ct);
 
-                    var dto = await Proyectar(db.Boletas.AsNoTracking().Where(b => b.Id == id), db).FirstAsync(ct);
+                    var dto = await Proyectar(
+                            db.Boletas.AsNoTracking().IgnoreQueryFilters().Where(b => b.Id == id), db, ignorarFiltrosCentro: true)
+                        .FirstAsync(ct);
                     return Results.Ok(dto);
                 }
 
                 case "Anular":
                 {
                     var id = ObtenerGuid(request.Payload, "id");
-                    var boleta = await db.Boletas.FirstOrDefaultAsync(b => b.Id == id, ct);
+                    var boleta = await db.Boletas.IgnoreQueryFilters().FirstOrDefaultAsync(b => b.Id == id, ct);
                     if (boleta is null)
                     {
                         return Results.NotFound($"No existe la boleta {id} — ¿llegó el evento 'Crear' antes?");
@@ -615,7 +631,9 @@ public static class BoletaEndpoints
 
                     await db.SaveChangesAsync(ct);
 
-                    var dto = await Proyectar(db.Boletas.AsNoTracking().Where(b => b.Id == id), db).FirstAsync(ct);
+                    var dto = await Proyectar(
+                            db.Boletas.AsNoTracking().IgnoreQueryFilters().Where(b => b.Id == id), db, ignorarFiltrosCentro: true)
+                        .FirstAsync(ct);
                     return Results.Ok(dto);
                 }
 
@@ -645,9 +663,15 @@ public static class BoletaEndpoints
     /// </list>
     /// </summary>
     private static async Task VincularPreIngresoAsync(
-        SmsDbContext db, Boleta boleta, Guid preIngresoId, CancellationToken ct)
+        SmsDbContext db, Boleta boleta, Guid preIngresoId, CancellationToken ct, bool ignorarFiltrosCentro = false)
     {
-        var ganado = await db.PreIngresos
+        // ignorarFiltrosCentro (design D6, PR3): este helper también lo llama
+        // el POST /api/boletas típico (operador autenticado, SIN bypass), así
+        // que el bypass es opt-in — solo la vía /sync (identidad de terminal,
+        // sin ClaimsPrincipal humano) lo pide explícito.
+        var preIngresosQuery = ignorarFiltrosCentro ? db.PreIngresos.IgnoreQueryFilters() : db.PreIngresos;
+
+        var ganado = await preIngresosQuery
             .Where(p => p.Id == preIngresoId && p.Estado == EstadoPreIngreso.Pendiente)
             .ExecuteUpdateAsync(s => s
                 .SetProperty(p => p.Estado, EstadoPreIngreso.Vinculado)
@@ -663,7 +687,7 @@ public static class BoletaEndpoints
 
         // ganado == 0 → el pre-ingreso no estaba Pendiente (o no existe):
         // reclasificar contra su estado real.
-        var pre = await db.PreIngresos.AsNoTracking()
+        var pre = await preIngresosQuery.AsNoTracking()
             .FirstOrDefaultAsync(p => p.Id == preIngresoId, ct);
 
         if (pre is null)
@@ -926,14 +950,33 @@ public static class BoletaEndpoints
         return null;
     }
 
-    private static IQueryable<BoletaDto> Proyectar(IQueryable<Boleta> boletas, SmsDbContext db) =>
+    /// <summary>
+    /// <paramref name="ignorarFiltrosCentro"/> (design D6, PR3): este helper
+    /// es compartido por TODOS los endpoints de Boletas, incluido el listado
+    /// gateado por rol (2.5/2.6) — por eso el bypass es opt-in y default
+    /// <c>false</c>. Solo <c>/api/boletas/sync</c> (identidad de terminal,
+    /// sin ClaimsPrincipal humano) lo pide en <c>true</c>; relajarlo acá por
+    /// default filtraría el listado normal exactamente como el bug que 2.4/2.6
+    /// existen para evitar.
+    /// </summary>
+    private static IQueryable<BoletaDto> Proyectar(
+        IQueryable<Boleta> boletas, SmsDbContext db, bool ignorarFiltrosCentro = false)
+    {
+        var basculasQuery = ignorarFiltrosCentro
+            ? db.Basculas.AsNoTracking().IgnoreQueryFilters()
+            : db.Basculas.AsNoTracking();
+        var preIngresosQuery = ignorarFiltrosCentro
+            ? db.PreIngresos.AsNoTracking().IgnoreQueryFilters()
+            : db.PreIngresos.AsNoTracking();
+
+        return
         from b in boletas
-        join bas in db.Basculas.AsNoTracking() on b.BasculaId equals bas.Id into basculas
+        join bas in basculasQuery on b.BasculaId equals bas.Id into basculas
         from bascula in basculas.DefaultIfEmpty()
         join tm in db.TiposMovimiento.AsNoTracking() on b.TipoMovimientoId equals tm.Id into tiposMovimiento
         from tipoMovimiento in tiposMovimiento.DefaultIfEmpty()
         // Left join al pre-ingreso enlazado — misma forma que Bascula/TipoMovimiento.
-        join pi in db.PreIngresos.AsNoTracking() on b.PreIngresoId equals pi.Id into preingresos
+        join pi in preIngresosQuery on b.PreIngresoId equals pi.Id into preingresos
         from preingreso in preingresos.DefaultIfEmpty()
         select new BoletaDto(
             b.Id, b.NumeroBoleta,
@@ -987,4 +1030,5 @@ public static class BoletaEndpoints
                   join o in db.Maestros on (m.FusionadoConId ?? m.Id) equals o.Id
                   select o.Nombre).FirstOrDefault()))
             .ToList());
+    }
 }

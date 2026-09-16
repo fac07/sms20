@@ -156,7 +156,13 @@ public static class BasculaEndpoints
         // completas contra Central.
         group.MapPost("/aprovisionar", async (AprovisionarBasculaRequest request, SmsDbContext db) =>
         {
-            var bascula = await db.Basculas.FirstOrDefaultAsync(b => b.CodigoAprovisionamiento == request.Codigo);
+            // IgnoreQueryFilters (design D6, PR3): identidad de terminal, sin
+            // ClaimsPrincipal humano — el HasQueryFilter de Centro (2.4)
+            // filtraría esta báscula a cero filas para cualquier caller sin
+            // claims, devolviendo "código inválido" para un código
+            // perfectamente válido y rompiendo el primer arranque de Electron.
+            var bascula = await db.Basculas.IgnoreQueryFilters()
+                .FirstOrDefaultAsync(b => b.CodigoAprovisionamiento == request.Codigo);
             if (bascula is null)
             {
                 return Results.NotFound("Código de aprovisionamiento inválido.");
@@ -194,7 +200,13 @@ public static class BasculaEndpoints
         // su marca (historial de conectividad, no permiso operativo).
         group.MapPost("/{id:guid}/ping", async (Guid id, SmsDbContext db) =>
         {
-            var bascula = await db.Basculas.FirstOrDefaultAsync(b => b.Id == id);
+            // IgnoreQueryFilters (design D6, PR3): mismo motivo que
+            // /aprovisionar — identidad de terminal, sin ClaimsPrincipal
+            // humano. Sin esto, el ping de conectividad de CUALQUIER báscula
+            // devolvería 404 en silencio para el caller anónimo real de este
+            // endpoint, y Central perdería el historial de conectividad de
+            // toda la planta.
+            var bascula = await db.Basculas.IgnoreQueryFilters().FirstOrDefaultAsync(b => b.Id == id);
             if (bascula is null) return Results.NotFound();
 
             bascula.UltimaConexion = DateTime.UtcNow;

@@ -83,7 +83,10 @@ public sealed class ResolucionAsOfTests : IAsyncLifetime
             _client, escenario, new[] { TestData.Texto(nota.Id, "segunda") });
         await ConScope(async db =>
         {
-            var b = await db.Boletas.SingleAsync(x => x.Id == posterior.Id);
+            // IgnoreQueryFilters (PR3): ConScope no cuelga de un HttpContext —
+            // sin esto el HasQueryFilter de Centro de Boleta (design D6) lo
+            // filtraría a cero filas.
+            var b = await db.Boletas.IgnoreQueryFilters().SingleAsync(x => x.Id == posterior.Id);
             b.FechaHoraIngreso = t0.AddMinutes(5);
             await db.SaveChangesAsync();
         });

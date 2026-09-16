@@ -1,4 +1,5 @@
 using SmsBackend.Domain.Configuracion;
+using SmsBackend.Domain.Seguridad;
 
 namespace SmsBackend.Domain.PreIngresos;
 
@@ -16,7 +17,7 @@ namespace SmsBackend.Domain.PreIngresos;
 /// <see cref="BoletaId"/> es una FK real (design D3): el lado canónico del
 /// enlace 1:1 es el pre-ingreso, que es el que posee el ciclo de vida.
 /// </summary>
-public class PreIngreso : IFechaModificable
+public class PreIngreso : IFechaModificable, ICentroScoped
 {
     public Guid Id { get; set; }
 

@@ -12,7 +12,7 @@ using SmsBackend.Domain.Transporte;
 
 namespace SmsBackend.Data;
 
-public class SmsDbContext(DbContextOptions<SmsDbContext> options) : DbContext(options)
+public class SmsDbContext(DbContextOptions<SmsDbContext> options, ICentroContext centroContext) : DbContext(options)
 {
     public DbSet<TipoMovimiento> TiposMovimiento => Set<TipoMovimiento>();
 
@@ -51,6 +51,32 @@ public class SmsDbContext(DbContextOptions<SmsDbContext> options) : DbContext(op
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
         modelBuilder.ApplyConfigurationsFromAssembly(typeof(SmsDbContext).Assembly);
+
+        // Alcance de Centro (design D6, PR3): un filtro global por
+        // implementor de ICentroScoped en vez de un Where manual repetido en
+        // cada endpoint — ese es exactamente el modo de falla legacy que
+        // este mecanismo reemplaza. Falla cerrado: sin claims (anónimo) o
+        // sin alcance global, Permitidos vacío no matchea ningún CentroId.
+        //
+        // Los 4 endpoints de dispositivo/sync (sin ClaimsPrincipal humano)
+        // bypasean esto con `.IgnoreQueryFilters()` explícito en su propio
+        // *Endpoints.cs — NUNCA relajando este filtro por default.
+        modelBuilder.Entity<Bascula>()
+            .HasQueryFilter(b => centroContext.EsGlobal || centroContext.Permitidos.Contains(b.CentroId));
+        modelBuilder.Entity<PreIngreso>()
+            .HasQueryFilter(p => centroContext.EsGlobal || centroContext.Permitidos.Contains(p.CentroId));
+        modelBuilder.Entity<ConfiguracionCentro>()
+            .HasQueryFilter(c => centroContext.EsGlobal || centroContext.Permitidos.Contains(c.CentroId));
+
+        // Boleta NO implementa ICentroScoped (design D6, "verificado: solo
+        // BasculaId") — su alcance se resuelve con un subquery correlacionado
+        // a través de Bascula.CentroId. Sin índice dedicado hoy: si el
+        // listado de boletas regresiona en latencia, denormalizar
+        // Boleta.CentroId queda anotado como follow-up (design "Open
+        // Questions"), fuera de alcance de este PR.
+        modelBuilder.Entity<Boleta>()
+            .HasQueryFilter(bo => centroContext.EsGlobal
+                || Set<Bascula>().IgnoreQueryFilters().Any(b => b.Id == bo.BasculaId && centroContext.Permitidos.Contains(b.CentroId)));
     }
 
     public override int SaveChanges(bool acceptAllChangesOnSuccess)
