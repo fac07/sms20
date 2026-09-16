@@ -15,18 +15,28 @@ public static class ConfiguracionCentroEndpoints
         // siempre 200 para un centro válido (sin fila = nulls, ver DTO). La
         // terminal la baja en cada ciclo de config-sync para precargar
         // ubicacion en el formulario de pesaje.
+        //
+        // Sin gate de rol + IgnoreQueryFilters (corrección post-PR3/PR2):
+        // config-sync.ts pega este GET sin Authorization header (identidad de
+        // terminal, no de usuario humano — grep confirmado: 0 hits de
+        // "Authorization" en frontend/electron). Con el gate de PR2, esto
+        // devolvía 401 liso; incluso sacando el gate, el HasQueryFilter de
+        // Centro (PR3, ConfiguracionCentro es ICentroScoped) filtraría la
+        // fila a cero para un caller sin claims — no un 404 visible, sino un
+        // 200 con defaults nulos aunque el centro sí tenga configuración
+        // real, perdiendo la precarga en silencio. Mismo tratamiento
+        // completo que ping/aprovisionar/basculas-{id} en PR3/PR5.
         group.MapGet("/{centroId:guid}/configuracion", async (Guid centroId, SmsDbContext db) =>
         {
             var esCentro = await db.Maestros.AsNoTracking().AnyAsync(m =>
                 m.Id == centroId && m.TipoCatalogo == TipoCatalogo.Centro && m.Activo);
             if (!esCentro) return Results.NotFound();
 
-            var config = await db.ConfiguracionesCentro.AsNoTracking()
+            var config = await db.ConfiguracionesCentro.IgnoreQueryFilters().AsNoTracking()
                 .FirstOrDefaultAsync(c => c.CentroId == centroId);
 
             return Results.Ok(ToDto(centroId, config));
-        })
-        .RequireAuthorization(Politicas.Administrador);
+        });
 
         // Upsert declarativo total — campo nulo limpia el default del rol.
         // Validación réplica de BasculaEndpoints.ValidarRequest: maestro
