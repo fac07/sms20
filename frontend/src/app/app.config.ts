@@ -1,7 +1,8 @@
 import { ApplicationConfig, provideBrowserGlobalErrorListeners } from '@angular/core';
 import { provideAnimationsAsync } from '@angular/platform-browser/animations/async';
-import { provideHttpClient } from '@angular/common/http';
+import { provideHttpClient, withInterceptors } from '@angular/common/http';
 import { provideRouter, withHashLocation } from '@angular/router';
+import { authInterceptor } from './core/auth.interceptor';
 import { routes } from './app.routes';
 import { es_ES, provideNzI18n } from 'ng-zorro-antd/i18n';
 import { registerLocaleData } from '@angular/common';
@@ -47,7 +48,7 @@ export const appConfig: ApplicationConfig = {
     // toda la pantalla hasta recargar. Encontrado cerrando el modal de
     // "Cerrar boleta" en Pesaje, pero afecta a CUALQUIER nz-modal.
     provideAnimationsAsync(),
-    provideHttpClient(),
+    provideHttpClient(withInterceptors([authInterceptor])),
     provideNzI18n(es_ES),
     provideNzDateFnsAdapter(),
     provideNzIcons([
