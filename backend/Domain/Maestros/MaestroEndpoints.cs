@@ -141,7 +141,15 @@ public static class MaestroEndpoints
 
             var payload = request.Payload;
 
-            var existente = await db.Maestros.FirstOrDefaultAsync(m => m.Id == payload.Id, ct);
+            // IgnoreQueryFilters (design D6, PR3): identidad de terminal, sin
+            // ClaimsPrincipal humano — igual que ping/aprovisionar/boletas-sync.
+            // Defensivo hoy: Maestro es un catálogo global sin CentroId propio
+            // (no implementa ICentroScoped, design D6 "Global catalogs"), así
+            // que ningún HasQueryFilter lo afecta todavía — pero el design
+            // agrupa los 4 endpoints de dispositivo/sync explícitamente, y
+            // esto evita una fuga silenciosa si Maestro alguna vez pasara a
+            // ser Centro-scoped.
+            var existente = await db.Maestros.IgnoreQueryFilters().FirstOrDefaultAsync(m => m.Id == payload.Id, ct);
             if (existente is not null)
             {
                 // Ya fusionado: resolver hasta el oficial vigente y devolverlo,

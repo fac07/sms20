@@ -69,7 +69,9 @@ public sealed class BoletaSyncPreIngresoTests : IAsyncLifetime
     {
         using var scope = _factory.CreateScope();
         var db = scope.ServiceProvider.GetRequiredService<SmsDbContext>();
-        return await db.PreIngresos.AsNoTracking().FirstAsync(p => p.Id == id);
+        // IgnoreQueryFilters (PR3): scope sin HttpContext — ver comentario de
+        // ApiFactory.ResetAsync.
+        return await db.PreIngresos.AsNoTracking().IgnoreQueryFilters().FirstAsync(p => p.Id == id);
     }
 
     [Fact]

@@ -52,7 +52,11 @@ public sealed class ResumenBasculasReportTests : IAsyncLifetime
         (await TestData.CerrarAsync(_client, boleta.Id)).EnsureSuccessStatusCode();
         await ConScopeAsync(async db =>
         {
-            var fila = await db.Boletas.SingleAsync(b => b.Id == boleta.Id);
+            // IgnoreQueryFilters (PR3): este scope no cuelga de un
+            // HttpContext/ClaimsPrincipal (ver ConScopeAsync), así que el
+            // HasQueryFilter de Centro de Boleta (design D6) lo filtraría a
+            // cero filas — mismo motivo que ApiFactory.ResetAsync.
+            var fila = await db.Boletas.IgnoreQueryFilters().SingleAsync(b => b.Id == boleta.Id);
             fila.FechaHoraSalida = salidaUtc;
             fila.PesoNeto = neto;
             await db.SaveChangesAsync();
@@ -123,7 +127,9 @@ public sealed class ResumenBasculasReportTests : IAsyncLifetime
         (await TestData.CerrarAsync(_client, anulada.Id)).EnsureSuccessStatusCode();
         await ConScopeAsync(async db =>
         {
-            var fila = await db.Boletas.SingleAsync(b => b.Id == anulada.Id);
+            // IgnoreQueryFilters (PR3): ConScopeAsync no cuelga de un
+            // HttpContext — ver comentario de ApiFactory.ResetAsync.
+            var fila = await db.Boletas.IgnoreQueryFilters().SingleAsync(b => b.Id == anulada.Id);
             fila.FechaHoraSalida = dia;
             fila.PesoNeto = 222m;
             await db.SaveChangesAsync();
@@ -189,8 +195,10 @@ public sealed class ResumenBasculasReportTests : IAsyncLifetime
         var a = await TestData.NuevoEscenarioAsync(_client);
         await ConScopeAsync(async db =>
         {
-            var basZ = await db.Basculas.SingleAsync(x => x.Id == z.BasculaId);
-            var basA = await db.Basculas.SingleAsync(x => x.Id == a.BasculaId);
+            // IgnoreQueryFilters (PR3): ConScopeAsync no cuelga de un
+            // HttpContext — ver comentario de ApiFactory.ResetAsync.
+            var basZ = await db.Basculas.IgnoreQueryFilters().SingleAsync(x => x.Id == z.BasculaId);
+            var basA = await db.Basculas.IgnoreQueryFilters().SingleAsync(x => x.Id == a.BasculaId);
             basA.Nombre = "AAAA";
             basZ.Nombre = "ZZZZ";
             await db.SaveChangesAsync();

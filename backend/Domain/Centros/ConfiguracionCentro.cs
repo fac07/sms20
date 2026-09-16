@@ -1,3 +1,5 @@
+using SmsBackend.Domain.Seguridad;
+
 namespace SmsBackend.Domain.Centros;
 
 /// <summary>
@@ -21,7 +23,7 @@ namespace SmsBackend.Domain.Centros;
 /// "BE" (<c>Sitio_Destino_Envios_BE</c>, <c>Almacen_Origen_Recepcion_BE</c>)
 /// que <c>ubicacion</c> no modela todavía — quedan fuera a propósito.</para>
 /// </summary>
-public class ConfiguracionCentro
+public class ConfiguracionCentro : ICentroScoped
 {
     /// <summary>PK = FK lógica hacia Maestro (TipoCatalogo = Centro).</summary>
     public Guid CentroId { get; set; }

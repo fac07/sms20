@@ -1,3 +1,5 @@
+using SmsBackend.Domain.Seguridad;
+
 namespace SmsBackend.Domain.Basculas;
 
 /// <summary>
@@ -6,8 +8,12 @@ namespace SmsBackend.Domain.Basculas;
 /// clsConexionBasculaSERIAL_COM.cs y clsConexionBasculaMT_Continuo.cs del
 /// legacy (la variante SERIAL_COM es la que realmente corre en producción,
 /// no clsConexionBasculaSERIAL.cs).
+///
+/// Implementa <see cref="ICentroScoped"/> (design D6, PR3): un Operador solo
+/// lista las básculas de su Centro asignado, vía el <c>HasQueryFilter</c>
+/// global de <c>SmsDbContext</c>.
 /// </summary>
-public class Bascula
+public class Bascula : ICentroScoped
 {
     public Guid Id { get; set; }
 

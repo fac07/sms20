@@ -39,6 +39,16 @@ builder.Services.AddCors(options =>
 builder.Services.AddDbContext<SmsDbContext>(options =>
     options.UseSqlServer(builder.Configuration.GetConnectionString("SmsCentral")));
 
+// Requerido por ICentroContext (PR3, design D6) para leer el
+// ClaimsPrincipal del request vigente desde dentro de un HasQueryFilter,
+// que se evalúa por fuera del pipeline de minimal APIs.
+builder.Services.AddHttpContextAccessor();
+
+// Alcance de Centro (design D6): scoped porque depende de
+// IHttpContextAccessor (que a su vez expone el HttpContext del request
+// actual). SmsDbContext lo inyecta para armar sus HasQueryFilter.
+builder.Services.AddScoped<ICentroContext, CentroContext>();
+
 // Motor de campos configurables: único resolver/validador del conjunto EAV,
 // compartido por el crear tipado, el cierre y la rama de sync. Scoped porque
 // depende del SmsDbContext (scoped). Nadie lo consume todavía — los endpoints
