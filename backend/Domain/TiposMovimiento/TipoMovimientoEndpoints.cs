@@ -26,8 +26,10 @@ public static class TipoMovimientoEndpoints
                 .ToListAsync();
 
             return Results.Ok(tipos);
-        })
-            .RequireAuthorization(Politicas.Operador);
+        });
+        // GET / SIN gate (corrección PR5): config-sync.ts:295 lo baja como
+        // incluirInactivos=true en cada ciclo, sin token — identidad de
+        // dispositivo (fan-out de secciones incluído abajo).
 
         group.MapGet("/{id:guid}", async (Guid id, SmsDbContext db) =>
         {
@@ -152,8 +154,10 @@ public static class TipoMovimientoEndpoints
                 .ToListAsync();
 
             return Results.Ok(filas);
-        })
-            .RequireAuthorization(Politicas.Operador);
+        });
+        // GET /{id}/secciones SIN gate (corrección PR5): el fan-out de
+        // config-sync.ts:298-301 lo baja por cada tipo en cada ciclo, sin
+        // token — identidad de dispositivo.
 
         // PUT declarativo del set de secciones. Desasignar = poner VigenteHasta,
         // nunca borrado físico (candado temporal del design D1). Un cambio de

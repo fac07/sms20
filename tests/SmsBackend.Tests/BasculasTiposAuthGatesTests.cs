@@ -7,17 +7,21 @@ using Xunit;
 namespace SmsBackend.Tests;
 
 /// <summary>
-/// Gateo de Basculas (6 de 9 rutas) + TiposMovimiento (8 de 8) — PR5 del
+/// Gateo de Basculas (5 de 9 rutas) + TiposMovimiento (6 de 8) — PR5 del
 /// change autenticacion-y-roles. Criterio idéntico a PR4, cruzando
 /// app.routes.ts: GET → Operador siempre; escrituras de dominios cuya
 /// pantalla es modo:'admin' (BasculasPage, TiposMovimientoPage) →
 /// Administrador.
 ///
-/// NO se gatean las tres rutas de dispositivo de Basculas:
-/// <c>POST /{id}/ping</c> y <c>/aprovisionar</c> (los 4 bypass que PR3
-/// declaró resueltos) y <c>POST /{id}/generar-codigo</c> (indicación
-/// expresa del plan — queda abierta y anotada para confirmación, aunque su
-/// caller real es el botón "Generar código" de BasculasPage).
+/// Sin gate por <em>identidad de dispositivo</em> (verificados uno a uno
+/// contra config-sync.ts / maestros-sync.ts / preingreso-sync.ts — todo GET
+/// cuyo path aparezca ahí corre sin token y queda afuera del gate, mismo
+/// tratamiento que PR3 dio a las escrituras ping/aprovisionar):
+/// <c>POST /{id}/ping</c> y <c>POST /aprovisionar</c> (resueltos en PR3),
+/// <c>POST /{id}/generar-codigo</c> (sin gate por indicación expresa del
+/// plan — anotado), <c>GET /api/basculas/{id}</c> (trío de ingreso manual +
+/// backfill de centro, config-sync), <c>GET /api/tipos-movimiento</c> y
+/// <c>GET /{id}/secciones</c> (fan-out de config-sync).
 ///
 /// Como en PR4: bajo Operador no hay rol, así que ese nivel se defiende con
 /// su 401 anónimo; el 403 solo existe contra Administrador.
@@ -121,10 +125,7 @@ public sealed class BasculasTiposAuthGatesTests : IAsyncLifetime
         var id = Guid.NewGuid();
         var rutas = new[]
         {
-            $"/api/basculas/{id}",
-            "/api/tipos-movimiento",
             $"/api/tipos-movimiento/{id}",
-            $"/api/tipos-movimiento/{id}/secciones",
             $"/api/tipos-movimiento/{id}/formulario",
         };
 
@@ -220,5 +221,35 @@ public sealed class BasculasTiposAuthGatesTests : IAsyncLifetime
         Assert.False(
             generarCodigo.StatusCode is HttpStatusCode.Unauthorized or HttpStatusCode.Forbidden,
             $"generar-codigo quedó gateada por error: {(int)generarCodigo.StatusCode}");
+    }
+
+    [Fact]
+    public async Task GET_bascula_propia_sin_token_sigue_devolviendo_datos_pull_config_sync()
+    {
+        // config-sync.ts baja GET /api/basculas/{id} cada 60s sin token
+        // (trío de ingreso manual + backfill de centro) — patrón
+        // DeviceSyncRegressionTests: datos, no 401.
+        var escenario = await TestData.NuevoEscenarioAsync(_client);
+        ComoAnonimo();
+
+        var resp = await _client.GetAsync($"/api/basculas/{escenario.BasculaId}");
+
+        Assert.Equal(HttpStatusCode.OK, resp.StatusCode);
+    }
+
+    [Fact]
+    public async Task GET_tipos_movimiento_y_secciones_sin_token_siguen_devolviendo_datos_pull_config_sync()
+    {
+        // El fan-out de config-sync.ts:295-301 (GET /api/tipos-movimiento y
+        // GET /{id}/secciones por tipo) corre anónimo cada ciclo.
+        var escenario = await TestData.NuevoEscenarioAsync(_client);
+        ComoAnonimo();
+
+        var tipos = await _client.GetAsync("/api/tipos-movimiento?incluirInactivos=true");
+        Assert.Equal(HttpStatusCode.OK, tipos.StatusCode);
+
+        var secciones = await _client.GetAsync(
+            $"/api/tipos-movimiento/{escenario.TipoMovimientoId}/secciones");
+        Assert.Equal(HttpStatusCode.OK, secciones.StatusCode);
     }
 }

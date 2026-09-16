@@ -36,11 +36,21 @@ public static class BasculaEndpoints
 
         group.MapGet("/{id:guid}", async (Guid id, SmsDbContext db) =>
         {
-            var bascula = await ProyectarConCentro(db.Basculas.AsNoTracking().Where(b => b.Id == id), db)
+            // IgnoreQueryFilters + sin gate (corrección PR5): este GET es el
+            // pull de config-sync.ts cada 60s — identidad de dispositivo sin
+            // claims. Solo sacar el RequireAuthorization no alcanzaba: el
+            // HasQueryFilter de Centro (PR3, Bascula es ICentroScoped) filtraba
+            // la fila a cero y devolvía 404 al terminal igual que a un
+            // anonimo. Mismo tratamiento completo que recibieron
+            // ping/aprovisionar en PR3.
+            var bascula = await ProyectarConCentro(
+                db.Basculas.IgnoreQueryFilters().AsNoTracking().Where(b => b.Id == id), db)
                 .FirstOrDefaultAsync();
             return bascula is null ? Results.NotFound() : Results.Ok(bascula);
-        })
-            .RequireAuthorization(Politicas.Operador);
+        });
+        // GET /{id} SIN gate (corrección PR5): config-sync.ts lo baja cada 60s
+        // sin token (trío de ingreso manual + backfill de centro) — identidad
+        // de dispositivo, mismo tratamiento que ping/aprovisionar.
 
         group.MapPost("/", async (GuardarBasculaRequest request, SmsDbContext db) =>
         {
