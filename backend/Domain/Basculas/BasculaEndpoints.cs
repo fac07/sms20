@@ -2,6 +2,7 @@ using System.Security.Cryptography;
 using Microsoft.EntityFrameworkCore;
 using SmsBackend.Data;
 using SmsBackend.Domain.Maestros;
+using SmsBackend.Domain.Seguridad;
 
 namespace SmsBackend.Domain.Basculas;
 
@@ -30,14 +31,16 @@ public static class BasculaEndpoints
             // Select que ya construyó el record.
             var basculas = await ProyectarConCentro(query.OrderBy(b => b.Codigo), db).ToListAsync();
             return Results.Ok(basculas);
-        });
+        })
+            .RequireAuthorization(Politicas.Operador);
 
         group.MapGet("/{id:guid}", async (Guid id, SmsDbContext db) =>
         {
             var bascula = await ProyectarConCentro(db.Basculas.AsNoTracking().Where(b => b.Id == id), db)
                 .FirstOrDefaultAsync();
             return bascula is null ? Results.NotFound() : Results.Ok(bascula);
-        });
+        })
+            .RequireAuthorization(Politicas.Operador);
 
         group.MapPost("/", async (GuardarBasculaRequest request, SmsDbContext db) =>
         {
@@ -67,7 +70,8 @@ public static class BasculaEndpoints
             var dto = await ProyectarConCentro(db.Basculas.AsNoTracking().Where(b => b.Id == bascula.Id), db)
                 .FirstAsync();
             return Results.Created($"/api/basculas/{bascula.Id}", dto);
-        });
+        })
+            .RequireAuthorization(Politicas.Administrador);
 
         group.MapPut("/{id:guid}", async (Guid id, GuardarBasculaRequest request, SmsDbContext db) =>
         {
@@ -93,7 +97,8 @@ public static class BasculaEndpoints
             var dto = await ProyectarConCentro(db.Basculas.AsNoTracking().Where(b => b.Id == id), db)
                 .FirstAsync();
             return Results.Ok(dto);
-        });
+        })
+            .RequireAuthorization(Politicas.Administrador);
 
         // Configuración central de ingreso manual de peso — la ajusta el
         // administrador por báscula, junto al toggle. Es config, no un pesaje,
@@ -117,7 +122,8 @@ public static class BasculaEndpoints
             var dto = await ProyectarConCentro(db.Basculas.AsNoTracking().Where(b => b.Id == id), db)
                 .FirstAsync();
             return Results.Ok(dto);
-        });
+        })
+            .RequireAuthorization(Politicas.Administrador);
 
         // Soft-delete — mismo criterio que TipoMovimiento y Maestro.
         group.MapDelete("/{id:guid}", async (Guid id, SmsDbContext db) =>
@@ -129,10 +135,15 @@ public static class BasculaEndpoints
             await db.SaveChangesAsync();
 
             return Results.NoContent();
-        });
+        })
+            .RequireAuthorization(Politicas.Administrador);
 
         // Genera el código corto de un solo uso para el primer arranque de
         // Electron. Reemplaza cualquier código anterior sin usar.
+        // SIN gate por indicacion expresa del plan PR5 (queda anotado:
+        // su caller real es el boton de BasculasPage, modo:'admin'). Hoy un
+        // caller anonimo ya no la alcanza: 404 por el HasQueryFilter de Centro
+        // de PR3, no por autorizacion.
         group.MapPost("/{id:guid}/generar-codigo", async (Guid id, SmsDbContext db) =>
         {
             var bascula = await db.Basculas.FirstOrDefaultAsync(b => b.Id == id);
