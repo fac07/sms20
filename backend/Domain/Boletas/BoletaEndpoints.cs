@@ -1016,6 +1016,7 @@ public static class BoletaEndpoints
             b.Id, b.NumeroBoleta,
             b.BasculaId, bascula != null ? bascula.Codigo : null,
             b.TipoMovimientoId, tipoMovimiento != null ? tipoMovimiento.Nombre : null,
+            tipoMovimiento != null && tipoMovimiento.GeneraQR,
             b.Estado, b.EstadoSync,
             b.PesoIngreso, b.PesoSalida, b.PesoNeto,
             b.OrigenPesoIngreso, b.OrigenPesoSalida,

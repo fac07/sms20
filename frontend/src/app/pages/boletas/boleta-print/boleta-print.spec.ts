@@ -2,7 +2,12 @@ import { Component } from '@angular/core';
 import { ComponentFixture, TestBed } from '@angular/core/testing';
 import { BoletaDto } from '../../../api/boletas.service';
 import { ValorCampoLeidoDto } from '../../../api/configuracion.models';
+import * as QRCode from 'qrcode';
 import { BoletaPrint } from './boleta-print';
+
+vi.mock('qrcode', () => ({
+  toDataURL: vi.fn(),
+}));
 
 function boleta(parcial: Partial<BoletaDto> = {}): BoletaDto {
   return {
@@ -12,6 +17,7 @@ function boleta(parcial: Partial<BoletaDto> = {}): BoletaDto {
     basculaCodigo: 'B01',
     tipoMovimientoId: 'tm-1',
     tipoMovimientoNombre: 'Ingreso de fruta',
+    generaQR: false,
     estado: 'Cerrada',
     estadoSync: 'SincronizadoCentral',
     pesoIngreso: 20000,
@@ -68,12 +74,16 @@ describe('BoletaPrint (layout de impresión — sin nz-icon, detectChanges ok)',
   let fixture: ComponentFixture<Host>;
 
   beforeEach(async () => {
+    vi.mocked(QRCode.toDataURL).mockImplementation(
+      (async () => 'data:image/png;base64,qr-b-1') as typeof QRCode.toDataURL,
+    );
     await TestBed.configureTestingModule({ imports: [Host] }).compileComponents();
     fixture = TestBed.createComponent(Host);
   });
 
   afterEach(() => {
     document.body.classList.remove('boleta-print-open');
+    vi.clearAllMocks();
   });
 
   function setBoleta(b: BoletaDto): void {
@@ -139,6 +149,30 @@ describe('BoletaPrint (layout de impresión — sin nz-icon, detectChanges ok)',
     primera.componentInstance.b = boleta();
     primera.detectChanges();
     expect((primera.nativeElement as HTMLElement).textContent).not.toContain('Reimpresiones:');
+  });
+
+  it('genera y muestra el QR con el id de la boleta cuando el tipo lo habilita', async () => {
+    setBoleta(boleta({ id: '8c263238-d3f3-4be0-9945-3a86fd953a19', generaQR: true }));
+    await fixture.whenStable();
+    fixture.detectChanges();
+
+    expect(QRCode.toDataURL).toHaveBeenCalledWith(
+      '8c263238-d3f3-4be0-9945-3a86fd953a19',
+      expect.any(Object),
+    );
+    const imagen = (fixture.nativeElement as HTMLElement).querySelector<HTMLImageElement>(
+      '.boleta-qr img',
+    );
+    expect(imagen?.src).toBe('data:image/png;base64,qr-b-1');
+  });
+
+  it('no genera ni renderiza el bloque QR cuando el tipo no lo habilita', async () => {
+    setBoleta(boleta({ generaQR: false }));
+    await fixture.whenStable();
+    fixture.detectChanges();
+
+    expect(QRCode.toDataURL).not.toHaveBeenCalled();
+    expect((fixture.nativeElement as HTMLElement).querySelector('.boleta-qr')).toBeNull();
   });
 
   it('activa la clase de cuerpo para el CSS de impresión y la limpia al destruir', () => {

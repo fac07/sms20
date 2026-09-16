@@ -26,6 +26,7 @@ function boletaFixture(parcial: Partial<BoletaDto> = {}): BoletaDto {
     basculaCodigo: 'B01',
     tipoMovimientoId: 'tm-1',
     tipoMovimientoNombre: 'Ingreso de fruta',
+    generaQR: false,
     estado: 'Cerrada',
     estadoSync: 'SincronizadoCentral',
     pesoIngreso: 20000,
