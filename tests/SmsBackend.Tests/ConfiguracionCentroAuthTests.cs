@@ -1,6 +1,7 @@
 using System.Net;
 using System.Net.Http.Headers;
 using System.Net.Http.Json;
+using SmsBackend.Domain.Centros;
 using SmsBackend.Domain.Seguridad;
 using Xunit;
 
@@ -40,39 +41,32 @@ public sealed class ConfiguracionCentroAuthTests : IAsyncLifetime
     }
 
     [Fact]
-    public async Task GET_configuracion_sin_token_es_401()
+    public async Task GET_configuracion_sin_autenticacion_humana_sigue_devolviendo_los_defaults_reales()
     {
+        // Regresión (corrección post-PR3/PR5): config-sync.ts pega este GET
+        // sin Authorization header — identidad de terminal, no de usuario
+        // humano (grep confirmado: 0 hits de "Authorization" en
+        // frontend/electron). Antes de esta corrección, sin token daba 401
+        // liso; sacando solo el gate de rol sin IgnoreQueryFilters, el
+        // HasQueryFilter de Centro (PR3) igual habría devuelto 200 con
+        // defaults nulos aunque el centro SÍ tenga configuración real —
+        // perdiendo la precarga en silencio. Este test prueba el circuito
+        // completo: valor real, no solo el status code.
         var escenario = await TestData.NuevoEscenarioAsync(_client);
-
-        // ApiFactory (PR3) adjunta un token de Administrador por default a
-        // todo cliente nuevo — este test prueba específicamente el caso SIN
-        // token, así que lo limpia recién acá (NuevoEscenarioAsync de arriba
-        // sí necesita quedar autenticado para poder crear el escenario).
-        _client.DefaultRequestHeaders.Authorization = null;
-
-        var resp = await _client.GetAsync($"/api/centros/{escenario.CentroId}/configuracion");
-
-        Assert.Equal(HttpStatusCode.Unauthorized, resp.StatusCode);
-    }
-
-    [Fact]
-    public async Task GET_configuracion_con_token_Operador_es_403_y_con_Administrador_es_200()
-    {
-        // Triangulación: mismo endpoint, mismo Centro, dos roles distintos —
-        // Operador insuficiente contra la política Administrador (design D4),
-        // Administrador siempre pasa. Si RequireAuthorization no discriminara
-        // por rol, ambos darían el mismo status.
-        var escenario = await TestData.NuevoEscenarioAsync(_client);
-
-        var tokenOperador = await LoginTokenAsync("operador", "Operador123!");
-        _client.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", tokenOperador);
-        var respOperador = await _client.GetAsync($"/api/centros/{escenario.CentroId}/configuracion");
-        Assert.Equal(HttpStatusCode.Forbidden, respOperador.StatusCode);
-
         var tokenAdmin = await LoginTokenAsync("administrador", "Administrador123!");
         _client.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", tokenAdmin);
-        var respAdmin = await _client.GetAsync($"/api/centros/{escenario.CentroId}/configuracion");
-        Assert.Equal(HttpStatusCode.OK, respAdmin.StatusCode);
+        var put = await _client.PutAsJsonAsync(
+            $"/api/centros/{escenario.CentroId}/configuracion",
+            new { sitioOrigenDefaultId = escenario.CentroId },
+            TestData.Json);
+        put.EnsureSuccessStatusCode();
+
+        _client.DefaultRequestHeaders.Authorization = null;
+        var resp = await _client.GetAsync($"/api/centros/{escenario.CentroId}/configuracion");
+
+        Assert.Equal(HttpStatusCode.OK, resp.StatusCode);
+        var dto = await resp.Content.ReadFromJsonAsync<ConfiguracionCentroDto>(TestData.Json);
+        Assert.Equal(escenario.CentroId, dto!.SitioOrigenDefaultId);
     }
 
     [Fact]
