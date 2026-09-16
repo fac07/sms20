@@ -81,8 +81,12 @@ public static class MaestroEndpoints
             }
 
             return Results.Ok(maestros);
-        })
-            .RequireAuthorization(Politicas.Operador);
+        });
+        // GET / SIN gate (corrección PR4): es el pull del delta-sync de
+        // maestros-sync.ts:63 — identidad de dispositivo sin token, mismo
+        // tratamiento que ping/aprovisionar (PR3) y POST /sync. El
+        // carve-out original de PR3 cubrió solo escrituras; las lecturas
+        // periódicas del terminal necesitan el mismo.
 
         group.MapGet("/{id:guid}", async (Guid id, SmsDbContext db) =>
         {

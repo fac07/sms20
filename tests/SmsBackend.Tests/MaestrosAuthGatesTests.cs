@@ -10,11 +10,14 @@ namespace SmsBackend.Tests;
 /// design (cruzado con app.routes.ts): GETs → <c>Politicas.Operador</c>
 /// (leer catálogos es universal); escrituras de un dominio cuya pantalla es
 /// <c>modo:'admin'</c> (MaestrosPage y ProvisionalesPage) →
-/// <c>Politicas.Administrador</c>. <c>POST /sync</c> NO se toca: es uno de
-/// los 4 endpoints de dispositivo/sync que PR3 declaró resueltos (corre sin
-/// claims humanos). <c>POST /incidencias-sync</c> queda sin gate por el
-/// mismo espíritu (lo dispara el outbox-dispatcher de la terminal, sin
-/// token) — anotado para confirmación en el reporte del PR.
+/// <c>Politicas.Administrador</c>.
+///
+/// Sin gate (lecturas/escrituras de <em>dispositivo</em>, sin claims
+/// humanos — carve-out confirmado contra config-sync.ts, maestros-sync.ts y
+/// preingreso-sync.ts, corrigiendo el alcance original de PR4):
+/// <c>POST /sync</c> (resuelto por PR3), <c>GET /</c> raíz (pull delta de
+/// maestros-sync.ts:63) y <c>POST /incidencias-sync</c> (heartbeat del
+/// outbox-dispatcher) — este último anotado para confirmación.
 ///
 /// Nota de nivel Operador: no existe rol por debajo de Operador, así que el
 /// "403 rol insuficiente" de este nivel es estructuralmente imposible — su
@@ -52,24 +55,27 @@ public sealed class MaestrosAuthGatesTests : IAsyncLifetime
     private void Como(string token) =>
         _client.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", token);
 
-    // ── Nivel Operador (representante: GET /) ─────────────────────────────
+    // ── Nivel Operador (representante: GET /{id}) ────────────────────────
+    // GET / (raíz) NO es representante: quedó sin gate como pull de
+    // dispositivo de maestros-sync.ts — ver test de no-regresión abajo.
 
     [Fact]
-    public async Task GET_maestros_sin_token_es_401()
+    public async Task GET_maestros_detalle_sin_token_es_401()
     {
         ComoAnonimo();
 
-        var resp = await _client.GetAsync("/api/maestros");
+        var resp = await _client.GetAsync($"/api/maestros/{Guid.NewGuid()}");
 
         Assert.Equal(HttpStatusCode.Unauthorized, resp.StatusCode);
     }
 
     [Fact]
-    public async Task GET_maestros_con_Operador_es_200()
+    public async Task GET_maestros_detalle_con_Operador_es_200()
     {
+        var id = await TestData.CrearMaestroAsync(_client, SmsBackend.Domain.Maestros.TipoCatalogo.Piloto);
         Como(await LoginTokenAsync("operador", "Operador123!"));
 
-        var resp = await _client.GetAsync("/api/maestros");
+        var resp = await _client.GetAsync($"/api/maestros/{id.Id}");
 
         Assert.Equal(HttpStatusCode.OK, resp.StatusCode);
     }
@@ -168,7 +174,23 @@ public sealed class MaestrosAuthGatesTests : IAsyncLifetime
         return (HttpMethod.Delete, await _client.DeleteAsync(ruta));
     }
 
-    // ── No-regresión de dispositivo: /sync sigue anónimo (PR3) ────────────
+    // ── No-regresión de dispositivo: /sync y GET raíz siguen anónimos ─────
+
+    [Fact]
+    public async Task GET_lista_sin_token_sigue_devolviendo_datos_pull_maestros_sync()
+    {
+        // maestros-sync.ts:63 baja GET /api/maestros?modificadoDesde=<watermark>
+        // cada 60s sin token. Patrón DeviceSyncRegressionTests (PR3): misma
+        // llamada anónima debe seguir devolviendo datos, no 401.
+        await TestData.CrearMaestroAsync(_client, SmsBackend.Domain.Maestros.TipoCatalogo.Piloto);
+        ComoAnonimo();
+
+        var resp = await _client.GetAsync("/api/maestros?modificadoDesde=2020-01-01T00:00:00Z");
+
+        Assert.Equal(HttpStatusCode.OK, resp.StatusCode);
+        var maestros = await resp.Content.ReadFromJsonAsync<List<SmsBackend.Domain.Maestros.MaestroDto>>(TestData.Json);
+        Assert.NotEmpty(maestros!);
+    }
 
     [Fact]
     public async Task POST_sync_sin_token_sigue_funcionando_dispositivo_no_claims()
