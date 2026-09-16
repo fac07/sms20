@@ -1,5 +1,6 @@
 using Microsoft.EntityFrameworkCore;
 using SmsBackend.Data;
+using SmsBackend.Domain.Seguridad;
 
 namespace SmsBackend.Domain.Configuracion;
 
@@ -9,6 +10,7 @@ public static class CampoEndpoints
     {
         var group = app.MapGroup("/api/campos").WithTags("Campos");
 
+        // Sync central→terminal: la báscula todavía no tiene identidad humana.
         group.MapGet("/", async (
             SmsDbContext db,
             Guid? seccionId = null,
@@ -49,7 +51,7 @@ public static class CampoEndpoints
         {
             var campo = await db.Campos.AsNoTracking().FirstOrDefaultAsync(c => c.Id == id);
             return campo is null ? Results.NotFound() : Results.Ok(CampoDto.FromEntity(campo));
-        });
+        }).RequireAuthorization(Politicas.Operador);
 
         group.MapPost("/", async (CrearCampoRequest request, SmsDbContext db) =>
         {
@@ -104,7 +106,7 @@ public static class CampoEndpoints
             await db.SaveChangesAsync();
 
             return Results.Created($"/api/campos/{campo.Id}", CampoDto.FromEntity(campo));
-        });
+        }).RequireAuthorization(Politicas.Administrador);
 
         group.MapPut("/{id:guid}", async (Guid id, ActualizarCampoRequest request, SmsDbContext db) =>
         {
@@ -138,7 +140,7 @@ public static class CampoEndpoints
             await db.SaveChangesAsync();
 
             return Results.Ok(CampoDto.FromEntity(campo));
-        });
+        }).RequireAuthorization(Politicas.Administrador);
 
         // Versionado: nuevo Id, MISMA clave, cierra la versión anterior. Única vía
         // para cambiar TipoCampo / TipoCatalogoRef.
@@ -194,7 +196,7 @@ public static class CampoEndpoints
             await db.SaveChangesAsync();
 
             return Results.Created($"/api/campos/{nueva.Id}", CampoDto.FromEntity(nueva));
-        });
+        }).RequireAuthorization(Politicas.Administrador);
 
         group.MapDelete("/{id:guid}", async (Guid id, SmsDbContext db) =>
         {
@@ -222,7 +224,7 @@ public static class CampoEndpoints
             await db.SaveChangesAsync();
 
             return Results.NoContent();
-        });
+        }).RequireAuthorization(Politicas.Administrador);
 
         return group;
     }
