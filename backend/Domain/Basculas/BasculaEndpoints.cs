@@ -149,11 +149,13 @@ public static class BasculaEndpoints
             .RequireAuthorization(Politicas.Administrador);
 
         // Genera el código corto de un solo uso para el primer arranque de
-        // Electron. Reemplaza cualquier código anterior sin usar.
-        // SIN gate por indicacion expresa del plan PR5 (queda anotado:
-        // su caller real es el boton de BasculasPage, modo:'admin'). Hoy un
-        // caller anonimo ya no la alcanza: 404 por el HasQueryFilter de Centro
-        // de PR3, no por autorizacion.
+        // Electron. Reemplaza cualquier código anterior sin usar. Gateado a
+        // Administrador (corrección post sdd-verify): el HasQueryFilter de
+        // Centro de PR3 solo bloquea a un caller fuera de su Centro, nunca
+        // valida rol — son ortogonales (design D6). Sin este gate, cualquier
+        // Operador autenticado y scoped a la misma Bascula podía generar un
+        // código de aprovisionamiento, una acción administrativa real (su
+        // único caller es el botón de BasculasPage, modo:'admin').
         group.MapPost("/{id:guid}/generar-codigo", async (Guid id, SmsDbContext db) =>
         {
             var bascula = await db.Basculas.FirstOrDefaultAsync(b => b.Id == id);
@@ -169,7 +171,8 @@ public static class BasculaEndpoints
 
             return Results.Ok(new CodigoAprovisionamientoDto(
                 bascula.CodigoAprovisionamiento, bascula.CodigoAprovisionamientoExpira.Value));
-        });
+        })
+        .RequireAuthorization(Politicas.Administrador);
 
         // Consume el código corto generado por /generar-codigo — lo llama la
         // báscula Electron en su primer arranque (frontend/electron/local-server.ts,

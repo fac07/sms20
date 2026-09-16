@@ -18,10 +18,16 @@ namespace SmsBackend.Tests;
 /// cuyo path aparezca ahí corre sin token y queda afuera del gate, mismo
 /// tratamiento que PR3 dio a las escrituras ping/aprovisionar):
 /// <c>POST /{id}/ping</c> y <c>POST /aprovisionar</c> (resueltos en PR3),
-/// <c>POST /{id}/generar-codigo</c> (sin gate por indicación expresa del
-/// plan — anotado), <c>GET /api/basculas/{id}</c> (trío de ingreso manual +
-/// backfill de centro, config-sync), <c>GET /api/tipos-movimiento</c> y
+/// <c>GET /api/basculas/{id}</c> (trío de ingreso manual + backfill de
+/// centro, config-sync), <c>GET /api/tipos-movimiento</c> y
 /// <c>GET /{id}/secciones</c> (fan-out de config-sync).
+///
+/// <c>POST /{id}/generar-codigo</c> SÍ quedó gateada a Administrador
+/// (corrección post sdd-verify, no es identidad de dispositivo): el
+/// HasQueryFilter de Centro de PR3 solo bloquea a un caller fuera de su
+/// Centro, nunca valida rol — un Operador scoped a la báscula podía generar
+/// un código de aprovisionamiento sin este gate, acción exclusiva de
+/// Administrador (su único caller real es BasculasPage, modo:'admin').
 ///
 /// Como en PR4: bajo Operador no hay rol, así que ese nivel se defiende con
 /// su 401 anónimo; el 403 solo existe contra Administrador.
@@ -198,10 +204,10 @@ public sealed class BasculasTiposAuthGatesTests : IAsyncLifetime
             : await _client.PostAsJsonAsync(ruta, body, TestData.Json);
     }
 
-    // ── No-regresión de dispositivo: ping/aprovisionar/generar-codigo siguen abiertas ──
+    // ── No-regresión de dispositivo: ping/aprovisionar siguen abiertas ─────
 
     [Fact]
-    public async Task rutas_de_dispositivo_y_codigo_no_quedan_gateadas()
+    public async Task rutas_de_dispositivo_no_quedan_gateadas()
     {
         var escenario = await TestData.NuevoEscenarioAsync(_client);
         ComoAnonimo();
@@ -212,15 +218,27 @@ public sealed class BasculasTiposAuthGatesTests : IAsyncLifetime
         var aprovisionar = await _client.PostAsJsonAsync(
             "/api/basculas/aprovisionar", new { codigo = "INEXISTENTE" }, TestData.Json);
         Assert.Equal(HttpStatusCode.NotFound, aprovisionar.StatusCode); // 404 de negocio, no 401
+    }
 
-        var generarCodigo = await _client.PostAsync(
-            $"/api/basculas/{escenario.BasculaId}/generar-codigo", content: null);
-        // No gate (indicación del plan). Llega 404 por el HasQueryFilter de
-        // Centro de PR3 (caller anónimo no ve ninguna báscula), no por
-        // autorización — se comprueba la ausencia de 401/403, no el 404.
-        Assert.False(
-            generarCodigo.StatusCode is HttpStatusCode.Unauthorized or HttpStatusCode.Forbidden,
-            $"generar-codigo quedó gateada por error: {(int)generarCodigo.StatusCode}");
+    [Fact]
+    public async Task POST_generar_codigo_es_401_anonimo_403_Operador_y_200_Administrador()
+    {
+        // Corrección post sdd-verify: el HasQueryFilter de Centro no es un
+        // control de rol (design D6) — un Operador scoped a la báscula
+        // igual necesita quedar afuera de esta acción administrativa.
+        var escenario = await TestData.NuevoEscenarioAsync(_client);
+
+        ComoAnonimo();
+        var anonimo = await _client.PostAsync($"/api/basculas/{escenario.BasculaId}/generar-codigo", content: null);
+        Assert.Equal(HttpStatusCode.Unauthorized, anonimo.StatusCode);
+
+        Como(await LoginTokenAsync("operador", "Operador123!"));
+        var operador = await _client.PostAsync($"/api/basculas/{escenario.BasculaId}/generar-codigo", content: null);
+        Assert.Equal(HttpStatusCode.Forbidden, operador.StatusCode);
+
+        Como(await LoginTokenAsync("administrador", "Administrador123!"));
+        var administrador = await _client.PostAsync($"/api/basculas/{escenario.BasculaId}/generar-codigo", content: null);
+        Assert.Equal(HttpStatusCode.OK, administrador.StatusCode);
     }
 
     [Fact]
