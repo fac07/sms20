@@ -1,0 +1,45 @@
+<div class="pantalla">
+  <nz-card [nzTitle]="'Iniciar sesión'" class="tarjeta">
+    @if (error(); as mensaje) {
+      <nz-alert nzType="error" nzShowIcon class="alerta" [nzMessage]="mensaje"></nz-alert>
+    }
+
+    <form nz-form nzLayout="vertical" [formGroup]="form" (ngSubmit)="ingresar()">
+      <nz-form-item>
+        <nz-form-label nzRequired>Usuario</nz-form-label>
+        <nz-form-control nzErrorTip="Ingresá tu usuario.">
+          <input
+            nz-input
+            formControlName="nombreUsuario"
+            autocomplete="username"
+            [disabled]="enviando()"
+          />
+        </nz-form-control>
+      </nz-form-item>
+
+      <nz-form-item>
+        <nz-form-label nzRequired>Clave</nz-form-label>
+        <nz-form-control nzErrorTip="Ingresá tu clave.">
+          <input
+            nz-input
+            type="password"
+            formControlName="clave"
+            autocomplete="current-password"
+            [disabled]="enviando()"
+          />
+        </nz-form-control>
+      </nz-form-item>
+
+      <button
+        nz-button
+        nzType="primary"
+        nzBlock
+        type="submit"
+        [nzLoading]="enviando()"
+        [disabled]="enviando()"
+      >
+        Ingresar
+      </button>
+    </form>
+  </nz-card>
+</div>
