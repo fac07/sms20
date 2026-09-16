@@ -1,6 +1,7 @@
 using Microsoft.EntityFrameworkCore;
 using SmsBackend.Data;
 using SmsBackend.Domain.Boletas;
+using SmsBackend.Domain.Seguridad;
 
 namespace SmsBackend.Domain.Reportes;
 
@@ -69,8 +70,19 @@ public static class ResumenBasculasEndpoints
                 .ThenBy(f => f.Fecha)
                 .ToList();
 
+            // NOTA (hallazgo secundario al agregar este gate, no resuelto
+            // acá): Bascula es ICentroScoped — para un Supervisor con
+            // Centros limitados, el lookup de nombres de arriba puede
+            // devolver "(báscula eliminada)" para una báscula real fuera de
+            // sus Centros asignados (el filtro global la oculta), no porque
+            // esté borrada. Boletas en cambio no es ICentroScoped, así que
+            // el agrupamiento sigue siendo global. Si el reporte necesita
+            // Centro-scoping real coherente, es una decisión de diseño
+            // aparte — este cambio solo agrega el gate de rol que pedía
+            // sdd-verify.
             return Results.Ok(filas);
-        });
+        })
+        .RequireAuthorization(Politicas.Supervisor);
 
         return group;
     }
