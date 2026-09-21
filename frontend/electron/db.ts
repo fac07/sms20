@@ -739,6 +739,10 @@ export interface ValorCampoLeidoLocal extends ValorCampoLocal {
   tipoCampo: TipoCampo
   valorMaestroCodigo: string | null
   valorMaestroNombre: string | null
+  // Del maestro vigente (oficial tras seguir FusionadoConId); el QR de
+  // transferencia los necesita para serializar el maestro autodescriptivo.
+  valorMaestroTipoCatalogo: string | null
+  valorMaestroProvisional: boolean
 }
 
 /** Contrato HTTP de consulta local, compatible con BoletaDto del backend. */
@@ -1473,6 +1477,8 @@ interface ValorCampoLeidoRow extends BoletaValorCampoRow {
   TipoCampo: TipoCampo
   ValorMaestroCodigo: string | null
   ValorMaestroNombre: string | null
+  ValorMaestroTipoCatalogo: string | null
+  ValorMaestroEstado: string | null
 }
 
 /**
@@ -1489,7 +1495,9 @@ export function listarValoresLeidosLocal(boletaId: string): ValorCampoLeidoLocal
               c.Etiqueta AS Etiqueta,
               c.TipoCampo AS TipoCampo,
               oficial.Codigo AS ValorMaestroCodigo,
-              oficial.Nombre AS ValorMaestroNombre
+              oficial.Nombre AS ValorMaestroNombre,
+              oficial.TipoCatalogo AS ValorMaestroTipoCatalogo,
+              oficial.Estado AS ValorMaestroEstado
        FROM BoletaValorCampo v
        JOIN Campo c ON c.Id = v.CampoId
        JOIN Seccion s ON s.Id = c.SeccionId
@@ -1515,6 +1523,8 @@ export function listarValoresLeidosLocal(boletaId: string): ValorCampoLeidoLocal
     valorMaestroId: row.ValorMaestroId,
     valorMaestroCodigo: row.ValorMaestroCodigo,
     valorMaestroNombre: row.ValorMaestroNombre,
+    valorMaestroTipoCatalogo: row.ValorMaestroTipoCatalogo,
+    valorMaestroProvisional: row.ValorMaestroEstado === 'Provisional',
   }))
 }
 

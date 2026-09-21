@@ -109,6 +109,9 @@ describe('proyección local de consulta de boletas', () => {
         valorMaestroId: 'm-provisional',
         valorMaestroCodigo: 'P-100',
         valorMaestroNombre: 'Piloto Oficial',
+        // Snapshot del maestro vigente (oficial) para el QR de transferencia.
+        valorMaestroTipoCatalogo: 'Piloto',
+        valorMaestroProvisional: false,
       }),
     ])
   })
