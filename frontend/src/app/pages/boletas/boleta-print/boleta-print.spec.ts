@@ -1,5 +1,9 @@
 import { Component, signal } from '@angular/core';
 import { ComponentFixture, TestBed } from '@angular/core/testing';
+import { provideHttpClient } from '@angular/common/http';
+import { HttpTestingController, provideHttpClientTesting } from '@angular/common/http/testing';
+import { environment } from '../../../../environments/environment';
+import { QrClaveService, provideQrClave } from '../../../api/qr-clave.service';
 import { BoletaDto } from '../../../api/boletas.service';
 import { ValorCampoLeidoDto } from '../../../api/configuracion.models';
 import * as QRCode from 'qrcode';
@@ -229,5 +233,56 @@ describe('BoletaPrint (layout de impresión — sin nz-icon, detectChanges ok)',
 
     fixture.destroy();
     expect(document.body.classList.contains('boleta-print-open')).toBe(false);
+  });
+});
+
+// Cableado real de la distribución de la clave: servidor local (`GET /qr-clave`)
+// -> QrClaveService -> QR_CLAVE_PROVIDER -> texto impreso en el QR.
+describe('BoletaPrint — QR firmado con la clave distribuida', () => {
+  const CLAVE = 'AAECAwQFBgcICQoLDA0ODxAREhMUFRYXGBkaGxwdHh8=';
+  let http: HttpTestingController;
+
+  async function imprimirConClave(respuesta: { clave: string | null }): Promise<string> {
+    vi.mocked(QRCode.toDataURL).mockImplementation(
+      (async () => 'data:image/png;base64,qr') as typeof QRCode.toDataURL,
+    );
+    await TestBed.configureTestingModule({
+      imports: [Host],
+      providers: [provideHttpClient(), provideHttpClientTesting(), provideQrClave()],
+    }).compileComponents();
+    http = TestBed.inject(HttpTestingController);
+
+    const carga = TestBed.inject(QrClaveService).cargar();
+    http.expectOne(`${environment.localServerUrl}/qr-clave`).flush(respuesta);
+    await carga;
+
+    const fixture = TestBed.createComponent(Host);
+    fixture.componentInstance.b.set(boleta({ generaQR: true }));
+    fixture.detectChanges();
+    await vi.waitFor(() => expect(QRCode.toDataURL).toHaveBeenCalled());
+    return vi.mocked(QRCode.toDataURL).mock.calls[0][0] as unknown as string;
+  }
+
+  afterEach(() => {
+    document.body.classList.remove('boleta-print-open');
+    vi.clearAllMocks();
+  });
+
+  it('con clave, el texto termina en una firma de 8 bytes que el decodificador valida', async () => {
+    const texto = await imprimirConClave({ clave: CLAVE });
+
+    // 8 bytes en base64url sin relleno = 11 caracteres, tras el último punto.
+    expect(texto).toMatch(/^SMS1\.[A-Za-z0-9_-]+\.[A-Za-z0-9_-]{11}$/);
+    const decodificado = await decodificarQrTransferencia(texto, CLAVE);
+    expect(decodificado.ok && decodificado.firma).toBe('valida');
+    expect((await decodificarQrTransferencia(texto, 'otra-clave')).ok && 'invalida').toBe('invalida');
+  });
+
+  it('sin clave (terminal aprovisionada antes de la distribución), imprime sin firma', async () => {
+    const texto = await imprimirConClave({ clave: null });
+
+    expect(texto.endsWith('.-')).toBe(true);
+    const decodificado = await decodificarQrTransferencia(texto, CLAVE);
+    expect(decodificado.ok && decodificado.firma).toBe('ausente');
   });
 });
