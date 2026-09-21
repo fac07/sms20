@@ -103,6 +103,7 @@ public sealed class ValoresRoundTripTests : IAsyncLifetime
         var nota = await TestData.CrearCampoAsync(_client, seccion.Id, "nota", TipoCampo.Texto);
 
         var escenario = await TestData.NuevoEscenarioAsync(_client);
+        var centro = await TestData.GetMaestroAsync(_client, escenario.CentroId);
         await TestData.AsignarSeccionesAsync(
             _client, escenario.TipoMovimientoId, new AsignacionSeccionRequest(seccion.Id, false, 1));
 
@@ -116,6 +117,7 @@ public sealed class ValoresRoundTripTests : IAsyncLifetime
         Assert.Equal("nota", valor.CampoClave);
         Assert.Equal("Etiqueta nota", valor.Etiqueta);
         Assert.Equal("hola", valor.ValorTexto);
+        Assert.Equal(centro.Codigo, recargada.CentroCodigo);
         Assert.Null(valor.ValorMaestroTipoCatalogo);
         Assert.Null(valor.ValorMaestroProvisional);
     }

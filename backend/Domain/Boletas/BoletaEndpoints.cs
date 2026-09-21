@@ -1058,6 +1058,8 @@ public static class BoletaEndpoints
         from b in boletas
         join bas in basculasQuery on b.BasculaId equals bas.Id into basculas
         from bascula in basculas.DefaultIfEmpty()
+        join cen in db.Maestros.AsNoTracking() on bascula.CentroId equals cen.Id into centros
+        from centro in centros.DefaultIfEmpty()
         join tm in db.TiposMovimiento.AsNoTracking() on b.TipoMovimientoId equals tm.Id into tiposMovimiento
         from tipoMovimiento in tiposMovimiento.DefaultIfEmpty()
         // Left join al pre-ingreso enlazado — misma forma que Bascula/TipoMovimiento.
@@ -1066,6 +1068,7 @@ public static class BoletaEndpoints
         select new BoletaDto(
             b.Id, b.NumeroBoleta,
             b.BasculaId, bascula != null ? bascula.Codigo : null,
+            centro != null ? centro.Codigo : null,
             b.TipoMovimientoId, tipoMovimiento != null ? tipoMovimiento.Nombre : null,
             tipoMovimiento != null && tipoMovimiento.GeneraQR,
             b.Estado, b.EstadoSync,
