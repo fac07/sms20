@@ -510,3 +510,109 @@ describe('GET /configuracion-centro — defaults de ubicacion espejados', () => 
     expect(await res.json()).toEqual({})
   })
 })
+
+// Clave HMAC del QR de transferencia: llega en el AprovisionamientoDto central
+// (respuesta de un solo uso), se persiste en ConfiguracionLocal y SOLO la sirve
+// `GET /qr-clave`. Terminales aprovisionadas antes de este campo no la tienen.
+describe('clave HMAC del QR — /aprovisionamiento + GET /qr-clave', () => {
+  const CLAVE = 'AAECAwQFBgcICQoLDA0ODxAREhMUFRYXGBkaGxwdHh8='
+
+  beforeEach(arrancarServidor)
+
+  function stubCentral(claveQr?: string | null): void {
+    const realFetch = globalThis.fetch
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async (rawUrl: string | URL, init?: RequestInit) => {
+        const u = new URL(String(rawUrl))
+        if (u.host !== 'localhost:5094') return realFetch(rawUrl as string, init)
+        if (u.pathname === '/api/basculas/aprovisionar') {
+          return {
+            ok: true,
+            status: 200,
+            json: async () => ({
+              basculaId: 'ba-9',
+              basculaCodigo: 'B9',
+              basculaNombre: 'Báscula 9',
+              centroId: 'c1',
+              tipoConexion: 'Serial',
+              puerto: null,
+              ip: null,
+              puertoTcp: null,
+              velocidad: null,
+              bitsDatos: null,
+              modoComunicacion: null,
+              ...(claveQr === undefined ? {} : { claveQr }),
+            }),
+          }
+        }
+        if (u.pathname === '/api/maestros' || u.pathname === '/api/vinculos-piloto-transportista') {
+          return { ok: true, status: 200, json: async () => [] }
+        }
+        return { ok: false, status: 404, json: async () => ({}) }
+      }) as unknown as typeof fetch,
+    )
+  }
+
+  function aprovisionar(): Promise<Response> {
+    return fetch(`${baseUrl}/aprovisionamiento`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ codigo: 'ABC123' }),
+    })
+  }
+
+  function claveGuardada(): string | undefined {
+    const fila = db.prepare("SELECT Valor FROM ConfiguracionLocal WHERE Clave = 'QrClaveHmac'").get() as
+      | { Valor: string }
+      | undefined
+    return fila?.Valor
+  }
+
+  it('persiste QrClaveHmac cuando el central la entrega', async () => {
+    stubCentral(CLAVE)
+
+    expect((await aprovisionar()).status).toBe(200)
+
+    expect(claveGuardada()).toBe(CLAVE)
+  })
+
+  it.each([undefined, null])('no persiste QrClaveHmac cuando el central manda %s', async (claveQr) => {
+    stubCentral(claveQr)
+
+    expect((await aprovisionar()).status).toBe(200)
+
+    expect(claveGuardada()).toBeUndefined()
+  })
+
+  it('GET /qr-clave devuelve la clave guardada, o null si nunca se aprovisionó con una', async () => {
+    expect(await (await fetch(`${baseUrl}/qr-clave`)).json()).toEqual({ clave: null })
+
+    stubCentral(CLAVE)
+    await aprovisionar()
+
+    expect(await (await fetch(`${baseUrl}/qr-clave`)).json()).toEqual({ clave: CLAVE })
+  })
+
+  it('la clave no aparece en ninguna otra respuesta local (estado, aprovisionamiento)', async () => {
+    stubCentral(CLAVE)
+    const resAprov = await aprovisionar()
+
+    expect(await resAprov.text()).not.toContain(CLAVE)
+    expect(await (await fetch(`${baseUrl}/estado`)).text()).not.toContain(CLAVE)
+  })
+
+  it('rechaza (403) a un origen web ajeno pero acepta el renderer (localhost/file)', async () => {
+    stubCentral(CLAVE)
+    await aprovisionar()
+
+    const ajeno = await fetch(`${baseUrl}/qr-clave`, { headers: { Origin: 'https://sitio-ajeno.example' } })
+    expect(ajeno.status).toBe(403)
+    expect(await ajeno.text()).not.toContain(CLAVE)
+
+    for (const origin of ['http://localhost:4200', 'null']) {
+      const ok = await fetch(`${baseUrl}/qr-clave`, { headers: { Origin: origin } })
+      expect(ok.status).toBe(200)
+    }
+  })
+})
