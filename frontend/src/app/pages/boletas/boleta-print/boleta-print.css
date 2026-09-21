@@ -83,8 +83,11 @@ app-boleta-print {
 }
 
 .boleta-print .boleta-qr img {
-  width: 144px;
-  height: 144px;
+  /* QR denso (payload de transferencia): ~5 cm para que el módulo siga siendo
+     legible por el scanner aun con boletas pesadas. */
+  width: 5cm;
+  height: 5cm;
+  image-rendering: pixelated;
 }
 
 .boleta-print .barra-acciones {

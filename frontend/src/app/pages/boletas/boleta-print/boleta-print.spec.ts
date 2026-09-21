@@ -1,8 +1,9 @@
-import { Component } from '@angular/core';
+import { Component, signal } from '@angular/core';
 import { ComponentFixture, TestBed } from '@angular/core/testing';
 import { BoletaDto } from '../../../api/boletas.service';
 import { ValorCampoLeidoDto } from '../../../api/configuracion.models';
 import * as QRCode from 'qrcode';
+import { QR_CLAVE_PROVIDER, decodificarQrTransferencia } from '../qr-transferencia/qr-transferencia';
 import { BoletaPrint } from './boleta-print';
 
 vi.mock('qrcode', () => ({
@@ -64,10 +65,10 @@ function valor(parcial: Partial<ValorCampoLeidoDto> &
 // Envoltorio mínimo: input requerido en plantillas necesita host declarado.
 @Component({
   imports: [BoletaPrint],
-  template: '<app-boleta-print [boleta]="b" />',
+  template: '<app-boleta-print [boleta]="b()" />',
 })
 class Host {
-  b = boleta();
+  b = signal(boleta());
 }
 
 describe('BoletaPrint (layout de impresión — sin nz-icon, detectChanges ok)', () => {
@@ -86,8 +87,16 @@ describe('BoletaPrint (layout de impresión — sin nz-icon, detectChanges ok)',
     vi.clearAllMocks();
   });
 
+  // El QR se arma en dos pasos async (codec + renderer): esperar a que aparezca la imagen.
+  async function esperarQr(): Promise<void> {
+    await vi.waitFor(() => {
+      fixture.detectChanges();
+      expect((fixture.nativeElement as HTMLElement).querySelector('.boleta-qr img')).not.toBeNull();
+    });
+  }
+
   function setBoleta(b: BoletaDto): void {
-    fixture.componentInstance.b = b;
+    fixture.componentInstance.b.set(b);
     fixture.detectChanges();
   }
 
@@ -146,24 +155,61 @@ describe('BoletaPrint (layout de impresión — sin nz-icon, detectChanges ok)',
     expect((fixture.nativeElement as HTMLElement).textContent).toContain('operador2');
 
     const primera = TestBed.createComponent(Host);
-    primera.componentInstance.b = boleta();
+    primera.componentInstance.b.set(boleta());
     primera.detectChanges();
     expect((primera.nativeElement as HTMLElement).textContent).not.toContain('Reimpresiones:');
   });
 
-  it('genera y muestra el QR con el id de la boleta cuando el tipo lo habilita', async () => {
+  it('genera y muestra el QR con el payload firmable versionado de la boleta', async () => {
     setBoleta(boleta({ id: '8c263238-d3f3-4be0-9945-3a86fd953a19', generaQR: true }));
-    await fixture.whenStable();
-    fixture.detectChanges();
+    await esperarQr();
 
-    expect(QRCode.toDataURL).toHaveBeenCalledWith(
-      '8c263238-d3f3-4be0-9945-3a86fd953a19',
-      expect.any(Object),
-    );
+    const [texto, opciones] = vi.mocked(QRCode.toDataURL).mock.calls[0] as unknown as [string, { errorCorrectionLevel: string }];
+    expect(opciones.errorCorrectionLevel).toBe('L');
+    const decodificado = await decodificarQrTransferencia(texto);
+    expect(decodificado.ok && decodificado.payload.b).toBe('8c263238-d3f3-4be0-9945-3a86fd953a19');
+    expect(decodificado.ok && decodificado.firma).toBe('ausente'); // hoy no hay clave
+
     const imagen = (fixture.nativeElement as HTMLElement).querySelector<HTMLImageElement>(
       '.boleta-qr img',
     );
     expect(imagen?.src).toBe('data:image/png;base64,qr-b-1');
+  });
+
+  it('firma el payload cuando el proveedor entrega clave', async () => {
+    TestBed.resetTestingModule();
+    await TestBed.configureTestingModule({
+      imports: [Host],
+      providers: [{ provide: QR_CLAVE_PROVIDER, useValue: () => 'clave-de-prueba' }],
+    }).compileComponents();
+    fixture = TestBed.createComponent(Host);
+
+    setBoleta(boleta({ generaQR: true }));
+    await esperarQr();
+
+    const texto = vi.mocked(QRCode.toDataURL).mock.calls[0][0] as unknown as string;
+    const decodificado = await decodificarQrTransferencia(texto, 'clave-de-prueba');
+    expect(decodificado.ok && decodificado.firma).toBe('valida');
+  });
+
+  it('descarta el QR de una boleta anterior si la boleta cambió mientras se generaba', async () => {
+    const pendientes: Array<(dataUrl: string) => void> = [];
+    vi.mocked(QRCode.toDataURL).mockImplementation(
+      (() => new Promise<string>((resolver) => pendientes.push(resolver))) as unknown as typeof QRCode.toDataURL,
+    );
+
+    setBoleta(boleta({ id: 'vieja', generaQR: true }));
+    await vi.waitFor(() => expect(pendientes).toHaveLength(1));
+    setBoleta(boleta({ id: 'nueva', generaQR: true }));
+    await vi.waitFor(() => expect(pendientes).toHaveLength(2));
+
+    pendientes[1]('data:image/png;base64,nueva');
+    pendientes[0]('data:image/png;base64,vieja'); // llega tarde
+    await fixture.whenStable();
+    fixture.detectChanges();
+
+    const imagen = (fixture.nativeElement as HTMLElement).querySelector<HTMLImageElement>('.boleta-qr img');
+    expect(imagen?.src).toBe('data:image/png;base64,nueva');
   });
 
   it('no genera ni renderiza el bloque QR cuando el tipo no lo habilita', async () => {

@@ -6,12 +6,15 @@ import {
   ViewEncapsulation,
   computed,
   effect,
+  inject,
   input,
   output,
   signal,
 } from '@angular/core';
 import * as QRCode from 'qrcode';
 import { BoletaDto } from '../../../api/boletas.service';
+import { construirPayloadQr } from '../qr-transferencia/payload-qr';
+import { QR_CLAVE_PROVIDER, codificarQrTransferencia } from '../qr-transferencia/qr-transferencia';
 import { agruparValores, valorLegible } from '../boletas-page/valores-agrupados';
 
 /**
@@ -43,6 +46,7 @@ export class BoletaPrint implements OnDestroy {
   readonly qrDataUrl = signal<string | null>(null);
 
   protected readonly valorLegible = valorLegible;
+  private readonly claveQr = inject(QR_CLAVE_PROVIDER);
   private solicitudQr = 0;
 
   constructor() {
@@ -53,13 +57,7 @@ export class BoletaPrint implements OnDestroy {
       this.qrDataUrl.set(null);
       if (!boleta.generaQR) return;
 
-      void QRCode.toDataURL(boleta.id, { errorCorrectionLevel: 'M', margin: 1, width: 144 })
-        .then((dataUrl) => {
-          if (solicitud === this.solicitudQr) this.qrDataUrl.set(dataUrl);
-        })
-        .catch(() => {
-          // La boleta sigue siendo imprimible si el renderer de QR falla.
-        });
+      void this.generarQr(boleta, solicitud);
     });
   }
 
@@ -68,6 +66,26 @@ export class BoletaPrint implements OnDestroy {
     // (BrowserWindow estándar, sin handler will-print que lo intercepte), así
     // que abre el diálogo de impresión del SO sin ningún IPC extra.
     globalThis.print?.();
+  }
+
+  /**
+   * Codifica (async) y renderiza el QR de transferencia. El guard `solicitud`
+   * se re-chequea tras cada await: una boleta que cambió mientras tanto no
+   * debe pintar el QR de la anterior. Nivel de corrección L: el payload es denso.
+   */
+  private async generarQr(boleta: BoletaDto, solicitud: number): Promise<void> {
+    try {
+      const codificado = await codificarQrTransferencia(construirPayloadQr(boleta), this.claveQr());
+      if (!codificado.ok || solicitud !== this.solicitudQr) return;
+      const dataUrl = await QRCode.toDataURL(codificado.texto, {
+        errorCorrectionLevel: 'L',
+        margin: 2,
+        scale: 4,
+      });
+      if (solicitud === this.solicitudQr) this.qrDataUrl.set(dataUrl);
+    } catch {
+      // La boleta sigue siendo imprimible si el codec o el renderer de QR fallan.
+    }
   }
 
   ngOnDestroy(): void {
