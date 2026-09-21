@@ -75,7 +75,10 @@ export class BoletaPrint implements OnDestroy {
    */
   private async generarQr(boleta: BoletaDto, solicitud: number): Promise<void> {
     try {
-      const codificado = await codificarQrTransferencia(construirPayloadQr(boleta), this.claveQr());
+      const codificado = await codificarQrTransferencia(
+        construirPayloadQr(boleta, { centroCodigo: boleta.centroCodigo }),
+        this.claveQr(),
+      );
       if (!codificado.ok || solicitud !== this.solicitudQr) return;
       const dataUrl = await QRCode.toDataURL(codificado.texto, {
         errorCorrectionLevel: 'L',

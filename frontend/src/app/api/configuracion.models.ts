@@ -94,8 +94,8 @@ export interface ValorCampoLeidoDto {
   valorMaestroId?: string | null;
   valorMaestroCodigo?: string | null;
   valorMaestroNombre?: string | null;
-  // Solo los provee la proyección local (espejo Electron); central todavía no.
-  // El QR de transferencia los necesita para que el maestro viaje autodescriptivo.
+  // Los proveen central y el espejo Electron para que el QR de transferencia
+  // lleve el maestro vigente como snapshot autodescriptivo.
   valorMaestroTipoCatalogo?: string | null;
   valorMaestroProvisional?: boolean | null;
 }

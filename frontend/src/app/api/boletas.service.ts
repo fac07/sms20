@@ -27,6 +27,7 @@ export interface BoletaDto {
   numeroBoleta: string;
   basculaId: string;
   basculaCodigo: string | null;
+  centroCodigo?: string | null;
   tipoMovimientoId: string;
   tipoMovimientoNombre: string | null;
   generaQR: boolean;

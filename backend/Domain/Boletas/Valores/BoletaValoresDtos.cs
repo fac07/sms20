@@ -38,4 +38,6 @@ public record ValorCampoLeidoDto(
     bool? ValorBooleano,
     Guid? ValorMaestroId,
     string? ValorMaestroCodigo,
-    string? ValorMaestroNombre);
+    string? ValorMaestroNombre,
+    string? ValorMaestroTipoCatalogo,
+    bool? ValorMaestroProvisional);

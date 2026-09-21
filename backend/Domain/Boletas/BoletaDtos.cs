@@ -8,6 +8,7 @@ public record BoletaDto(
     string NumeroBoleta,
     Guid BasculaId,
     string? BasculaCodigo,
+    string? CentroCodigo,
     Guid TipoMovimientoId,
     string? TipoMovimientoNombre,
     bool GeneraQR,

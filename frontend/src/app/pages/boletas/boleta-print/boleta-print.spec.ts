@@ -16,6 +16,7 @@ function boleta(parcial: Partial<BoletaDto> = {}): BoletaDto {
     numeroBoleta: 'IF-B01-000001',
     basculaId: 'ba-1',
     basculaCodigo: 'B01',
+    centroCodigo: 'C01',
     tipoMovimientoId: 'tm-1',
     tipoMovimientoNombre: 'Ingreso de fruta',
     generaQR: false,
@@ -168,6 +169,7 @@ describe('BoletaPrint (layout de impresión — sin nz-icon, detectChanges ok)',
     expect(opciones.errorCorrectionLevel).toBe('L');
     const decodificado = await decodificarQrTransferencia(texto);
     expect(decodificado.ok && decodificado.payload.b).toBe('8c263238-d3f3-4be0-9945-3a86fd953a19');
+    expect(decodificado.ok && decodificado.payload.ce).toBe('C01');
     expect(decodificado.ok && decodificado.firma).toBe('ausente'); // hoy no hay clave
 
     const imagen = (fixture.nativeElement as HTMLElement).querySelector<HTMLImageElement>(

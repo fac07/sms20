@@ -138,5 +138,7 @@ public sealed class RedirectOnWriteSyncTests : IAsyncLifetime
         Assert.Equal(provisionalId, valor.ValorMaestroId);
         Assert.Equal(oficial.Codigo, valor.ValorMaestroCodigo);
         Assert.Equal(oficial.Nombre, valor.ValorMaestroNombre);
+        Assert.Equal("Equipo", valor.ValorMaestroTipoCatalogo);
+        Assert.False(valor.ValorMaestroProvisional);
     }
 }
