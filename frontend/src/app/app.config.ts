@@ -1,4 +1,5 @@
-import { ApplicationConfig, provideBrowserGlobalErrorListeners } from '@angular/core';
+import { ApplicationConfig, inject, provideAppInitializer, provideBrowserGlobalErrorListeners } from '@angular/core';
+import { QrClaveService, provideQrClave } from './api/qr-clave.service';
 import { provideAnimationsAsync } from '@angular/platform-browser/animations/async';
 import { provideHttpClient, withInterceptors } from '@angular/common/http';
 import { provideRouter, withHashLocation } from '@angular/router';
@@ -50,6 +51,13 @@ export const appConfig: ApplicationConfig = {
     // "Cerrar boleta" en Pesaje, pero afecta a CUALQUIER nz-modal.
     provideAnimationsAsync(),
     provideHttpClient(withInterceptors([authInterceptor])),
+    // Clave HMAC del QR de transferencia: se carga una vez al arrancar desde el
+    // servidor local. No se espera (void): si está caído o no hay clave, la app
+    // arranca igual y el QR sale sin firma.
+    provideQrClave(),
+    provideAppInitializer(() => {
+      void inject(QrClaveService).cargar();
+    }),
     provideNzI18n(es_ES),
     provideNzDateFnsAdapter(),
     provideNzIcons([

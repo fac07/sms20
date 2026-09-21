@@ -193,6 +193,22 @@ function validarMuestraFrutaLocal(boletaId: string): { status: number; error: st
   return null
 }
 
+// Clave de ConfiguracionLocal donde se guarda la clave HMAC del QR.
+const CLAVE_QR_CONFIG = 'QrClaveHmac'
+
+// El renderer corre en http://localhost:<puerto> (dev) o file:// (Origin
+// "null"); un fetch sin Origin (no-browser) también pasa. Cualquier otro
+// origen web es una página ajena intentando leer el servidor loopback.
+function esOrigenDelRenderer(origin: string | undefined): boolean {
+  if (origin === undefined || origin === 'null') return true
+  try {
+    const { protocol, hostname } = new URL(origin)
+    return protocol === 'file:' || (protocol === 'http:' && (hostname === 'localhost' || hostname === '127.0.0.1'))
+  } catch {
+    return false
+  }
+}
+
 /**
  * Servidor HTTP local (127.0.0.1) embebido en el proceso principal de
  * Electron. El renderer habla con este mismo contrato tanto si la báscula
@@ -248,6 +264,21 @@ export function startLocalServer(port: number, esDev: boolean): Server {
       basculaModoComunicacion: getConfig('BasculaModoComunicacion') || null,
       dev: esDev,
     })
+  })
+
+  // Clave HMAC (Base64) que firma el QR de transferencia. Se guarda en el
+  // aprovisionamiento (`AprovisionamientoDto.claveQr`) y este es el ÚNICO
+  // endpoint que la sirve: nunca va en /estado ni en logs. Terminales
+  // aprovisionadas antes de este campo no la tienen (no hay re-fetch; la
+  // rotación tampoco existe todavía) => `{ clave: null }` y QR sin firma.
+  // Como `cors()` de arriba es abierto, acá se rechaza cualquier Origin web
+  // ajeno: solo el renderer (localhost en dev, file:// => Origin "null") la lee.
+  app.get('/qr-clave', (req, res) => {
+    if (!esOrigenDelRenderer(req.headers.origin)) {
+      res.status(403).json({ error: 'Origen no permitido.' })
+      return
+    }
+    res.json({ clave: getConfig(CLAVE_QR_CONFIG) || null })
   })
 
   // Defaults de transferencia del Centro espejados por config-sync, para la
@@ -762,7 +793,11 @@ export function startLocalServer(port: number, esDev: boolean): Server {
       permiteIngresoManual?: boolean
       pesoMinimoManual?: number | null
       pesoMaximoManual?: number | null
+      claveQr?: string | null
     }
+
+    // Sin log ni eco en la respuesta: es un secreto compartido de la empresa.
+    if (dto.claveQr) setConfig(CLAVE_QR_CONFIG, dto.claveQr)
 
     setConfig('BasculaId', dto.basculaId)
     setConfig('BasculaCodigo', dto.basculaCodigo)

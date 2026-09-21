@@ -240,6 +240,12 @@ export class LocalServerService {
     return this.http.get<EstadoLocal>(`${LOCAL_SERVER_URL}/estado`);
   }
 
+  // Clave HMAC del QR guardada al aprovisionar; `{ clave: null }` si la
+  // terminal se aprovisionó antes de que existiera. Solo la consume QrClaveService.
+  obtenerQrClave(): Observable<{ clave: string | null }> {
+    return this.http.get<{ clave: string | null }>(`${LOCAL_SERVER_URL}/qr-clave`);
+  }
+
   obtenerPeso(): Observable<LecturaPeso> {
     return this.http.get<LecturaPeso>(`${LOCAL_SERVER_URL}/peso`);
   }

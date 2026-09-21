@@ -92,7 +92,10 @@ export type ResultadoDecodificacion =
   | { ok: true; payload: PayloadQr; firma: FirmaQr; parcial: boolean }
   | { ok: false; motivo: MotivoErrorQr };
 
-/** Provee la clave HMAC. Hoy null (la distribución vía config-sync es un PR posterior). */
+/**
+ * Provee la clave HMAC. El default es null (QR sin firma); app.config lo cablea
+ * a `QrClaveService` (clave entregada en el aprovisionamiento).
+ */
 export type QrClaveProvider = () => string | null;
 export const QR_CLAVE_PROVIDER = new InjectionToken<QrClaveProvider>('QR_CLAVE_PROVIDER', {
   providedIn: 'root',

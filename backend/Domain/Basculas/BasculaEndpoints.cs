@@ -178,7 +178,8 @@ public static class BasculaEndpoints
         // báscula Electron en su primer arranque (frontend/electron/local-server.ts,
         // POST /aprovisionamiento) para resolver su identidad y configuración
         // completas contra Central.
-        group.MapPost("/aprovisionar", async (AprovisionarBasculaRequest request, SmsDbContext db) =>
+        group.MapPost("/aprovisionar", async (AprovisionarBasculaRequest request, SmsDbContext db,
+            IConfiguration configuration, ILogger<Bascula> logger) =>
         {
             // IgnoreQueryFilters (design D6, PR3): identidad de terminal, sin
             // ClaimsPrincipal humano — el HasQueryFilter de Centro (2.4)
@@ -211,7 +212,10 @@ public static class BasculaEndpoints
                 bascula.Id, bascula.Codigo, bascula.Nombre, bascula.CentroId, bascula.TipoConexion,
                 bascula.Puerto, bascula.Ip, bascula.PuertoTcp, bascula.Velocidad, bascula.BitsDatos,
                 bascula.ModoComunicacion,
-                bascula.PermiteIngresoManual, bascula.PesoMinimoManual, bascula.PesoMaximoManual));
+                bascula.PermiteIngresoManual, bascula.PesoMinimoManual, bascula.PesoMaximoManual,
+                // Mismo posture que el resto de la respuesta: solo llega quien
+                // consume un código válido, vigente y de un solo uso.
+                QrClaveConfig.Obtener(configuration, logger)));
         });
 
         // Ping de conectividad — lo dispara la terminal Electron en cada ciclo
