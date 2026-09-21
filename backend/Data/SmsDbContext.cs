@@ -1,6 +1,7 @@
 using Microsoft.EntityFrameworkCore;
 using SmsBackend.Domain.Basculas;
 using SmsBackend.Domain.Boletas;
+using SmsBackend.Domain.Boletas.Marchamos;
 using SmsBackend.Domain.Boletas.Valores;
 using SmsBackend.Domain.Centros;
 using SmsBackend.Domain.Configuracion;
@@ -21,6 +22,8 @@ public class SmsDbContext(DbContextOptions<SmsDbContext> options, ICentroContext
     public DbSet<Bascula> Basculas => Set<Bascula>();
 
     public DbSet<Boleta> Boletas => Set<Boleta>();
+
+    public DbSet<BoletaMarchamoCambio> BoletaMarchamoCambios => Set<BoletaMarchamoCambio>();
 
     public DbSet<PreIngreso> PreIngresos => Set<PreIngreso>();
 

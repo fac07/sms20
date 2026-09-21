@@ -4,10 +4,12 @@ import {
   provideHttpClientTesting,
 } from '@angular/common/http/testing';
 import { TestBed } from '@angular/core/testing';
+import { signal } from '@angular/core';
 import { NzMessageService } from 'ng-zorro-antd/message';
 import { environment } from '../../../../environments/environment';
 import { BoletaDto } from '../../../api/boletas.service';
 import { DescargaService } from '../../../core/descarga.service';
+import { SesionService } from '../../../core/sesion.service';
 import { BoletasPage, etiquetaMarcaPreIngreso } from './boletas-page';
 
 // Ningún spec de este proyecto llama `fixture.detectChanges()` en páginas con
@@ -128,6 +130,45 @@ describe('BoletasPage — detalle de consulta (cola-transporte slice 6)', () => 
     expect(component.etiquetaMarca(component.detalle()!.marcaPreIngreso!)).toBe(
       'Pre-ingreso cancelado',
     );
+  });
+});
+
+describe('BoletasPage — Editar marchamos', () => {
+  let component: BoletasPage;
+  let httpMock: HttpTestingController;
+  const rol = signal<'Operador' | 'Supervisor' | 'Administrador' | null>('Supervisor');
+  const modoOriginal = environment.modo;
+
+  beforeEach(async () => {
+    (environment as { modo: typeof environment.modo }).modo = 'admin';
+    rol.set('Supervisor');
+    await TestBed.configureTestingModule({
+      imports: [BoletasPage],
+      providers: [
+        provideHttpClient(),
+        provideHttpClientTesting(),
+        { provide: NzMessageService, useValue: { error: vi.fn() } },
+        { provide: SesionService, useValue: { rol } },
+      ],
+    }).compileComponents();
+    component = TestBed.createComponent(BoletasPage).componentInstance;
+    httpMock = TestBed.inject(HttpTestingController);
+    httpMock.expectOne(BASE).flush([]);
+  });
+
+  afterEach(() => {
+    httpMock.verify();
+    (environment as { modo: typeof environment.modo }).modo = modoOriginal;
+  });
+
+  it('allows only closed tickets for Supervisor or Administrator', () => {
+    expect(component.canEditarMarchamos(boletaFixture({ estado: 'Cerrada' }))).toBe(true);
+    rol.set('Administrador');
+    expect(component.canEditarMarchamos(boletaFixture({ estado: 'Cerrada' }))).toBe(true);
+    rol.set('Operador');
+    expect(component.canEditarMarchamos(boletaFixture({ estado: 'Cerrada' }))).toBe(false);
+    rol.set('Supervisor');
+    expect(component.canEditarMarchamos(boletaFixture({ estado: 'EnTransito' }))).toBe(false);
   });
 });
 
