@@ -63,6 +63,7 @@
       <nz-option nzValue="Anulada" nzLabel="Anuladas"></nz-option>
       <nz-option nzValue="Reemitida" nzLabel="Reemitidas"></nz-option>
     </nz-select>
+    <button nz-button style="margin-left: 8px" (click)="exportar()">Exportar</button>
   </ng-template>
 
   <nz-table #tabla [nzData]="boletas()" [nzLoading]="cargando()" [nzPageSize]="10">
