@@ -7,6 +7,7 @@ using SmsBackend.Domain.Configuracion;
 using SmsBackend.Domain.Maestros;
 using SmsBackend.Domain.PreIngresos;
 using SmsBackend.Domain.Seguridad;
+using SmsBackend.Domain.TiposMovimiento;
 using SmsBackend.Domain.Transporte;
 
 namespace SmsBackend.Domain.Boletas;
@@ -266,12 +267,24 @@ public static class BoletaEndpoints
             return Results.Ok(dto);
         }).RequireAuthorization(Politicas.Operador);
 
-        // Re-emisión — el legado (NAT_Basculas: guard de CountEstaReEmitida +
-        // Update_Boleta_Boleta_Nueva_X_Anulacion) la modelaba como un link
-        // unidireccional puesto DESPUÉS de anular: la original queda Reemitida
-        // conservando su cadena de anulación intacta como historia, y la nueva
-        // nace como un pesaje propio (EnTransito, correlativo nuevo). Nunca se
-        // anula ni se borra nada acá — /anular sigue siendo prerrequisito.
+        // Re-emisión — COPIA CONGELADA de la boleta anulada. Evidencia:
+        //  - Manual: "Al dar RE Emisión Boleta se despliega una copia de los
+        //    datos de la boleta anulada, con un nuevo correlativo de boleta;
+        //    los pesos no son modificables, así como la fecha de emisión. Solo
+        //    se modifican datos permitidos por Auditoría (datos de calidad,
+        //    números de documentos, etc.)".
+        //  - Legacy NAT_Basculas (frmIngresosFruta, modo "BoletaEmision"):
+        //    carga Fecha_Boleta, pesos y fechas/horas de registro desde la
+        //    anulada, guarda la nueva con correlativo nuevo y enlaza original
+        //    -> nueva con Update_Boleta_Boleta_Nueva_X_Anulacion (guard
+        //    CountEstaReEmitida: una sola vez). Las transferencias (tipos 1-6)
+        //    NO se re-emiten ("No se puede Re-Emitir Una Transferencia"): usan
+        //    Trasiego, fuera de este endpoint.
+        // Acá: la nueva nace Cerrada con pesos/fechas/usuarios copiados; solo
+        // el correlativo y los valores (Valores explícitos reemplazan el
+        // conjunto copiado) son editables. La original pasa a Reemitida con
+        // su cadena de anulación intacta + huella (UsuarioReemision /
+        // FechaHoraReemision). /anular sigue siendo prerrequisito.
         group.MapPost("/{id:guid}/reemitir", async (
             Guid id, ReemitirBoletaRequest request, MotorCampos motor, SmsDbContext db, CancellationToken ct) =>
         {
@@ -286,33 +299,42 @@ public static class BoletaEndpoints
             {
                 return Results.Conflict("La boleta ya fue re-emitida.");
             }
+            if (string.IsNullOrWhiteSpace(request.UsuarioReemision))
+            {
+                return Results.BadRequest("UsuarioReemision es obligatorio para registrar la re-emisión.");
+            }
 
-            // El contexto operativo se hereda de la original — se arma el
-            // request sintético solo para reusar el mismo ValidarCreacion
-            // (correlativo único, báscula activa, tipo activo).
+            var tipoOriginal = await db.TiposMovimiento.AsNoTracking()
+                .FirstOrDefaultAsync(t => t.Id == original.TipoMovimientoId, ct);
+            if (tipoOriginal?.Direccion == DireccionMovimiento.Transferencia)
+            {
+                return Results.Conflict("Las transferencias no se re-emiten; use trasiego.");
+            }
+
+            // La copia nace Cerrada: solo un pesaje completo se puede congelar.
+            // Una boleta anulada en tránsito no tiene segundo pesaje.
+            if (original.PesoSalida is null || original.PesoNeto is null || original.FechaHoraSalida is null)
+            {
+                return Results.Conflict(
+                    "Solo se puede re-emitir una boleta anulada con el pesaje completo (salida y neto).");
+            }
+
+            // El contexto operativo y los pesos se heredan de la original — se
+            // arma el request sintético solo para reusar el mismo
+            // ValidarCreacion (correlativo único, báscula activa, tipo activo).
             var creacion = new CrearBoletaRequest(
                 request.NumeroBoleta, original.BasculaId, original.TipoMovimientoId,
-                request.PesoIngreso, request.OrigenPesoIngreso, request.UsuarioIngreso, false);
+                original.PesoIngreso, original.OrigenPesoIngreso, original.UsuarioIngreso, false);
             var error = await ValidarCreacion(creacion, db);
             if (error is not null) return error;
 
-            MotivoPesoManual? motivoIngreso = null;
-            if (request.OrigenPesoIngreso == OrigenPeso.Manual)
-            {
-                var bascula = await db.Basculas.AsNoTracking().FirstAsync(b => b.Id == original.BasculaId, ct);
-                var errorManual = ValidarPesoManualTipado(
-                    bascula, request.PesoIngreso,
-                    request.MotivoPesoManual, request.MotivoPesoManualDetalle, out motivoIngreso);
-                if (errorManual is not null) return errorManual;
-            }
-
-            // Valores explícitos del cliente → misma ruta que POST / (el motor
-            // valida contra el conjunto vigente a la nueva FechaHoraIngreso).
-            // Sin valores → copia de los almacenados en la original, que son
-            // un snapshot del pasado: se redirigen por FusionadoConId ANTES del
-            // motor, igual que la rama "Crear" de /sync, para que una boleta
-            // cuyo provisional fue fusionado después de pesada siga siendo
-            // re-emisible sin que el motor vea el id muerto.
+            // Valores explícitos del cliente → reemplazan el conjunto copiado y
+            // el motor los valida as-of la fecha CONGELADA de la boleta (no
+            // "ahora"). Sin valores → copia de los almacenados en la original,
+            // que son un snapshot del pasado: se redirigen por FusionadoConId
+            // ANTES del motor, igual que la rama "Crear" de /sync, para que una
+            // boleta cuyo provisional fue fusionado después de pesada siga
+            // siendo re-emisible sin que el motor vea el id muerto.
             var copiados = request.Valores is null;
             var valores = request.Valores ?? await db.BoletaValores.AsNoTracking()
                 .Where(v => v.BoletaId == original.Id)
@@ -334,41 +356,70 @@ public static class BoletaEndpoints
             }
 
             var errores = await motor.ValidarValoresAsync(
-                original.TipoMovimientoId, DateTime.UtcNow, valores, ct);
+                original.TipoMovimientoId, original.FechaHoraIngreso, valores, ct);
             if (errores.Count > 0)
             {
                 return Results.BadRequest(errores);
             }
 
+            // Copia congelada. PreIngresoId NO se copia: su índice único
+            // filtrado sigue atado a la original.
             var nueva = new Boleta
             {
                 Id = Guid.NewGuid(),
                 NumeroBoleta = request.NumeroBoleta,
                 BasculaId = original.BasculaId,
+                BasculaSalidaId = original.BasculaSalidaId,
                 TipoMovimientoId = original.TipoMovimientoId,
-                Estado = EstadoBoleta.EnTransito,
+                Estado = EstadoBoleta.Cerrada,
                 EstadoSync = EstadoSyncBoleta.SincronizadoCentral,
-                PesoIngreso = request.PesoIngreso,
-                OrigenPesoIngreso = request.OrigenPesoIngreso,
-                FechaHoraIngreso = DateTime.UtcNow,
-                UsuarioIngreso = request.UsuarioIngreso,
+                PesoIngreso = original.PesoIngreso,
+                PesoSalida = original.PesoSalida,
+                PesoNeto = original.PesoNeto,
+                OrigenPesoIngreso = original.OrigenPesoIngreso,
+                OrigenPesoSalida = original.OrigenPesoSalida,
+                FechaHoraIngreso = original.FechaHoraIngreso,
+                FechaHoraSalida = original.FechaHoraSalida,
+                UsuarioIngreso = original.UsuarioIngreso,
+                UsuarioSalida = original.UsuarioSalida,
                 CreadaOffline = false,
-                MotivoPesoManual = motivoIngreso,
-                MotivoPesoManualDetalle = request.OrigenPesoIngreso == OrigenPeso.Manual
-                    ? request.MotivoPesoManualDetalle
-                    : null,
+                MotivoPesoManual = original.MotivoPesoManual,
+                MotivoPesoManualDetalle = original.MotivoPesoManualDetalle,
             };
+
+            // Una transacción: o se crea la nueva (ya cerrada y válida) con su
+            // vínculo y la original pasa a Reemitida, o nada — nunca una
+            // Reemitida sin reemplazo ni un reemplazo huérfano/inválido. Los
+            // valores deben estar persistidos para que el motor valide el cierre.
+            await using var tx = await db.Database.BeginTransactionAsync(ct);
 
             db.Boletas.Add(nueva);
             await AgregarValoresAsync(db, nueva.Id, valores, ct);
 
             original.Estado = EstadoBoleta.Reemitida;
             original.BoletaReemplazoId = nueva.Id;
+            original.UsuarioReemision = request.UsuarioReemision;
+            original.FechaHoraReemision = DateTime.UtcNow;
 
-            // Un solo SaveChanges: o se crea la nueva con su vínculo y la
-            // original pasa a Reemitida, o nada — nunca una Reemitida sin
-            // reemplazo ni un reemplazo huérfano.
             await db.SaveChangesAsync(ct);
+
+            // Misma barrera que /cerrar (bloqueo duro): la Cerrada resultante
+            // debe cumplir los campos requeridos del conjunto as-of su fecha.
+            var erroresCierre = await motor.ValidarCierreAsync(nueva, ct);
+            if (erroresCierre.Count > 0)
+            {
+                await tx.RollbackAsync(ct);
+                return Results.UnprocessableEntity(erroresCierre);
+            }
+
+            var errorMuestra = await GuardiaMuestraFruta.ValidarCierreAsync(db, nueva.Id, ct);
+            if (errorMuestra is not null)
+            {
+                await tx.RollbackAsync(ct);
+                return errorMuestra;
+            }
+
+            await tx.CommitAsync(ct);
 
             var dto = await Proyectar(db.Boletas.AsNoTracking().Where(b => b.Id == nueva.Id), db)
                 .FirstAsync(ct);
@@ -1023,6 +1074,7 @@ public static class BoletaEndpoints
             b.FechaHoraIngreso, b.FechaHoraSalida,
             b.UsuarioIngreso, b.UsuarioSalida, b.UsuarioAnula, b.UsuarioAutoriza, b.MotivoAnulacion,
             b.FechaHoraAnulacion,
+            b.UsuarioReemision, b.FechaHoraReemision,
             b.BoletaReemplazoId, b.BoletaOrigenId, b.BasculaSalidaId, b.PreIngresoId,
             preingreso != null ? preingreso.NumeroEnvio : null,
             preingreso != null ? (EstadoPreIngreso?)preingreso.Estado : null,

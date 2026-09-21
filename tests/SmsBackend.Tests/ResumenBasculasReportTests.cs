@@ -139,8 +139,9 @@ public sealed class ResumenBasculasReportTests : IAsyncLifetime
             new SmsBackend.Domain.Boletas.AnularBoletaRequest("g", "s", "prueba"),
             TestData.Json)).EnsureSuccessStatusCode();
 
-        // Reemitida: cerrada, anulada y re-emitida (el original conserva
-        // salida+neto del cierre previo; la nueva está EnTransito).
+        // Reemitida: cerrada, anulada y re-emitida. La original queda excluida
+        // (Reemitida); la copia congelada nace Cerrada con la misma salida y
+        // neto, así que cuenta UNA vez en el mismo día.
         var reemitidaId = await BoletaCerradaEnAsync(e, dia, 333m);
         (await _client.PostAsJsonAsync(
             $"/api/boletas/{reemitidaId}/anular",
@@ -150,9 +151,7 @@ public sealed class ResumenBasculasReportTests : IAsyncLifetime
             new StringContent(System.Text.Json.JsonSerializer.Serialize(new
             {
                 numeroBoleta = TestData.NumeroBoleta(),
-                pesoIngreso = 900,
-                origenPesoIngreso = "Bascula",
-                usuarioIngreso = "tester",
+                usuarioReemision = "auditor1",
             }, TestData.Json), System.Text.Encoding.UTF8, "application/json"));
         respRe.EnsureSuccessStatusCode();
 
@@ -160,8 +159,8 @@ public sealed class ResumenBasculasReportTests : IAsyncLifetime
 
         var fila = Assert.Single(filas);
         Assert.Equal(e.BasculaId, fila.BasculaId);
-        Assert.Equal(1, fila.CantidadBoletas);
-        Assert.Equal(111m, fila.PesoNetoTotal);
+        Assert.Equal(2, fila.CantidadBoletas);
+        Assert.Equal(111m + 333m, fila.PesoNetoTotal);
         Assert.NotNull(valida);
     }
 
