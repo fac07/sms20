@@ -60,4 +60,10 @@ public record AprovisionamientoDto(
     string? ModoComunicacion,
     bool PermiteIngresoManual,
     decimal? PesoMinimoManual,
-    decimal? PesoMaximoManual);
+    decimal? PesoMaximoManual,
+    // Clave HMAC (Base64) del QR de transferencia, o null si el servidor no la
+    // tiene configurada. Solo viaja en esta respuesta de un solo uso — nunca en
+    // el endpoint anónimo de configuración del centro. Las terminales
+    // aprovisionadas ANTES de este campo no la tienen (no hay re-fetch) y
+    // siguen imprimiendo QR sin firma.
+    string? ClaveQr);
