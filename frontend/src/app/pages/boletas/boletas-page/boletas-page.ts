@@ -22,12 +22,16 @@ import {
 } from '../../../api/boletas.service';
 import { ValorCampoLeidoDto } from '../../../api/configuracion.models';
 import { etiquetaMotivoPesoManual } from '../../../api/motivo-peso-manual';
+import {
+  TipoMovimientoSeccionDto,
+  TiposMovimientoService,
+} from '../../../api/tipos-movimiento.service';
 import { SesionService } from '../../../core/sesion.service';
 import { BoletaPrint } from '../boleta-print/boleta-print';
 import { DescargaService } from '../../../core/descarga.service';
 import { EditarMarchamosDialog } from '../editar-marchamos-dialog/editar-marchamos-dialog';
 import { SemaforoTiempo } from '../semaforo/semaforo-tiempo';
-import { calcularTiempoTranscurridoMs } from '../semaforo/tiempo-transcurrido';
+import { calcularTiempoTranscurridoMs, parsearFechaBoleta } from '../semaforo/tiempo-transcurrido';
 import { agruparValores, valorLegible } from './valores-agrupados';
 import { construirNombreArchivoBoletas, generarCsvBoletas } from './exportar-csv';
 
@@ -43,6 +47,33 @@ const ETIQUETAS_MARCA_PREINGRESO: Record<string, string> = {
 /** Etiqueta legible de una `marcaPreIngreso`; cae al valor crudo si no se reconoce. */
 export function etiquetaMarcaPreIngreso(marca: string): string {
   return ETIQUETAS_MARCA_PREINGRESO[marca] ?? marca;
+}
+
+const SECCION_MARCHAMOS = 'marchamos';
+
+/**
+ * Espejo del gate central de edición de marchamos: el backend solo deja
+ * editar si el tipo de movimiento tiene asignada la sección estándar
+ * `marchamos` vigente a la fecha de INGRESO de la boleta
+ * (`vigenteDesde <= ingreso` y `vigenteHasta` nula o posterior al ingreso).
+ * `secciones` sin cargar (`undefined`) o ingreso ilegible → false: el botón se
+ * mantiene oculto hasta tener certeza, nunca muestra un error al usuario.
+ */
+export function tieneMarchamosVigente(
+  secciones: readonly TipoMovimientoSeccionDto[] | undefined,
+  fechaHoraIngreso: string,
+): boolean {
+  if (!secciones) return false;
+  const ingreso = parsearFechaBoleta(fechaHoraIngreso);
+  if (ingreso === null) return false;
+
+  return secciones.some((s) => {
+    if (s.seccionClave !== SECCION_MARCHAMOS) return false;
+    const desde = parsearFechaBoleta(s.vigenteDesde);
+    if (desde === null || ingreso < desde) return false;
+    const hasta = parsearFechaBoleta(s.vigenteHasta);
+    return hasta === null || ingreso < hasta;
+  });
 }
 
 @Component({
@@ -73,7 +104,16 @@ export class BoletasPage {
   private readonly message = inject(NzMessageService);
   private readonly descarga = inject(DescargaService);
   private readonly sesion = inject(SesionService);
+  private readonly tipos = inject(TiposMovimientoService);
   private readonly dialogoMarchamos = viewChild(EditarMarchamosDialog);
+
+  // Cache por tipo de movimiento de sus secciones asignadas (con históricas),
+  // consultada al abrir el detalle de una Cerrada: un tipo se pide UNA vez.
+  // En curso o fallida = el tipo no está acá → el botón queda oculto.
+  private readonly seccionesPorTipo = signal<
+    Readonly<Record<string, readonly TipoMovimientoSeccionDto[]>>
+  >({});
+  private readonly consultaEnCurso = new Set<string>();
 
   // Cadencia del reloj que avanza los semáforos de EnTransito: mismo tick de
   // 60 s que "Unidades en Tránsito" (manual: tiempos en vivo, nunca por segundo).
@@ -147,6 +187,28 @@ export class BoletasPage {
 
   verDetalle(boleta: BoletaDto): void {
     this.detalle.set(boleta);
+    // Solo las Cerradas pueden mostrar "Editar marchamos"; al abrirlas se
+    // asegura (una vez por tipo) tener sus secciones para resolver el gate.
+    if (boleta.estado === 'Cerrada') {
+      this.cargarSeccionesTipo(boleta.tipoMovimientoId);
+    }
+  }
+
+  /** Trae las secciones del tipo — con históricas — cacheando por `tipoMovimientoId`. */
+  private cargarSeccionesTipo(tipoId: string): void {
+    if (tipoId in this.seccionesPorTipo() || this.consultaEnCurso.has(tipoId)) {
+      return;
+    }
+    this.consultaEnCurso.add(tipoId);
+    this.tipos.listarSecciones(tipoId, true).subscribe({
+      next: (secciones) => {
+        this.consultaEnCurso.delete(tipoId);
+        this.seccionesPorTipo.update((prev) => ({ ...prev, [tipoId]: secciones }));
+      },
+      // Error de red: el botón queda oculto y NO rompemos ni toast al usuario
+      // (es una consulta de enriquecimiento, no la carga principal del detalle).
+      error: () => this.consultaEnCurso.delete(tipoId),
+    });
   }
 
   /** Gate de la sección "Cola de transporte" del detalle — hay enlace a un pre-ingreso. */
@@ -177,9 +239,17 @@ export class BoletasPage {
     );
   }
 
+  /**
+   * "Editar marchamos" = boleta Cerrada + rol Supervisor/Administrador + tipo
+   * con la sección `marchamos` vigente al ingreso (mismo gate que exige el
+   * backend; legacy solo mostraba el botón en ese caso). Con la consulta en
+   * curso o fallida el tipo no está en la cache → oculto.
+   */
   canEditarMarchamos(boleta: BoletaDto): boolean {
+    if (boleta.estado !== 'Cerrada') return false;
     const rol = this.sesion.rol();
-    return boleta.estado === 'Cerrada' && (rol === 'Supervisor' || rol === 'Administrador');
+    if (rol !== 'Supervisor' && rol !== 'Administrador') return false;
+    return tieneMarchamosVigente(this.seccionesPorTipo()[boleta.tipoMovimientoId], boleta.fechaHoraIngreso);
   }
 
   editarMarchamos(boleta: BoletaDto): void {

@@ -8,9 +8,14 @@ import { signal } from '@angular/core';
 import { NzMessageService } from 'ng-zorro-antd/message';
 import { environment } from '../../../../environments/environment';
 import { BoletaDto } from '../../../api/boletas.service';
+import { TipoMovimientoSeccionDto } from '../../../api/tipos-movimiento.service';
 import { DescargaService } from '../../../core/descarga.service';
 import { SesionService } from '../../../core/sesion.service';
-import { BoletasPage, etiquetaMarcaPreIngreso } from './boletas-page';
+import {
+  BoletasPage,
+  etiquetaMarcaPreIngreso,
+  tieneMarchamosVigente,
+} from './boletas-page';
 
 // Ningún spec de este proyecto llama `fixture.detectChanges()` en páginas con
 // `nz-icon` (ver pesaje-page.spec.ts): renderizar el template dispara un
@@ -20,6 +25,22 @@ import { BoletasPage, etiquetaMarcaPreIngreso } from './boletas-page';
 // consume (`tieneEnlacePreIngreso`, `detalle()`), no el HTML final.
 
 const BASE = `${environment.apiUrl}/api/boletas`;
+// URL que dispara `TiposMovimientoService.listarSecciones('tm-1', true)` — el
+// fixture de boletas usa siempre `tipoMovimientoId: 'tm-1'`.
+const SECCIONES_TM1 = `${environment.apiUrl}/api/tipos-movimiento/tm-1/secciones?incluirHistoricas=true`;
+
+function seccion(parcial: Partial<TipoMovimientoSeccionDto> = {}): TipoMovimientoSeccionDto {
+  return {
+    seccionId: 's-1',
+    seccionClave: 'marchamos',
+    seccionNombre: 'Marchamos',
+    requerida: false,
+    orden: 0,
+    vigenteDesde: '2020-01-01T00:00:00Z',
+    vigenteHasta: null,
+    ...parcial,
+  };
+}
 
 function boletaFixture(parcial: Partial<BoletaDto> = {}): BoletaDto {
   return {
@@ -104,6 +125,7 @@ describe('BoletasPage — detalle de consulta (cola-transporte slice 6)', () => 
       preIngresoEstado: 'Vinculado',
     });
     component.verDetalle(boleta);
+    httpMock.expectOne(SECCIONES_TM1).flush([]);
 
     expect(component.detalle()?.preIngresoNumeroEnvio).toBe('ENV-2024-001');
     expect(component.detalle()?.preIngresoEstado).toBe('Vinculado');
@@ -113,6 +135,7 @@ describe('BoletasPage — detalle de consulta (cola-transporte slice 6)', () => 
   it('sin pre-ingreso enlazado, el gate que controla la sección de cola de transporte es false', () => {
     const boleta = boletaFixture();
     component.verDetalle(boleta);
+    httpMock.expectOne(SECCIONES_TM1).flush([]);
 
     expect(component.tieneEnlacePreIngreso(boleta)).toBe(false);
   });
@@ -125,6 +148,7 @@ describe('BoletasPage — detalle de consulta (cola-transporte slice 6)', () => 
       marcaPreIngreso: 'PreIngresoCancelado',
     });
     component.verDetalle(boleta);
+    httpMock.expectOne(SECCIONES_TM1).flush([]);
 
     expect(component.detalle()?.marcaPreIngreso).toBe('PreIngresoCancelado');
     expect(component.etiquetaMarca(component.detalle()!.marcaPreIngreso!)).toBe(
@@ -161,7 +185,10 @@ describe('BoletasPage — Editar marchamos', () => {
     (environment as { modo: typeof environment.modo }).modo = modoOriginal;
   });
 
-  it('allows only closed tickets for Supervisor or Administrator', () => {
+  it('pide boleta Cerrada, rol Supervisor/Administrador y tipo con la sección marchamos vigente', () => {
+    component.verDetalle(boletaFixture({ estado: 'Cerrada' }));
+    httpMock.expectOne(SECCIONES_TM1).flush([seccion()]);
+
     expect(component.canEditarMarchamos(boletaFixture({ estado: 'Cerrada' }))).toBe(true);
     rol.set('Administrador');
     expect(component.canEditarMarchamos(boletaFixture({ estado: 'Cerrada' }))).toBe(true);
@@ -169,6 +196,123 @@ describe('BoletasPage — Editar marchamos', () => {
     expect(component.canEditarMarchamos(boletaFixture({ estado: 'Cerrada' }))).toBe(false);
     rol.set('Supervisor');
     expect(component.canEditarMarchamos(boletaFixture({ estado: 'EnTransito' }))).toBe(false);
+  });
+});
+
+describe('BoletasPage — gate del tipo con sección "marchamos" al abrir el detalle', () => {
+  let component: BoletasPage;
+  let httpMock: HttpTestingController;
+  const message = { error: vi.fn(), success: vi.fn() };
+  const rol = signal<'Operador' | 'Supervisor' | 'Administrador' | null>('Supervisor');
+  const modoOriginal = environment.modo;
+
+  beforeEach(async () => {
+    (environment as { modo: typeof environment.modo }).modo = 'admin';
+    rol.set('Supervisor');
+    message.error.mockReset();
+
+    await TestBed.configureTestingModule({
+      imports: [BoletasPage],
+      providers: [
+        provideHttpClient(),
+        provideHttpClientTesting(),
+        { provide: NzMessageService, useValue: message },
+        { provide: SesionService, useValue: { rol } },
+      ],
+    }).compileComponents();
+
+    component = TestBed.createComponent(BoletasPage).componentInstance;
+    httpMock = TestBed.inject(HttpTestingController);
+    httpMock.expectOne(BASE).flush([]);
+  });
+
+  afterEach(() => {
+    httpMock.verify();
+    (environment as { modo: typeof environment.modo }).modo = modoOriginal;
+  });
+
+  it('(a) tipo sin sección marchamos → el botón no aparece', () => {
+    component.verDetalle(boletaFixture());
+    httpMock.expectOne(SECCIONES_TM1).flush([seccion({ seccionClave: 'producto' })]);
+
+    expect(component.canEditarMarchamos(component.detalle()!)).toBe(false);
+  });
+
+  it('(b) sección vigente + Supervisor + Cerrada → el botón aparece', () => {
+    component.verDetalle(boletaFixture());
+    httpMock.expectOne(SECCIONES_TM1).flush([seccion()]);
+
+    expect(component.canEditarMarchamos(component.detalle()!)).toBe(true);
+  });
+
+  it('(c) sección desasignada antes del ingreso (vigenteHasta < ingreso) → no aparece', () => {
+    component.verDetalle(boletaFixture({ fechaHoraIngreso: '2026-09-10T12:00:00Z' }));
+    httpMock
+      .expectOne(SECCIONES_TM1)
+      .flush([seccion({ vigenteDesde: '2020-01-01T00:00:00Z', vigenteHasta: '2026-01-01T00:00:00Z' })]);
+
+    expect(component.canEditarMarchamos(component.detalle()!)).toBe(false);
+  });
+
+  it('(d) rol Operador → no aparece aunque el tipo tenga la sección', () => {
+    rol.set('Operador');
+    component.verDetalle(boletaFixture());
+    httpMock.expectOne(SECCIONES_TM1).flush([seccion()]);
+
+    expect(component.canEditarMarchamos(component.detalle()!)).toBe(false);
+  });
+
+  it('(e) consulta en curso → oculto, y aparece recién cuando la consulta resuelve', () => {
+    component.verDetalle(boletaFixture());
+    const req = httpMock.expectOne(SECCIONES_TM1);
+
+    expect(component.canEditarMarchamos(component.detalle()!)).toBe(false);
+
+    req.flush([seccion()]);
+    expect(component.canEditarMarchamos(component.detalle()!)).toBe(true);
+  });
+
+  it('(f) error de red al consultar secciones → oculto, sin toast y sin lanzar', () => {
+    component.verDetalle(boletaFixture());
+    httpMock.expectOne(SECCIONES_TM1).error(new ErrorEvent('network'));
+
+    expect(() => component.canEditarMarchamos(component.detalle()!)).not.toThrow();
+    expect(component.canEditarMarchamos(component.detalle()!)).toBe(false);
+    expect(message.error).not.toHaveBeenCalled();
+  });
+
+  it('(g) dos boletas del mismo tipo: UNA sola consulta de secciones (caché)', () => {
+    component.verDetalle(boletaFixture({ id: 'b-1' }));
+    httpMock.expectOne(SECCIONES_TM1).flush([seccion()]);
+
+    component.verDetalle(boletaFixture({ id: 'b-2' }));
+
+    httpMock.expectNone(SECCIONES_TM1);
+    expect(component.canEditarMarchamos(component.detalle()!)).toBe(true);
+  });
+});
+
+describe('tieneMarchamosVigente (puro — vigencia contra fecha de ingreso)', () => {
+  const ingreso = '2026-09-10T12:00:00Z';
+
+  it('sin datos cargados o sin sección marchamos, es false', () => {
+    expect(tieneMarchamosVigente(undefined, ingreso)).toBe(false);
+    expect(tieneMarchamosVigente([], ingreso)).toBe(false);
+    expect(tieneMarchamosVigente([seccion({ seccionClave: 'transporte' })], ingreso)).toBe(false);
+  });
+
+  it('vigenteDesde inclusivo; un ingreso anterior al inicio no cuenta', () => {
+    expect(tieneMarchamosVigente([seccion({ vigenteDesde: '2026-09-10T12:00:00Z' })], ingreso)).toBe(true);
+    expect(tieneMarchamosVigente([seccion({ vigenteDesde: '2026-09-10T12:00:01Z' })], ingreso)).toBe(false);
+  });
+
+  it('vigenteHasta nula es abierta; igual o anterior al ingreso no cuenta', () => {
+    expect(tieneMarchamosVigente([seccion({ vigenteHasta: '2026-09-10T12:00:00Z' })], ingreso)).toBe(false);
+    expect(tieneMarchamosVigente([seccion({ vigenteHasta: '2026-09-10T12:00:01Z' })], ingreso)).toBe(true);
+  });
+
+  it('fecha de ingreso ilegible → false (no revienta)', () => {
+    expect(tieneMarchamosVigente([seccion()], 'no-fecha')).toBe(false);
   });
 });
 
