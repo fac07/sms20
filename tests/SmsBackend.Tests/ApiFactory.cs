@@ -123,6 +123,7 @@ public sealed class ApiFactory : WebApplicationFactory<Program>, IAsyncLifetime
         // ExecuteDeleteAsync borren CERO filas en vez de todas, y la limpieza
         // entre tests dejaría de funcionar en silencio.
         await db.PreIngresos.IgnoreQueryFilters().ExecuteDeleteAsync();
+        await db.BoletaMarchamoCambios.ExecuteDeleteAsync();
         await db.BoletaValores.ExecuteDeleteAsync();
         await db.Boletas.IgnoreQueryFilters().ExecuteDeleteAsync();
     }

@@ -139,6 +139,7 @@ app.MapMaestros();
 app.MapBasculas();
 app.MapCentros();
 app.MapBoletas();
+app.MapBoletaMarchamos();
 app.MapPreIngresos();
 app.MapResumenBasculas();
 app.MapVinculosPilotoTransportista();
