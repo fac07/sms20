@@ -1,0 +1,48 @@
+<nz-card
+  [nzTitle]="'Unidades en Tránsito'"
+  [nzExtra]="extraTpl"
+  [nzBodyStyle]="{ padding: '0' }"
+>
+  <ng-template #extraTpl>
+    <button nz-button nzType="primary" (click)="refrescar()">Actualizar</button>
+  </ng-template>
+
+  @if (error()) {
+    <div class="estado" role="alert">
+      <p class="estado__texto">
+        No se pudo cargar el listado de unidades en tránsito. Revisá la conexión
+        con el servidor e intentá de nuevo.
+      </p>
+      <button nz-button (click)="refrescar()">Reintentar</button>
+    </div>
+  } @else if (vacio()) {
+    <div class="estado">
+      <p class="estado__texto">No hay unidades en tránsito.</p>
+    </div>
+  } @else {
+    <nz-table #tabla [nzData]="unidades()" [nzLoading]="cargando()" [nzPageSize]="15">
+      <thead>
+        <tr>
+          <th>N° Boleta</th>
+          <th>Tipo movimiento</th>
+          <th>Placa / Unidad</th>
+          <th>Piloto</th>
+          <th>Fecha ingreso a báscula</th>
+          <th>Tiempo transcurrido</th>
+        </tr>
+      </thead>
+      <tbody>
+        @for (u of tabla.data; track u.boleta.id) {
+          <tr>
+            <td class="codigo">{{ u.boleta.numeroBoleta }}</td>
+            <td>{{ u.boleta.tipoMovimientoNombre ?? '—' }}</td>
+            <td>{{ placaUnidad(u.boleta) }}</td>
+            <td>{{ nombrePiloto(u.boleta) }}</td>
+            <td>{{ u.boleta.fechaHoraIngreso | date: 'medium' }}</td>
+            <td class="tiempo"><app-semaforo-tiempo [duracionMs]="u.duracionMs" /></td>
+          </tr>
+        }
+      </tbody>
+    </nz-table>
+  }
+</nz-card>

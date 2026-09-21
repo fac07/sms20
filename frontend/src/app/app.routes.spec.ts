@@ -34,6 +34,12 @@ describe('app.routes — coherencia de modo entre rutas y nav', () => {
     expect(modosDeRuta('boletas')).toContain('bascula');
   });
 
+  it('unidades-en-transito está en ambos modos con piso Operador (igual que boletas)', () => {
+    const ruta = hijosDelShell().find((r) => r.path === 'unidades-en-transito');
+    expect(modosDeRuta('unidades-en-transito')).toEqual(['bascula', 'admin']);
+    expect(ruta?.data?.['rolMinimo']).toBe('Operador');
+  });
+
   it('el CRUD de básculas es solo admin', () => {
     expect(modosDeRuta('basculas')).toEqual(['admin']);
   });
