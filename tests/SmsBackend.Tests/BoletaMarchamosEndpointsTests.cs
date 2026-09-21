@@ -91,6 +91,32 @@ public sealed class BoletaMarchamosEndpointsTests : IAsyncLifetime
     }
 
     [Fact]
+    public async Task Agregar_si_marchamos_no_aplica_devuelve_409()
+    {
+        var boletaId = await CrearBoletaAsync(aplicaMarchamos: false);
+        var actual = await LeerAsync(boletaId);
+
+        var response = await AgregarAsync(boletaId, actual.RowVersion, "M-100", null, "Nuevo");
+
+        Assert.Equal(HttpStatusCode.Conflict, response.StatusCode);
+        Assert.Contains("no aplica", await response.Content.ReadAsStringAsync());
+    }
+
+    [Fact]
+    public async Task Rectificar_si_marchamos_no_aplica_devuelve_409()
+    {
+        var boletaId = await CrearBoletaAsync(aplicaMarchamos: false);
+        await AgregarMarchamoHistoricoAsync(boletaId);
+        var actual = await LeerAsync(boletaId);
+
+        var response = await RectificarAsync(
+            boletaId, 0, actual.RowVersion, "M-101", true, "Corregido", "Error de digitación");
+
+        Assert.Equal(HttpStatusCode.Conflict, response.StatusCode);
+        Assert.Contains("no aplica", await response.Content.ReadAsStringAsync());
+    }
+
+    [Fact]
     public async Task Operador_no_puede_editar_marchamos()
     {
         var boletaId = await CrearBoletaAsync();
@@ -165,7 +191,8 @@ public sealed class BoletaMarchamosEndpointsTests : IAsyncLifetime
         Assert.Single((await LeerAsync(boletaId)).Marchamos);
     }
 
-    private async Task<Guid> CrearBoletaAsync(string? numero = null, bool cerrar = true)
+    private async Task<Guid> CrearBoletaAsync(
+        string? numero = null, bool cerrar = true, bool aplicaMarchamos = true)
     {
         var escenario = await TestData.NuevoEscenarioAsync(_client);
         Guid seccionId;
@@ -180,8 +207,9 @@ public sealed class BoletaMarchamosEndpointsTests : IAsyncLifetime
                 .ToDictionaryAsync(c => c.Clave, c => c.Id);
         }
 
-        await TestData.AsignarSeccionesAsync(
-            _client, escenario.TipoMovimientoId, new AsignacionSeccionRequest(seccionId, false, 1));
+        if (aplicaMarchamos)
+            await TestData.AsignarSeccionesAsync(
+                _client, escenario.TipoMovimientoId, new AsignacionSeccionRequest(seccionId, false, 1));
 
         var valores = numero is null
             ? Array.Empty<ValorCampoDto>()
@@ -195,6 +223,24 @@ public sealed class BoletaMarchamosEndpointsTests : IAsyncLifetime
         var boleta = await TestData.CrearBoletaAsync(_client, escenario, valores);
         if (cerrar) (await TestData.CerrarAsync(_client, boleta.Id)).EnsureSuccessStatusCode();
         return boleta.Id;
+    }
+
+    private async Task AgregarMarchamoHistoricoAsync(Guid boletaId)
+    {
+        using var scope = _factory.CreateScope();
+        var db = scope.ServiceProvider.GetRequiredService<SmsDbContext>();
+        var seccionId = await db.Secciones.Where(s => s.Clave == "marchamos").Select(s => s.Id).SingleAsync();
+        var campo = await db.Campos.SingleAsync(
+            c => c.SeccionId == seccionId && c.Clave == "numero" && c.VigenteHasta == null);
+        db.BoletaValores.Add(new BoletaValorCampo
+        {
+            BoletaId = boletaId,
+            CampoId = campo.Id,
+            SeccionId = campo.SeccionId,
+            Ocurrencia = 0,
+            ValorTexto = "M-100",
+        });
+        await db.SaveChangesAsync();
     }
 
     private async Task<MarchamosResponse> LeerAsync(Guid boletaId)

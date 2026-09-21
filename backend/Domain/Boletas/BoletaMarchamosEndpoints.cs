@@ -42,7 +42,7 @@ public static class BoletaMarchamosEndpoints
             var campos = await ResolverCamposAsync(db, boleta!, ct);
             if (campos is null)
             {
-                return Results.BadRequest("La sección marchamos no aplica a esta boleta.");
+                return Results.Conflict("La sección marchamos no aplica a esta boleta.");
             }
 
             var numero = Normalizar(request.Numero);
@@ -94,7 +94,7 @@ public static class BoletaMarchamosEndpoints
             var filas = await FilasOcurrenciaAsync(db, id, ocurrencia, ct);
             var campos = filas.ToDictionary(x => x.Campo.Clave, x => x.Campo);
             var historicos = await ResolverCamposAsync(db, boleta!, ct);
-            if (historicos is null) return Results.BadRequest("La sección marchamos no aplica a esta boleta.");
+            if (historicos is null) return Results.Conflict("La sección marchamos no aplica a esta boleta.");
             foreach (var par in historicos) campos.TryAdd(par.Key, par.Value);
 
             var numero = Normalizar(request.Numero);
