@@ -1,0 +1,19 @@
+<span
+  class="semaforo"
+  role="img"
+  [attr.aria-label]="tooltip()"
+  [class.semaforo--verde]="estado() === 'verde'"
+  [class.semaforo--amarillo]="estado() === 'amarillo'"
+  [class.semaforo--rojo]="estado() === 'rojo'"
+  nz-tooltip
+  [nzTooltipTitle]="tooltip()"
+>
+  <span
+    class="semaforo__icono"
+    nz-icon
+    [nzType]="icono().tipo"
+    [nzTheme]="icono().tema"
+    aria-hidden="true"
+  ></span>
+  <span class="semaforo__texto">{{ texto() }}</span>
+</span>

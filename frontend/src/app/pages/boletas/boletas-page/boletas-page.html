@@ -77,6 +77,7 @@
         <th nzAlign="right">Peso neto</th>
         <th>Estado</th>
         <th>Fecha ingreso</th>
+        <th>Tiempo transcurrido</th>
         <th></th>
       </tr>
     </thead>
@@ -113,6 +114,13 @@
             }
           </td>
           <td>{{ b.fechaHoraIngreso | date: 'short' }}</td>
+          <td class="tiempo">
+            @if (muestraSemaforo(b)) {
+              <app-semaforo-tiempo [duracionMs]="duracionMs(b)" />
+            } @else {
+              <span class="sin-semaforo">—</span>
+            }
+          </td>
           <td class="acciones">
             <button
               nz-button

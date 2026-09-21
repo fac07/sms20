@@ -1,5 +1,5 @@
 import { CommonModule } from '@angular/common';
-import { Component, computed, inject, signal } from '@angular/core';
+import { Component, DestroyRef, computed, inject, signal } from '@angular/core';
 import { FormsModule } from '@angular/forms';
 import { NzButtonModule } from 'ng-zorro-antd/button';
 import { NzCardModule } from 'ng-zorro-antd/card';
@@ -23,6 +23,8 @@ import {
 import { ValorCampoLeidoDto } from '../../../api/configuracion.models';
 import { etiquetaMotivoPesoManual } from '../../../api/motivo-peso-manual';
 import { BoletaPrint } from '../boleta-print/boleta-print';
+import { SemaforoTiempo } from '../semaforo/semaforo-tiempo';
+import { calcularTiempoTranscurridoMs } from '../semaforo/tiempo-transcurrido';
 import { agruparValores, valorLegible } from './valores-agrupados';
 
 /**
@@ -44,6 +46,7 @@ export function etiquetaMarcaPreIngreso(marca: string): string {
     CommonModule,
     BoletaPrint,
     FormsModule,
+    SemaforoTiempo,
     NzButtonModule,
     NzCardModule,
     NzDescriptionsModule,
@@ -64,11 +67,16 @@ export class BoletasPage {
   private readonly service = inject(BoletasService);
   private readonly message = inject(NzMessageService);
 
+  // Cadencia del reloj que avanza los semáforos de EnTransito: mismo tick de
+  // 60 s que "Unidades en Tránsito" (manual: tiempos en vivo, nunca por segundo).
+  private static readonly TICK_SEMAFORO_MS = 60_000;
+
   readonly boletas = signal<BoletaDto[]>([]);
   readonly cargando = signal(false);
   readonly filtroEstado = signal<EstadoBoleta | null>(null);
   readonly filtroOrigenPeso = signal<OrigenPeso | null>(null);
   readonly detalle = signal<BoletaDto | null>(null);
+  readonly ahora = signal(new Date());
 
   // Overlay de impresión: el dto ya actualizado que devuelve /reimprimir
   // (contador + último usuario/fecha incluidos) — sin fetch extra.
@@ -94,6 +102,13 @@ export class BoletasPage {
 
   constructor() {
     this.cargar();
+    // Reloj del semáforo: avanza `ahora` cada minuto para que las boletas en
+    // tránsito se re-pinten solas. `DestroyRef` lo apaga con el componente.
+    const relojId = setInterval(
+      () => this.ahora.set(new Date()),
+      BoletasPage.TICK_SEMAFORO_MS,
+    );
+    inject(DestroyRef).onDestroy(() => clearInterval(relojId));
   }
 
   private cargar(): void {
@@ -138,6 +153,20 @@ export class BoletasPage {
   /** El botón "Reimprimir" solo aplica a boletas que ya existieron en papel. */
   canReimprimir(boleta: BoletaDto): boolean {
     return boleta.estado === 'Cerrada' || boleta.estado === 'Reemitida';
+  }
+
+  /** El semáforo de tiempo transcurrido solo aplica a EnTransito y Cerrada. */
+  muestraSemaforo(boleta: BoletaDto): boolean {
+    return boleta.estado === 'EnTransito' || boleta.estado === 'Cerrada';
+  }
+
+  /** Milisegundos de la boleta al reloj de la página (salida si existe, si no `ahora`). */
+  duracionMs(boleta: BoletaDto): number {
+    return calcularTiempoTranscurridoMs(
+      boleta.fechaHoraIngreso,
+      boleta.fechaHoraSalida,
+      this.ahora(),
+    );
   }
 
   // Registra la reimpresión en central (contador + auditoría) y usa el MISMO

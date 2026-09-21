@@ -15,6 +15,7 @@ import {
   AppstoreOutline,
   BarChartOutline,
   CheckCircleFill,
+  CloseCircleFill,
   DashboardOutline,
   DatabaseOutline,
   DeleteOutline,
