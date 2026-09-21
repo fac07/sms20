@@ -23,9 +23,11 @@ import {
 import { ValorCampoLeidoDto } from '../../../api/configuracion.models';
 import { etiquetaMotivoPesoManual } from '../../../api/motivo-peso-manual';
 import { BoletaPrint } from '../boleta-print/boleta-print';
+import { DescargaService } from '../../../core/descarga.service';
 import { SemaforoTiempo } from '../semaforo/semaforo-tiempo';
 import { calcularTiempoTranscurridoMs } from '../semaforo/tiempo-transcurrido';
 import { agruparValores, valorLegible } from './valores-agrupados';
+import { construirNombreArchivoBoletas, generarCsvBoletas } from './exportar-csv';
 
 /**
  * `MarcaPreIngreso` central (backend/Domain/Boletas/MarcaPreIngreso.cs) — marca
@@ -66,6 +68,7 @@ export function etiquetaMarcaPreIngreso(marca: string): string {
 export class BoletasPage {
   private readonly service = inject(BoletasService);
   private readonly message = inject(NzMessageService);
+  private readonly descarga = inject(DescargaService);
 
   // Cadencia del reloj que avanza los semáforos de EnTransito: mismo tick de
   // 60 s que "Unidades en Tránsito" (manual: tiempos en vivo, nunca por segundo).
@@ -184,6 +187,20 @@ export class BoletasPage {
 
   descartarImpresion(): void {
     this.boletaParaImprimir.set(null);
+  }
+
+  /**
+   * Descarga el listado ACTUALMENTE filtrado (los filtros de estado/origen ya
+   * están aplicados en la señal `boletas()` porque re-piden al backend). Vacío
+   * = avisa y no baja nada.
+   */
+  exportar(): void {
+    const boletas = this.boletas();
+    if (boletas.length === 0) {
+      this.message.error('No hay boletas para exportar.');
+      return;
+    }
+    this.descarga.csv(construirNombreArchivoBoletas(), generarCsvBoletas(boletas));
   }
 
   // Vista de solo lectura de un valor de campo configurable — la lógica vive

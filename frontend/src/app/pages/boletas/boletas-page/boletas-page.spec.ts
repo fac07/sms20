@@ -7,6 +7,7 @@ import { TestBed } from '@angular/core/testing';
 import { NzMessageService } from 'ng-zorro-antd/message';
 import { environment } from '../../../../environments/environment';
 import { BoletaDto } from '../../../api/boletas.service';
+import { DescargaService } from '../../../core/descarga.service';
 import { BoletasPage, etiquetaMarcaPreIngreso } from './boletas-page';
 
 // Ningún spec de este proyecto llama `fixture.detectChanges()` en páginas con
@@ -278,5 +279,64 @@ describe('BoletasPage — columna "Tiempo transcurrido" con semáforo', () => {
     const b = boletaFixture({ estado: 'EnTransito', fechaHoraIngreso: 'no-fecha' as string });
 
     expect(Number.isNaN(component.duracionMs(b))).toBe(true);
+  });
+});
+
+describe('BoletasPage — exportar CSV del listado filtrado', () => {
+  let component: BoletasPage;
+  let httpMock: HttpTestingController;
+  const message = { error: vi.fn(), success: vi.fn() };
+  // Fake de la única parte con DOM: se assertion nombre y contenido, no el click.
+  const descarga = { csv: vi.fn() };
+  const modoOriginal = environment.modo;
+
+  beforeEach(async () => {
+    (environment as { modo: typeof environment.modo }).modo = 'admin';
+    message.error.mockReset();
+    descarga.csv.mockReset();
+
+    await TestBed.configureTestingModule({
+      imports: [BoletasPage],
+      providers: [
+        provideHttpClient(),
+        provideHttpClientTesting(),
+        { provide: NzMessageService, useValue: message },
+        { provide: DescargaService, useValue: descarga },
+      ],
+    }).compileComponents();
+
+    component = TestBed.createComponent(BoletasPage).componentInstance;
+    httpMock = TestBed.inject(HttpTestingController);
+    httpMock.expectOne(BASE).flush([]);
+  });
+
+  afterEach(() => {
+    httpMock.verify();
+    (environment as { modo: typeof environment.modo }).modo = modoOriginal;
+  });
+
+  it('exporta exactamente el listado filtrado vigente, con BOM y nombre boletas-aaaa-mm-dd.csv', () => {
+    // Filtro activo: solo EnTransito. La descarga debe llevar ESA lista.
+    component.cambiarFiltro('EnTransito');
+    httpMock
+      .expectOne(`${BASE}?estado=EnTransito`)
+      .flush([boletaFixture({ numeroBoleta: 'B-1', estado: 'EnTransito' })]);
+
+    component.exportar();
+
+    expect(descarga.csv).toHaveBeenCalledTimes(1);
+    const [nombre, csv] = descarga.csv.mock.calls[0];
+    expect(nombre).toMatch(/^boletas-\d{4}-\d{2}-\d{2}\.csv$/);
+    expect(csv.startsWith('\uFEFF')).toBe(true);
+    expect(csv).toContain('B-1');
+    // La boleta excluida por el filtro no puede aparecer.
+    expect(csv).not.toContain('IF-B01-000001');
+  });
+
+  it('con el listado vacío avisa y no descarga nada', () => {
+    component.exportar();
+
+    expect(descarga.csv).not.toHaveBeenCalled();
+    expect(message.error).toHaveBeenCalledWith('No hay boletas para exportar.');
   });
 });
