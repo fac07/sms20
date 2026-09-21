@@ -1,5 +1,5 @@
 import { CommonModule } from '@angular/common';
-import { Component, DestroyRef, computed, inject, signal } from '@angular/core';
+import { Component, DestroyRef, computed, inject, signal, viewChild } from '@angular/core';
 import { FormsModule } from '@angular/forms';
 import { NzButtonModule } from 'ng-zorro-antd/button';
 import { NzCardModule } from 'ng-zorro-antd/card';
@@ -22,8 +22,10 @@ import {
 } from '../../../api/boletas.service';
 import { ValorCampoLeidoDto } from '../../../api/configuracion.models';
 import { etiquetaMotivoPesoManual } from '../../../api/motivo-peso-manual';
+import { SesionService } from '../../../core/sesion.service';
 import { BoletaPrint } from '../boleta-print/boleta-print';
 import { DescargaService } from '../../../core/descarga.service';
+import { EditarMarchamosDialog } from '../editar-marchamos-dialog/editar-marchamos-dialog';
 import { SemaforoTiempo } from '../semaforo/semaforo-tiempo';
 import { calcularTiempoTranscurridoMs } from '../semaforo/tiempo-transcurrido';
 import { agruparValores, valorLegible } from './valores-agrupados';
@@ -47,6 +49,7 @@ export function etiquetaMarcaPreIngreso(marca: string): string {
   imports: [
     CommonModule,
     BoletaPrint,
+    EditarMarchamosDialog,
     FormsModule,
     SemaforoTiempo,
     NzButtonModule,
@@ -69,6 +72,8 @@ export class BoletasPage {
   private readonly service = inject(BoletasService);
   private readonly message = inject(NzMessageService);
   private readonly descarga = inject(DescargaService);
+  private readonly sesion = inject(SesionService);
+  private readonly dialogoMarchamos = viewChild(EditarMarchamosDialog);
 
   // Cadencia del reloj que avanza los semáforos de EnTransito: mismo tick de
   // 60 s que "Unidades en Tránsito" (manual: tiempos en vivo, nunca por segundo).
@@ -170,6 +175,15 @@ export class BoletasPage {
       boleta.fechaHoraSalida,
       this.ahora(),
     );
+  }
+
+  canEditarMarchamos(boleta: BoletaDto): boolean {
+    const rol = this.sesion.rol();
+    return boleta.estado === 'Cerrada' && (rol === 'Supervisor' || rol === 'Administrador');
+  }
+
+  editarMarchamos(boleta: BoletaDto): void {
+    this.dialogoMarchamos()?.abrir({ id: boleta.id, numeroBoleta: boleta.numeroBoleta });
   }
 
   // Registra la reimpresión en central (contador + auditoría) y usa el MISMO

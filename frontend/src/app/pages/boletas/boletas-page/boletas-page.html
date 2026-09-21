@@ -160,6 +160,11 @@
 >
   <ng-container *nzModalContent>
     @if (detalle(); as d) {
+      @if (canEditarMarchamos(d)) {
+        <!-- Central-only operation, like reprinting; Electron Outbox support is intentionally deferred. -->
+        <button nz-button nzType="primary" (click)="editarMarchamos(d)">Editar marchamos</button>
+      }
+
       <nz-descriptions nzTitle="Movimiento" [nzColumn]="2" nzBordered [nzSize]="'small'">
         <nz-descriptions-item nzTitle="Báscula">{{ d.basculaCodigo }}</nz-descriptions-item>
         <nz-descriptions-item nzTitle="Tipo de movimiento">{{ d.tipoMovimientoNombre }}</nz-descriptions-item>
@@ -256,6 +261,8 @@
     }
   </ng-container>
 </nz-modal>
+
+<app-editar-marchamos-dialog />
 
 @if (boletaParaImprimir(); as boleta) {
   <app-boleta-print [boleta]="boleta" (cerrar)="descartarImpresion()" />
