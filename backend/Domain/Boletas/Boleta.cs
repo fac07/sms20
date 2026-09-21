@@ -69,6 +69,16 @@ public class Boleta
     /// <summary>Instante de la anulación — null mientras la boleta no está anulada.</summary>
     public DateTime? FechaHoraAnulacion { get; set; }
 
+    /// <summary>
+    /// UPN plano de quien re-emitió la boleta — se fija sobre la ORIGINAL
+    /// (mismo patrón que <see cref="UsuarioAnula"/>), no sobre la copia nueva.
+    /// Null mientras la boleta no fue re-emitida.
+    /// </summary>
+    public string? UsuarioReemision { get; set; }
+
+    /// <summary>Instante UTC de la re-emisión — se fija en la original junto con <see cref="UsuarioReemision"/>.</summary>
+    public DateTime? FechaHoraReemision { get; set; }
+
     // --- Reimpresión (mejora sobre el legacy: reimprimir era libre y sin huella) ---
 
     /// <summary>

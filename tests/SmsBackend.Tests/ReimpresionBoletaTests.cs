@@ -100,9 +100,7 @@ public sealed class ReimpresionBoletaTests : IAsyncLifetime
             new StringContent(System.Text.Json.JsonSerializer.Serialize(new
             {
                 numeroBoleta = TestData.NumeroBoleta(),
-                pesoIngreso = 900,
-                origenPesoIngreso = "Bascula",
-                usuarioIngreso = "tester",
+                usuarioReemision = "auditor1",
             }, TestData.Json), System.Text.Encoding.UTF8, "application/json"));
         respRe.EnsureSuccessStatusCode();
 

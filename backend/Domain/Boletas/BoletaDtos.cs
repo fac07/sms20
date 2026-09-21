@@ -26,6 +26,9 @@ public record BoletaDto(
     string? UsuarioAutoriza,
     string? MotivoAnulacion,
     DateTime? FechaHoraAnulacion,
+    // Huella de la re-emisión — solo la ORIGINAL (Reemitida) la trae.
+    string? UsuarioReemision,
+    DateTime? FechaHoraReemision,
     Guid? BoletaReemplazoId,
     Guid? BoletaOrigenId,
     Guid? BasculaSalidaId,
@@ -97,24 +100,20 @@ public record AnularBoletaRequest(
 public record ReimprimirBoletaRequest(string Usuario);
 
 /// <summary>
-/// Re-emisión de una boleta anulada — pesaje nuevo con correlativo propio.
-/// El contexto operativo (báscula, tipo de movimiento) NO se pide: se hereda
-/// de la reemplazada. Si <see cref="Valores"/> es null se copian los valores
-/// almacenados en la original (el equivalente server-side del prefill del
-/// legacy); si viene, manda el pedido. El vínculo es unidireccional
-/// (<c>BoletaReemplazoId</c> en la original) — <c>BoletaOrigenId</c> queda
-/// reservado para recepción de transferencia (esquema v7).
+/// Re-emisión de una boleta anulada — COPIA CONGELADA con correlativo nuevo.
+/// Báscula, tipo de movimiento, pesos, orígenes, fechas y usuarios NO se
+/// piden: se copian de la anulada (los pesos y la fecha de emisión no son
+/// modificables). Si <see cref="Valores"/> es null se copian los valores
+/// almacenados en la original; si viene, reemplaza el conjunto completo (los
+/// datos que Auditoría permite corregir: calidad, números de documento, etc.).
+/// <see cref="UsuarioReemision"/> queda como huella en la original. El vínculo
+/// es unidireccional (<c>BoletaReemplazoId</c> en la original) —
+/// <c>BoletaOrigenId</c> queda reservado para recepción de transferencia.
 /// </summary>
 public record ReemitirBoletaRequest(
     string NumeroBoleta,
-    decimal PesoIngreso,
-    OrigenPeso OrigenPesoIngreso,
-    string UsuarioIngreso,
-    IReadOnlyList<ValorCampoDto>? Valores = null,
-    // Mismo contrato que CrearBoletaRequest: string crudo para devolver 422
-    // (no 400) ante un valor fuera de catálogo.
-    string? MotivoPesoManual = null,
-    string? MotivoPesoManualDetalle = null);
+    string UsuarioReemision,
+    IReadOnlyList<ValorCampoDto>? Valores = null);
 
 /// <summary>
 /// Evento del Outbox local (Electron/SQLite) que el dispatcher reenvía al

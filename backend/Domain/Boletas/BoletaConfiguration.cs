@@ -48,6 +48,7 @@ public class BoletaConfiguration : IEntityTypeConfiguration<Boleta>
         builder.Property(b => b.UsuarioSalida).HasMaxLength(150);
         builder.Property(b => b.UsuarioAnula).HasMaxLength(150);
         builder.Property(b => b.UsuarioAutoriza).HasMaxLength(150);
+        builder.Property(b => b.UsuarioReemision).HasMaxLength(150);
 
         builder.Property(b => b.MotivoAnulacion).HasMaxLength(500);
 
