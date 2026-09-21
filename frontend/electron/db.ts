@@ -587,7 +587,27 @@ export function guardarConfigIngresoManual(
 export function inicializarEsquemaLocal(database: Database.Database): void {
   database.exec(SQL_ESQUEMA_LOCAL)
   aplicarReshapeEsquemaLocal(database)
+  asegurarIndiceBoletaOrigen(database)
   sembrarConfiguracionInicial(database)
+}
+
+/**
+ * Índice parcial de `Boleta.BoletaOrigenId` (recepción de transferencia NAT: la
+ * búsqueda "¿ya recibí este origen?" corre en cada recepción). Vive fuera de
+ * `aplicarReshapeEsquemaLocal` a propósito: ese guard sale temprano cuando la
+ * versión ya está sellada, y este índice tiene que llegar también a las
+ * instalaciones existentes. Es `IF NOT EXISTS` (idempotente en cada arranque) y,
+ * defensivamente, agrega la columna si una Boleta legacy no la trae — sin ella
+ * el CREATE INDEX tumbaría la inicialización completa.
+ */
+function asegurarIndiceBoletaOrigen(database: Database.Database): void {
+  const columnas = database.prepare(`PRAGMA table_info(Boleta)`).all() as { name: string }[]
+  if (!columnas.some((c) => c.name === 'BoletaOrigenId')) {
+    database.exec(`ALTER TABLE Boleta ADD COLUMN BoletaOrigenId TEXT`)
+  }
+  database.exec(
+    `CREATE INDEX IF NOT EXISTS IX_Boleta_BoletaOrigenId ON Boleta(BoletaOrigenId) WHERE BoletaOrigenId IS NOT NULL`,
+  )
 }
 
 // Un archivo SQLite embebido por instalación de báscula — sin servidor, sin
@@ -1016,6 +1036,35 @@ function registrarEventoOutboxLocal(
     })
 }
 
+/** Ya existe una recepción vigente de la boleta origen en este terminal. */
+export class RecepcionDuplicadaError extends Error {
+  constructor(
+    readonly boletaId: string,
+    readonly numeroBoleta: string,
+  ) {
+    super('Esta transferencia ya fue recibida en este terminal.')
+    this.name = 'RecepcionDuplicadaError'
+  }
+}
+
+/**
+ * Recepción vigente de `origenId` en este terminal: cualquier boleta con ese
+ * BoletaOrigenId cuyo Estado NO sea 'Anulada' (una Reemitida sigue contando como
+ * recepción válida). Null si no hay ninguna.
+ */
+export function buscarBoletaRecibidaDeOrigen(
+  origenId: string,
+): { id: string; numeroBoleta: string } | null {
+  const fila = getDb()
+    .prepare(
+      `SELECT Id, NumeroBoleta FROM Boleta
+       WHERE BoletaOrigenId = ? AND Estado <> 'Anulada'
+       ORDER BY FechaHoraIngreso LIMIT 1`,
+    )
+    .get(origenId) as { Id: string; NumeroBoleta: string } | undefined
+  return fila ? { id: fila.Id, numeroBoleta: fila.NumeroBoleta } : null
+}
+
 /**
  * Ingreso — abre la boleta con el primer pesaje. Arma NumeroBoleta como
  * `{prefijo}-{codigoBascula}-{secuencial}` (ver Correlativo en el diseño),
@@ -1040,7 +1089,6 @@ export function crearBoletaLocal(
     | 'fechaHoraAnulacion'
     | 'preIngresoId'
     | 'boletaReemplazoId'
-    | 'boletaOrigenId'
     | 'basculaSalidaId'
     | 'respuestaD365Id'
     | 'motivoPesoManual'
@@ -1059,9 +1107,15 @@ export function crearBoletaLocal(
     // cola. Es write-once acá (diseño D2) y viaja verbatim en el payload 'Crear'
     // del Outbox — `POST /api/boletas/sync` lo resuelve contra la carrera central.
     preIngresoId?: string | null
+    // Recepción de transferencia NAT: Id de la boleta ORIGEN (otra planta). Se
+    // persiste tal cual y viaja en el payload 'Crear'. Si este terminal ya tiene
+    // una recepción vigente (no Anulada) de ese origen, lanza
+    // `RecepcionDuplicadaError` y no crea nada.
+    boletaOrigenId?: string | null
   },
 ): BoletaLocal {
   const id = crypto.randomUUID()
+  const boletaOrigenId = input.boletaOrigenId ?? null
   // asOf de la boleta: se respeta el instante que pasa el llamador (así la
   // validación de `valores` en la ruta y la persistencia usan exactamente el
   // mismo asOf). Fallback al ahora solo por robustez.
@@ -1077,6 +1131,14 @@ export function crearBoletaLocal(
   // haber consumido un Secuencial, ese hueco quedaría revertido junto con
   // todo lo demás en vez de perderse silenciosamente.
   const ejecutar = getDb().transaction((): void => {
+    // El chequeo de duplicado va DENTRO de la transacción y antes del correlativo:
+    // así el "leer y luego insertar" es atómico y un rechazo no consume secuencial
+    // ni deja evento en el Outbox.
+    if (boletaOrigenId !== null) {
+      const previa = buscarBoletaRecibidaDeOrigen(boletaOrigenId)
+      if (previa) throw new RecepcionDuplicadaError(previa.id, previa.numeroBoleta)
+    }
+
     const secuencial = siguienteCorrelativo(input.prefijo)
     const numeroBoleta = `${input.prefijo}-${input.codigoBascula}-${String(secuencial).padStart(6, '0')}`
 
@@ -1086,12 +1148,12 @@ export function crearBoletaLocal(
           Id, NumeroBoleta, TipoMovimientoId, Estado, EstadoSync,
           PesoIngreso, OrigenPesoIngreso,
           FechaHoraIngreso, UsuarioIngreso, CreadaOffline,
-          MotivoPesoManual, MotivoPesoManualDetalle, PreIngresoId
+          MotivoPesoManual, MotivoPesoManualDetalle, PreIngresoId, BoletaOrigenId
         ) VALUES (
           @id, @numeroBoleta, @tipoMovimientoId, @estado, @estadoSync,
           @pesoIngreso, @origenPesoIngreso,
           @fechaHoraIngreso, @usuarioIngreso, @creadaOffline,
-          @motivoPesoManual, @motivoPesoManualDetalle, @preIngresoId
+          @motivoPesoManual, @motivoPesoManualDetalle, @preIngresoId, @boletaOrigenId
         )`,
       )
       .run({
@@ -1113,6 +1175,7 @@ export function crearBoletaLocal(
         // Enlace a la cola de transporte — se persiste tal cual llega (o null).
         // Better-sqlite3 no acepta `undefined` en un named param, de ahí el `?? null`.
         preIngresoId: input.preIngresoId ?? null,
+        boletaOrigenId,
       })
 
     // Filas BoletaValorCampo (EAV tipado) en la MISMA transacción que el
@@ -1751,6 +1814,21 @@ export function obtenerMaestroLocal(id: string): MaestroLocal | null {
   return row ? filaAMaestroLocal(row) : null
 }
 
+/**
+ * Maestro OFICIAL por (tipoCatalogo, codigo), activo o no. Nunca devuelve
+ * provisionales: su Codigo (`PROV-{bascula}-{seq}`) es por terminal y puede
+ * colisionar entre plantas.
+ */
+export function obtenerMaestroLocalPorCodigo(
+  tipoCatalogo: string,
+  codigo: string,
+): MaestroLocal | null {
+  const row = getDb()
+    .prepare(`SELECT * FROM Maestro WHERE TipoCatalogo = ? AND Codigo = ? AND Estado = 'Oficial' LIMIT 1`)
+    .get(tipoCatalogo, codigo) as MaestroRow | undefined
+  return row ? filaAMaestroLocal(row) : null
+}
+
 // ---------------------------------------------------------------------------
 // Merge-apply local (M4b) — cuando el delta de maestros trae un provisional con
 // FusionadoConId seteado, el terminal reescribe TODA referencia local
@@ -1921,6 +1999,19 @@ export function tiposProvisionalesHabilitados(): string[] {
     .map((t) => t.trim())
     .filter((t) => t.length > 0)
 }
+
+/**
+ * Valores válidos de `TipoCatalogo` (espejo de `TIPOS_CATALOGO` en
+ * src/app/api/maestros.service.ts; electron no puede importar de src/). Lo usa
+ * `POST /maestros/importar-provisional`, que no pasa por la allow-list de
+ * creación offline pero sí debe rechazar un tipo inexistente.
+ */
+export const TIPOS_CATALOGO_CONOCIDOS: readonly string[] = [
+  'Piloto', 'Transportista', 'Equipo', 'Producto', 'Tercero', 'Finca', 'Almacen',
+  'Centro', 'Region', 'Cama', 'CicloCompostera', 'SeccionCompostera',
+  'CaracteristicaEquipo', 'Unidad', 'TipoUnidad', 'TipoEquipo', 'BodegaExterna',
+  'Tanque', 'Lote', 'CicloCosecha', 'SeccionFinca',
+]
 
 export interface CrearMaestroProvisionalInput {
   /**

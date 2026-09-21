@@ -3,6 +3,8 @@ import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 import {
   _inyectarDbParaPruebas,
   MOTIVOS_PESO_MANUAL,
+  RecepcionDuplicadaError,
+  buscarBoletaRecibidaDeOrigen,
   crearBoletaLocal,
   guardarConfigIngresoManual,
   inicializarEsquemaLocal,
@@ -14,6 +16,7 @@ import {
   obtenerBoletaDtoLocal,
   obtenerBoletaLocal,
   obtenerMaestroLocal,
+  obtenerMaestroLocalPorCodigo,
   obtenerPreIngresoLocal,
   obtenerUltimaSincronizacionMaestros,
   obtenerUltimaSincronizacionPreIngresos,
@@ -749,5 +752,121 @@ describe('leerConfigIngresoManual', () => {
     expect(cfg.permiteIngresoManual).toBe(true)
     expect(cfg.pesoMinimoManual).toBe(75.25)
     expect(cfg.pesoMaximoManual).toBeNull()
+  })
+})
+
+describe('crearBoletaLocal — enlace a la boleta origen (recepción de transferencia NAT)', () => {
+  const ORIGEN = 'aaaaaaaa-0000-4000-8000-000000000001'
+
+  beforeEach(() => {
+    setConfig('BasculaCodigo', 'B1')
+    db.prepare(
+      `INSERT INTO TipoMovimiento (Id, Codigo, Nombre, Prefijo, Direccion, OperacionD365, GeneraQR, FormatoBoletaId, Activo)
+       VALUES ('tm-1', 'REC', 'Recepcion', 'REC', 'Entrada', NULL, 0, NULL, 1)`,
+    ).run()
+  })
+
+  const entradaBase = {
+    prefijo: 'REC',
+    codigoBascula: 'B1',
+    tipoMovimientoId: 'tm-1',
+    pesoIngreso: 1000,
+    origenPesoIngreso: 'Bascula' as const,
+    fechaHoraIngreso: '2026-09-09T12:00:00.000Z',
+    usuarioIngreso: 'operador',
+    creadaOffline: true,
+  }
+
+  const secuencial = (): number | undefined =>
+    (db.prepare("SELECT Secuencial FROM Correlativo WHERE Prefijo = 'REC'").get() as
+      | { Secuencial: number }
+      | undefined)?.Secuencial
+
+  it('persiste boletaOrigenId y el payload Crear del Outbox lo lleva', () => {
+    const boleta = crearBoletaLocal({ ...entradaBase, boletaOrigenId: ORIGEN })
+
+    expect(obtenerBoletaLocal(boleta.id)?.boletaOrigenId).toBe(ORIGEN)
+    const evento = listarOutboxLocal().find((e) => e.operacion === 'Crear' && e.entidadId === boleta.id)
+    expect((JSON.parse(evento!.payload) as { boletaOrigenId?: string }).boletaOrigenId).toBe(ORIGEN)
+  })
+
+  it('sin origen guarda null', () => {
+    expect(crearBoletaLocal({ ...entradaBase }).boletaOrigenId).toBeNull()
+  })
+
+  it('una segunda recepción del mismo origen lanza RecepcionDuplicadaError sin efectos colaterales', () => {
+    const primera = crearBoletaLocal({ ...entradaBase, boletaOrigenId: ORIGEN })
+    const secuencialAntes = secuencial()
+    const eventosAntes = listarOutboxLocal().length
+
+    let error: unknown
+    try {
+      crearBoletaLocal({ ...entradaBase, boletaOrigenId: ORIGEN })
+    } catch (e) {
+      error = e
+    }
+
+    expect(error).toBeInstanceOf(RecepcionDuplicadaError)
+    expect(error).toMatchObject({ boletaId: primera.id, numeroBoleta: primera.numeroBoleta })
+    expect(secuencial()).toBe(secuencialAntes)
+    expect(listarOutboxLocal()).toHaveLength(eventosAntes)
+    expect(db.prepare('SELECT COUNT(*) AS n FROM Boleta').get()).toEqual({ n: 1 })
+  })
+
+  it('una recepción Anulada no bloquea una nueva; una Reemitida sí', () => {
+    const primera = crearBoletaLocal({ ...entradaBase, boletaOrigenId: ORIGEN })
+    db.prepare("UPDATE Boleta SET Estado = 'Anulada' WHERE Id = ?").run(primera.id)
+    expect(buscarBoletaRecibidaDeOrigen(ORIGEN)).toBeNull()
+
+    const segunda = crearBoletaLocal({ ...entradaBase, boletaOrigenId: ORIGEN })
+    db.prepare("UPDATE Boleta SET Estado = 'Reemitida' WHERE Id = ?").run(segunda.id)
+    expect(buscarBoletaRecibidaDeOrigen(ORIGEN)).toEqual({
+      id: segunda.id,
+      numeroBoleta: segunda.numeroBoleta,
+    })
+    expect(() => crearBoletaLocal({ ...entradaBase, boletaOrigenId: ORIGEN })).toThrow(
+      RecepcionDuplicadaError,
+    )
+  })
+
+  it('crea IX_Boleta_BoletaOrigenId (parcial) también sobre una Boleta legacy sin la columna', () => {
+    const indice = (base: Database.Database): { sql: string } | undefined =>
+      base.prepare("SELECT sql FROM sqlite_master WHERE type = 'index' AND name = 'IX_Boleta_BoletaOrigenId'").get() as
+        | { sql: string }
+        | undefined
+    expect(indice(db)?.sql).toContain('WHERE BoletaOrigenId IS NOT NULL')
+
+    const legacy = new Database(':memory:')
+    legacy.exec(`
+      CREATE TABLE ConfiguracionLocal (Clave TEXT PRIMARY KEY, Valor TEXT);
+      CREATE TABLE Boleta (
+        Id TEXT PRIMARY KEY, NumeroBoleta TEXT NOT NULL UNIQUE, TipoMovimientoId TEXT NOT NULL,
+        Estado TEXT NOT NULL, EstadoSync TEXT NOT NULL, PesoIngreso REAL NOT NULL,
+        OrigenPesoIngreso TEXT NOT NULL, FechaHoraIngreso TEXT NOT NULL, UsuarioIngreso TEXT NOT NULL,
+        CreadaOffline INTEGER NOT NULL
+      );
+    `)
+    legacy.prepare("INSERT INTO ConfiguracionLocal (Clave, Valor) VALUES ('EsquemaLocalVersion', '5')").run()
+    inicializarEsquemaLocal(legacy)
+    expect(indice(legacy)).toBeDefined()
+    legacy.close()
+  })
+})
+
+describe('obtenerMaestroLocalPorCodigo', () => {
+  const insertar = (id: string, tipo: string, codigo: string, estado: string, activo: number): void => {
+    db.prepare(
+      `INSERT INTO Maestro (Id, TipoCatalogo, Codigo, Nombre, DatosAdicionales, Estado, FusionadoConId, FechaModificacion, Activo)
+       VALUES (?, ?, ?, ?, NULL, ?, NULL, '2026-01-01T00:00:00Z', ?)`,
+    ).run(id, tipo, codigo, `N-${id}`, estado, activo)
+  }
+
+  it('devuelve solo el Oficial (activo o inactivo) y nunca un provisional con el mismo código', () => {
+    insertar('prov', 'Finca', 'X-1', 'Provisional', 1)
+    expect(obtenerMaestroLocalPorCodigo('Finca', 'X-1')).toBeNull()
+
+    insertar('of', 'Finca', 'X-1', 'Oficial', 0)
+    expect(obtenerMaestroLocalPorCodigo('Finca', 'X-1')?.id).toBe('of')
+    expect(obtenerMaestroLocalPorCodigo('Producto', 'X-1')).toBeNull()
   })
 })

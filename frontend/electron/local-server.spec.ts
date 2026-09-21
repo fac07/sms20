@@ -616,3 +616,174 @@ describe('clave HMAC del QR — /aprovisionamiento + GET /qr-clave', () => {
     }
   })
 })
+
+describe('recepción de transferencia NAT — boletaOrigenId y lookups de maestros', () => {
+  const ORIGEN = 'bbbbbbbb-0000-4000-8000-000000000001'
+  const GUID_MAESTRO = 'cccccccc-0000-4000-8000-000000000001'
+
+  beforeEach(async () => {
+    db.exec(`
+      INSERT INTO ConfiguracionLocal (Clave, Valor) VALUES ('BasculaId', 'ba-1'), ('BasculaCodigo', 'B01')
+      ON CONFLICT(Clave) DO UPDATE SET Valor = excluded.Valor;
+      INSERT INTO TipoMovimiento (Id, Codigo, Nombre, Prefijo, Direccion, OperacionD365, GeneraQR, FormatoBoletaId, Activo)
+        VALUES ('tm-1', 'REC', 'Recepcion', 'REC', 'Entrada', NULL, 0, NULL, 1);
+    `)
+    await arrancarServidor()
+  })
+
+  const postBoleta = (extra: Record<string, unknown> = {}): Promise<Response> =>
+    fetch(`${baseUrl}/boletas`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        numeroBoletaPrefijo: 'REC',
+        codigoBascula: 'B01',
+        tipoMovimientoId: 'tm-1',
+        pesoIngreso: 1000,
+        usuarioIngreso: 'op',
+        ...extra,
+      }),
+    })
+
+  const postMaestro = (ruta: string, body: unknown): Promise<Response> =>
+    fetch(`${baseUrl}${ruta}`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(body),
+    })
+
+  const insertarMaestro = (id: string, tipo: string, codigo: string, estado: string, activo: number): void => {
+    db.prepare(
+      `INSERT INTO Maestro (Id, TipoCatalogo, Codigo, Nombre, DatosAdicionales, Estado, FusionadoConId, FechaModificacion, Activo)
+       VALUES (?, ?, ?, 'Nombre', NULL, ?, NULL, '2026-01-01T00:00:00Z', ?)`,
+    ).run(id, tipo, codigo, estado, activo)
+  }
+
+  it('POST /boletas persiste boletaOrigenId y responde 409 al duplicado sin efectos colaterales', async () => {
+    const primera = await postBoleta({ boletaOrigenId: ORIGEN })
+    expect(primera.status).toBe(201)
+    const creada = (await primera.json()) as { id: string; numeroBoleta: string; boletaOrigenId: string }
+    expect(creada.boletaOrigenId).toBe(ORIGEN)
+
+    const eventosAntes = listarOutboxLocal().length
+    const secuencialAntes = db.prepare("SELECT Secuencial FROM Correlativo WHERE Prefijo = 'REC'").get()
+
+    const dup = await postBoleta({ boletaOrigenId: ORIGEN })
+    expect(dup.status).toBe(409)
+    expect(await dup.json()).toEqual({
+      error: 'Esta transferencia ya fue recibida en este terminal.',
+      boletaId: creada.id,
+      numeroBoleta: creada.numeroBoleta,
+    })
+    expect(listarOutboxLocal()).toHaveLength(eventosAntes)
+    expect(db.prepare("SELECT Secuencial FROM Correlativo WHERE Prefijo = 'REC'").get()).toEqual(secuencialAntes)
+  })
+
+  it('POST /boletas: una recepción Anulada no bloquea, una Reemitida sí', async () => {
+    const a = (await (await postBoleta({ boletaOrigenId: ORIGEN })).json()) as { id: string }
+    db.prepare("UPDATE Boleta SET Estado = 'Anulada' WHERE Id = ?").run(a.id)
+    const b = (await (await postBoleta({ boletaOrigenId: ORIGEN })).json()) as { id: string }
+    expect(b.id).not.toBe(a.id)
+
+    db.prepare("UPDATE Boleta SET Estado = 'Reemitida' WHERE Id = ?").run(b.id)
+    expect((await postBoleta({ boletaOrigenId: ORIGEN })).status).toBe(409)
+  })
+
+  it('POST /boletas rechaza un boletaOrigenId que no es GUID con 400 y no crea nada', async () => {
+    for (const malo of ['no-guid', 123, '']) {
+      expect((await postBoleta({ boletaOrigenId: malo })).status).toBe(400)
+    }
+    expect(listarOutboxLocal()).toHaveLength(0)
+  })
+
+  it('GET /boletas/recibida-de/:origenId responde recibida true/false y 400 si no es GUID', async () => {
+    const vacio = await fetch(`${baseUrl}/boletas/recibida-de/${ORIGEN}`)
+    expect(vacio.status).toBe(200)
+    expect(await vacio.json()).toEqual({ recibida: false })
+
+    const creada = (await (await postBoleta({ boletaOrigenId: ORIGEN })).json()) as {
+      id: string
+      numeroBoleta: string
+    }
+    expect(await (await fetch(`${baseUrl}/boletas/recibida-de/${ORIGEN}`)).json()).toEqual({
+      recibida: true,
+      boletaId: creada.id,
+      numeroBoleta: creada.numeroBoleta,
+    })
+
+    db.prepare("UPDATE Boleta SET Estado = 'Anulada' WHERE Id = ?").run(creada.id)
+    expect(await (await fetch(`${baseUrl}/boletas/recibida-de/${ORIGEN}`)).json()).toEqual({ recibida: false })
+
+    expect((await fetch(`${baseUrl}/boletas/recibida-de/nope`)).status).toBe(400)
+  })
+
+  it('GET /maestros/:id devuelve inactivos y provisionales, 404 si no existe, sin tapar rutas fijas', async () => {
+    insertarMaestro('m-inact', 'Finca', 'F-1', 'Oficial', 0)
+    insertarMaestro('m-prov', 'Finca', 'PROV-B1-1', 'Provisional', 1)
+
+    const inactivo = await fetch(`${baseUrl}/maestros/m-inact`)
+    expect(inactivo.status).toBe(200)
+    expect(await inactivo.json()).toMatchObject({ id: 'm-inact', activo: false, estado: 'Oficial' })
+    expect(await (await fetch(`${baseUrl}/maestros/m-prov`)).json()).toMatchObject({
+      id: 'm-prov',
+      estado: 'Provisional',
+      fusionadoConId: null,
+    })
+    expect((await fetch(`${baseUrl}/maestros/no-existe`)).status).toBe(404)
+
+    const tipos = await fetch(`${baseUrl}/maestros/tipos-provisionables`)
+    expect(tipos.status).toBe(200)
+    expect(await tipos.json()).toHaveProperty('tipos')
+
+    // POST /maestros/sincronizar sigue llegando a su handler (central caído -> 502, no 404).
+    const fetchReal = globalThis.fetch
+    vi.stubGlobal('fetch', (url: string, init?: RequestInit) =>
+      String(url).startsWith(baseUrl) ? fetchReal(url, init) : Promise.reject(new Error('central caído')),
+    )
+    expect((await fetch(`${baseUrl}/maestros/sincronizar`, { method: 'POST' })).status).toBe(502)
+  })
+
+  it('GET /maestros/por-codigo exige ambos params, matchea solo Oficial y no toca provisionales', async () => {
+    insertarMaestro('prov', 'Finca', 'X-1', 'Provisional', 1)
+    insertarMaestro('of-inact', 'Producto', 'X-1', 'Oficial', 0)
+
+    expect((await fetch(`${baseUrl}/maestros/por-codigo?tipoCatalogo=Finca`)).status).toBe(400)
+    expect((await fetch(`${baseUrl}/maestros/por-codigo?codigo=X-1`)).status).toBe(400)
+    expect((await fetch(`${baseUrl}/maestros/por-codigo?tipoCatalogo=Finca&codigo=X-1`)).status).toBe(404)
+
+    const res = await fetch(`${baseUrl}/maestros/por-codigo?tipoCatalogo=Producto&codigo=X-1`)
+    expect(res.status).toBe(200)
+    expect(await res.json()).toMatchObject({ id: 'of-inact', estado: 'Oficial' })
+  })
+
+  it('POST /maestros/importar-provisional crea con el id dado, salta la allow-list y es idempotente', async () => {
+    // 'Producto' NO está en la allow-list por defecto y POST /maestros sigue rechazándolo.
+    expect((await postMaestro('/maestros', { tipoCatalogo: 'Producto', nombre: 'X' })).status).toBe(403)
+
+    const body = { id: GUID_MAESTRO, tipoCatalogo: 'Producto', nombre: 'Aceite Planta B' }
+    const creado = await postMaestro('/maestros/importar-provisional', body)
+    expect(creado.status).toBe(201)
+    expect(await creado.json()).toMatchObject({ id: GUID_MAESTRO, estado: 'Provisional', nombre: 'Aceite Planta B' })
+    const eventos = listarOutboxLocal().filter((e) => e.tipoEntidad === 'MaestroProvisional')
+    expect(eventos).toHaveLength(1)
+
+    const repetido = await postMaestro('/maestros/importar-provisional', { ...body, nombre: 'Otro nombre' })
+    expect(repetido.status).toBe(200)
+    expect(await repetido.json()).toMatchObject({ id: GUID_MAESTRO, nombre: 'Aceite Planta B' })
+    expect(listarOutboxLocal().filter((e) => e.tipoEntidad === 'MaestroProvisional')).toHaveLength(1)
+  })
+
+  it('POST /maestros/importar-provisional valida id GUID, tipoCatalogo y nombre', async () => {
+    const ok = { id: GUID_MAESTRO, tipoCatalogo: 'Producto', nombre: 'N' }
+    for (const malo of [
+      { ...ok, id: 'no-guid' },
+      { ...ok, id: undefined },
+      { ...ok, tipoCatalogo: 'Inventado' },
+      { ...ok, tipoCatalogo: undefined },
+      { ...ok, nombre: '   ' },
+    ]) {
+      expect((await postMaestro('/maestros/importar-provisional', malo)).status).toBe(400)
+    }
+    expect(listarOutboxLocal()).toHaveLength(0)
+  })
+})
