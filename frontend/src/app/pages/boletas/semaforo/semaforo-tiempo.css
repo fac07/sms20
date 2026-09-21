@@ -1,0 +1,25 @@
+/* Colores de estado desde las variables de tema de ng-zorro (con fallback):
+   adaptarse al modo claro/oscuro del proyecto sin hardcodear la paleta. */
+.semaforo {
+  align-items: center;
+  display: inline-flex;
+  font-variant-numeric: tabular-nums;
+  gap: 4px;
+  white-space: nowrap;
+}
+
+.semaforo__texto {
+  font-family: ui-monospace, 'SF Mono', Menlo, monospace;
+}
+
+.semaforo--verde {
+  color: var(--ant-success-color, #2e8540);
+}
+
+.semaforo--amarillo {
+  color: var(--ant-warning-color, #d48806);
+}
+
+.semaforo--rojo {
+  color: var(--ant-error-color, #d64541);
+}

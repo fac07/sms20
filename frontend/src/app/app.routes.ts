@@ -20,6 +20,7 @@ import { ResumenBasculasPage } from './pages/reportes/resumen-basculas/resumen-b
 import { SeccionesPage } from './pages/secciones/secciones-page/secciones-page';
 import { TiposMovimientoPage } from './pages/tipos-movimiento/tipos-movimiento-page/tipos-movimiento-page';
 import { TransportePage } from './pages/transporte/transporte-page';
+import { UnidadesEnTransitoPage } from './pages/unidades-en-transito/unidades-en-transito-page';
 
 // Landing según el modo del build: pesaje en báscula, configuración en admin.
 const rutaInicio = (): string => (environment.modo === 'bascula' ? 'pesaje' : 'tipos-movimiento');
@@ -113,6 +114,14 @@ export const routes: Routes = [
       {
         path: 'boletas',
         component: BoletasPage,
+        canActivate: [modoGuard, rolGuard],
+        data: { modo: ['bascula', 'admin'], rolMinimo: 'Operador' },
+      },
+      {
+        // Monitor operativo del mismo universo que lee `boletas` (EnTransito),
+        // por eso comparte modo y piso de rol.
+        path: 'unidades-en-transito',
+        component: UnidadesEnTransitoPage,
         canActivate: [modoGuard, rolGuard],
         data: { modo: ['bascula', 'admin'], rolMinimo: 'Operador' },
       },

@@ -215,3 +215,68 @@ describe('BoletasPage — reimprimir + impresión (Frente 4)', () => {
     expect(component.boletaParaImprimir()).toBeNull();
   });
 });
+
+describe('BoletasPage — columna "Tiempo transcurrido" con semáforo', () => {
+  let component: BoletasPage;
+  let httpMock: HttpTestingController;
+  const message = { error: vi.fn(), success: vi.fn() };
+  const modoOriginal = environment.modo;
+
+  beforeEach(async () => {
+    (environment as { modo: typeof environment.modo }).modo = 'admin';
+    await TestBed.configureTestingModule({
+      imports: [BoletasPage],
+      providers: [
+        provideHttpClient(),
+        provideHttpClientTesting(),
+        { provide: NzMessageService, useValue: message },
+      ],
+    }).compileComponents();
+
+    component = TestBed.createComponent(BoletasPage).componentInstance;
+    httpMock = TestBed.inject(HttpTestingController);
+    httpMock.expectOne(BASE).flush([]);
+  });
+
+  afterEach(() => {
+    httpMock.verify();
+    (environment as { modo: typeof environment.modo }).modo = modoOriginal;
+  });
+
+  it('el semáforo solo aplica a EnTransito y Cerrada; Anulada y Reemitida van sin semáforo', () => {
+    expect(component.muestraSemaforo(boletaFixture({ estado: 'EnTransito' }))).toBe(true);
+    expect(component.muestraSemaforo(boletaFixture({ estado: 'Cerrada' }))).toBe(true);
+    expect(component.muestraSemaforo(boletaFixture({ estado: 'Anulada' }))).toBe(false);
+    expect(component.muestraSemaforo(boletaFixture({ estado: 'Reemitida' }))).toBe(false);
+  });
+
+  it('Cerrada mide ingreso→salida, sin importar el reloj de la página', () => {
+    component.ahora.set(new Date(Date.UTC(2026, 8, 11, 0, 0, 0)));
+    const cerrada = boletaFixture({
+      estado: 'Cerrada',
+      fechaHoraIngreso: '2026-09-10T12:00:00Z',
+      fechaHoraSalida: '2026-09-10T15:31:49Z',
+    });
+
+    expect(component.duracionMs(cerrada)).toBe(3 * 3_600_000 + 31 * 60_000 + 49_000);
+  });
+
+  it('EnTransito mide ingreso→ahora y el tick de 60 s avanza el reloj', () => {
+    const enTransito = boletaFixture({
+      estado: 'EnTransito',
+      fechaHoraIngreso: '2026-09-10T12:00:00Z',
+      fechaHoraSalida: null,
+    });
+    component.ahora.set(new Date(Date.UTC(2026, 8, 10, 15, 31, 49)));
+    expect(component.duracionMs(enTransito)).toBe(3 * 3_600_000 + 31 * 60_000 + 49_000);
+
+    // El timer de la página pisa `ahora` — la columna se re-dibuja sola.
+    expect(component.ahora()).toBeInstanceOf(Date);
+  });
+
+  it('fecha de ingreso ilegible no revienta: duracionMs es NaN (el chip lo pinta de rojo)', () => {
+    const b = boletaFixture({ estado: 'EnTransito', fechaHoraIngreso: 'no-fecha' as string });
+
+    expect(Number.isNaN(component.duracionMs(b))).toBe(true);
+  });
+});

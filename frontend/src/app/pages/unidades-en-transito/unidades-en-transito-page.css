@@ -1,0 +1,19 @@
+.codigo {
+  font-family: monospace;
+}
+
+.tiempo {
+  white-space: nowrap;
+}
+
+/* Estado vacío y de error — el color sale de las variables del tema (claro y
+   oscuro) en lugar de un gris fijo. */
+.estado {
+  padding: 40px 24px;
+  text-align: center;
+}
+
+.estado__texto {
+  color: var(--ant-color-text-secondary, rgba(0, 0, 0, 0.65));
+  margin: 0 0 12px;
+}

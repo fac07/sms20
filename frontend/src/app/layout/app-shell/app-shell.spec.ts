@@ -1,9 +1,9 @@
 import { navItemsParaModo } from './app-shell';
 
 describe('navItemsParaModo', () => {
-  it('modo báscula: muestra Pesaje y la consulta local de Boletas', () => {
+  it('modo báscula: muestra Pesaje, la consulta local de Boletas y Unidades en Tránsito', () => {
     const paths = navItemsParaModo('bascula').map((i) => i.path);
-    expect(paths).toEqual(['/pesaje', '/boletas', '/outbox']);
+    expect(paths).toEqual(['/pesaje', '/boletas', '/unidades-en-transito', '/outbox']);
   });
 
   it('modo admin: incluye configuración y consulta, excluye Pesaje', () => {
