@@ -95,6 +95,8 @@ describe('BoletasService', () => {
       ocurrencia: 0,
       valorMaestroId: 'm-1',
       valorMaestroNombre: 'Finca X',
+      valorMaestroTipoCatalogo: 'Finca',
+      valorMaestroProvisional: true,
     };
     let recibida: BoletaDto | undefined;
     service.obtener('b-1').subscribe((b) => (recibida = b));
@@ -105,6 +107,8 @@ describe('BoletasService', () => {
 
     expect(recibida?.valores).toHaveLength(1);
     expect(recibida?.valores[0].valorMaestroNombre).toBe('Finca X');
+    expect(recibida?.valores[0].valorMaestroTipoCatalogo).toBe('Finca');
+    expect(recibida?.valores[0].valorMaestroProvisional).toBe(true);
   });
 
   it('modo báscula consulta lista y detalle sólo en el servidor local', () => {

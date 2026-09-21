@@ -4,6 +4,7 @@ using Microsoft.Extensions.DependencyInjection;
 using SmsBackend.Data;
 using SmsBackend.Domain.Boletas.Valores;
 using SmsBackend.Domain.Configuracion;
+using SmsBackend.Domain.Maestros;
 using SmsBackend.Domain.TiposMovimiento;
 using Xunit;
 
@@ -32,6 +33,18 @@ public sealed class ValoresRoundTripTests : IAsyncLifetime
     public Task InitializeAsync() => _factory.ResetAsync();
 
     public Task DisposeAsync() => Task.CompletedTask;
+
+    private async Task<(Escenario Escenario, Guid CampoId)> ConfigurarReferenciaEquipoAsync()
+    {
+        var s = TestData.Sufijo();
+        var seccion = await TestData.CrearSeccionAsync(_client, $"meta_{s}");
+        var campo = await TestData.CrearCampoAsync(
+            _client, seccion.Id, "equipo", TipoCampo.ReferenciaMaestro, catalogoRef: TipoCatalogo.Equipo);
+        var escenario = await TestData.NuevoEscenarioAsync(_client);
+        await TestData.AsignarSeccionesAsync(
+            _client, escenario.TipoMovimientoId, new AsignacionSeccionRequest(seccion.Id, false, 1));
+        return (escenario, campo.Id);
+    }
 
     private async Task<List<(Guid CampoId, int Ocurrencia, string? Texto, decimal? Numero, DateTime? Fecha, bool? Bool, Guid? Maestro, Guid Seccion)>>
         FilasAsync(Guid boletaId)
@@ -103,6 +116,38 @@ public sealed class ValoresRoundTripTests : IAsyncLifetime
         Assert.Equal("nota", valor.CampoClave);
         Assert.Equal("Etiqueta nota", valor.Etiqueta);
         Assert.Equal("hola", valor.ValorTexto);
+        Assert.Null(valor.ValorMaestroTipoCatalogo);
+        Assert.Null(valor.ValorMaestroProvisional);
+    }
+
+    [Fact]
+    public async Task Referencia_oficial_proyecta_tipo_y_no_provisional()
+    {
+        var (escenario, campoId) = await ConfigurarReferenciaEquipoAsync();
+        var maestro = await TestData.CrearMaestroAsync(_client, TipoCatalogo.Equipo);
+        var boleta = await TestData.CrearBoletaAsync(
+            _client, escenario, new[] { TestData.Referencia(campoId, maestro.Id) });
+
+        var valor = Assert.Single((await TestData.GetBoletaAsync(_client, boleta.Id)).Valores);
+        Assert.Equal("Equipo", valor.ValorMaestroTipoCatalogo);
+        Assert.False(valor.ValorMaestroProvisional);
+    }
+
+    [Fact]
+    public async Task Referencia_provisional_sin_fusionar_proyecta_bandera_provisional()
+    {
+        var (escenario, campoId) = await ConfigurarReferenciaEquipoAsync();
+        var maestroId = Guid.NewGuid();
+        var (response, body) = await TestData.SyncMaestroAsync(_client,
+            TestData.SyncMaestroPayload(maestroId, escenario.BasculaCodigo, TipoCatalogo.Equipo,
+                $"EQP-{TestData.Sufijo()}", "Equipo provisional"));
+        Assert.True(response.IsSuccessStatusCode, body);
+        var boleta = await TestData.CrearBoletaAsync(
+            _client, escenario, new[] { TestData.Referencia(campoId, maestroId) });
+
+        var valor = Assert.Single((await TestData.GetBoletaAsync(_client, boleta.Id)).Valores);
+        Assert.Equal("Equipo", valor.ValorMaestroTipoCatalogo);
+        Assert.True(valor.ValorMaestroProvisional);
     }
 
     [Fact]

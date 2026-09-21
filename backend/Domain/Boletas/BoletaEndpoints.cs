@@ -1116,7 +1116,15 @@ public static class BoletaEndpoints
                  (from m in db.Maestros
                   where m.Id == v.ValorMaestroId
                   join o in db.Maestros on (m.FusionadoConId ?? m.Id) equals o.Id
-                  select o.Nombre).FirstOrDefault()))
+                  select o.Nombre).FirstOrDefault(),
+                 (from m in db.Maestros
+                  where m.Id == v.ValorMaestroId
+                  join o in db.Maestros on (m.FusionadoConId ?? m.Id) equals o.Id
+                  select o.TipoCatalogo.ToString()).FirstOrDefault(),
+                 (from m in db.Maestros
+                  where m.Id == v.ValorMaestroId
+                  join o in db.Maestros on (m.FusionadoConId ?? m.Id) equals o.Id
+                  select (bool?)(o.Estado == EstadoMaestro.Provisional)).FirstOrDefault()))
             .ToList());
     }
 }
