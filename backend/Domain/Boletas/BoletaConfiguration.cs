@@ -80,6 +80,9 @@ public class BoletaConfiguration : IEntityTypeConfiguration<Boleta>
             .IsUnique()
             .HasFilter("[PreIngresoId] IS NOT NULL");
 
+        // Vínculo lógico: el origen puede sincronizar después desde otro centro.
+        builder.HasIndex(b => b.BoletaOrigenId);
+
         builder.Property(b => b.RespuestaD365Id).HasMaxLength(100);
 
         builder.Property(b => b.RowVersion).IsRowVersion();
@@ -113,9 +116,5 @@ public class BoletaConfiguration : IEntityTypeConfiguration<Boleta>
             .HasForeignKey(b => b.BoletaReemplazoId)
             .OnDelete(DeleteBehavior.Restrict);
 
-        builder.HasOne<Boleta>()
-            .WithMany()
-            .HasForeignKey(b => b.BoletaOrigenId)
-            .OnDelete(DeleteBehavior.Restrict);
     }
 }

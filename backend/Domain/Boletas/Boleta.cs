@@ -110,7 +110,7 @@ public class Boleta
     /// <summary>Self-FK, sin navigation property. Apunta a la boleta que reemplaza a esta.</summary>
     public Guid? BoletaReemplazoId { get; set; }
 
-    /// <summary>Self-FK, sin navigation property. Solo se usa en recepción de transferencia.</summary>
+    /// <summary>Vínculo lógico a la boleta que originó una recepción de transferencia.</summary>
     public Guid? BoletaOrigenId { get; set; }
 
     /// <summary>
