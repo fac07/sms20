@@ -123,6 +123,7 @@ public sealed class ReemisionBoletaTests : IAsyncLifetime
         Assert.Equal(original.BasculaSalidaId, nueva.BasculaSalidaId);
         // El vínculo es unidireccional y el pre-ingreso no se hereda.
         Assert.Null(nueva.BoletaOrigenId);
+        Assert.Null(nueva.MarcaBoletaOrigen);
         Assert.Null(nueva.PreIngresoId);
         // La auditoría de re-emisión vive en la ORIGINAL, no en la nueva.
         Assert.Null(nueva.UsuarioReemision);
