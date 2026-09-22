@@ -32,6 +32,7 @@ public record BoletaDto(
     DateTime? FechaHoraReemision,
     Guid? BoletaReemplazoId,
     Guid? BoletaOrigenId,
+    MarcaBoletaOrigen? MarcaBoletaOrigen,
     Guid? BasculaSalidaId,
     Guid? PreIngresoId,
     // Datos del pre-ingreso enlazado, resueltos por un left join en Proyectar —

@@ -96,6 +96,35 @@ public sealed class BoletaSyncPreIngresoTests : IAsyncLifetime
     }
 
     [Fact]
+    public async Task Vincular_avanza_el_watermark_aunque_el_reloj_no_avance()
+    {
+        var escenario = await TestData.NuevoEscenarioAsync(_client);
+        var pre = await CrearPreIngresoAsync(escenario.CentroId);
+        var watermark = DateTime.UtcNow.AddMinutes(1);
+        using (var scope = _factory.CreateScope())
+        {
+            var db = scope.ServiceProvider.GetRequiredService<SmsDbContext>();
+            await db.PreIngresos.IgnoreQueryFilters()
+                .Where(p => p.Id == pre.Id)
+                .ExecuteUpdateAsync(s => s.SetProperty(p => p.FechaModificacion, watermark));
+        }
+
+        var boletaId = Guid.NewGuid();
+        var (response, _, body) = await SyncCrearConEnlaceAsync(escenario, boletaId, pre.Id);
+
+        Assert.True(response.IsSuccessStatusCode, body);
+        var vinculado = await RecargarPreIngresoAsync(pre.Id);
+        Assert.Equal(EstadoPreIngreso.Vinculado, vinculado.Estado);
+        Assert.Equal(boletaId, vinculado.BoletaId);
+        Assert.True(vinculado.FechaModificacion > watermark);
+
+        var desde = Uri.EscapeDataString(watermark.ToString("O"));
+        var delta = await _client.GetFromJsonAsync<List<PreIngresoDto>>(
+            $"/api/preingresos?centroId={escenario.CentroId}&modificadoDesde={desde}", TestData.Json);
+        Assert.Contains(delta!, p => p.Id == pre.Id && p.Estado == EstadoPreIngreso.Vinculado);
+    }
+
+    [Fact]
     public async Task Replay_del_evento_ganador_es_no_op_y_deja_todo_igual()
     {
         var escenario = await TestData.NuevoEscenarioAsync(_client);

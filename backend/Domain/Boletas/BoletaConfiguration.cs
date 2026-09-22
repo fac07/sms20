@@ -64,6 +64,10 @@ public class BoletaConfiguration : IEntityTypeConfiguration<Boleta>
             .HasConversion<string>()
             .HasMaxLength(30);
 
+        builder.Property(b => b.MarcaBoletaOrigen)
+            .HasConversion<string>()
+            .HasMaxLength(30);
+
         // Enum-as-string, mismo criterio que MarcaPreIngreso. Columna nvarchar(30).
         builder.Property(b => b.MarcaVinculoTransporte)
             .HasConversion<string>()
@@ -75,6 +79,9 @@ public class BoletaConfiguration : IEntityTypeConfiguration<Boleta>
         builder.HasIndex(b => b.PreIngresoId)
             .IsUnique()
             .HasFilter("[PreIngresoId] IS NOT NULL");
+
+        // Vínculo lógico: el origen puede sincronizar después desde otro centro.
+        builder.HasIndex(b => b.BoletaOrigenId);
 
         builder.Property(b => b.RespuestaD365Id).HasMaxLength(100);
 
@@ -109,9 +116,5 @@ public class BoletaConfiguration : IEntityTypeConfiguration<Boleta>
             .HasForeignKey(b => b.BoletaReemplazoId)
             .OnDelete(DeleteBehavior.Restrict);
 
-        builder.HasOne<Boleta>()
-            .WithMany()
-            .HasForeignKey(b => b.BoletaOrigenId)
-            .OnDelete(DeleteBehavior.Restrict);
     }
 }

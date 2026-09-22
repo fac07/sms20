@@ -576,6 +576,25 @@ public static class BoletaEndpoints
                         marcaVinculo = MarcaVinculoTransporte.VinculoInvalido;
                     }
 
+                    var boletaOrigenId = LeerGuidNullable(request.Payload, "boletaOrigenId");
+                    MarcaBoletaOrigen? marcaBoletaOrigen = null;
+                    if (boletaOrigenId is Guid origenId)
+                    {
+                        var recepcionActivaExiste = await db.Boletas.IgnoreQueryFilters().AnyAsync(
+                            b => b.Id != id
+                                 && b.BoletaOrigenId == origenId
+                                 && b.Estado != EstadoBoleta.Anulada,
+                            ct);
+                        if (recepcionActivaExiste)
+                        {
+                            marcaBoletaOrigen = MarcaBoletaOrigen.RecepcionDuplicada;
+                        }
+                        else if (!await db.Boletas.IgnoreQueryFilters().AnyAsync(b => b.Id == origenId, ct))
+                        {
+                            marcaBoletaOrigen = MarcaBoletaOrigen.OrigenNoResuelto;
+                        }
+                    }
+
                     var boleta = new Boleta
                     {
                         // Preserva la identidad generada localmente — central
@@ -600,6 +619,8 @@ public static class BoletaEndpoints
                         MotivoPesoManual = motivoManual,
                         MotivoPesoManualDetalle = motivoManualDetalle,
                         MarcaVinculoTransporte = marcaVinculo,
+                        BoletaOrigenId = boletaOrigenId,
+                        MarcaBoletaOrigen = marcaBoletaOrigen,
                     };
 
                     db.Boletas.Add(boleta);
@@ -755,13 +776,18 @@ public static class BoletaEndpoints
         // que el bypass es opt-in — solo la vía /sync (identidad de terminal,
         // sin ClaimsPrincipal humano) lo pide explícito.
         var preIngresosQuery = ignorarFiltrosCentro ? db.PreIngresos.IgnoreQueryFilters() : db.PreIngresos;
+        var ahora = DateTime.UtcNow;
 
         var ganado = await preIngresosQuery
             .Where(p => p.Id == preIngresoId && p.Estado == EstadoPreIngreso.Pendiente)
             .ExecuteUpdateAsync(s => s
                 .SetProperty(p => p.Estado, EstadoPreIngreso.Vinculado)
                 .SetProperty(p => p.BoletaId, boleta.Id)
-                .SetProperty(p => p.FechaModificacion, DateTime.UtcNow), ct);
+                .SetProperty(
+                    p => p.FechaModificacion,
+                    p => p.FechaModificacion >= ahora
+                        ? p.FechaModificacion.AddMilliseconds(1)
+                        : ahora), ct);
 
         if (ganado > 0)
         {
@@ -1078,7 +1104,7 @@ public static class BoletaEndpoints
             b.UsuarioIngreso, b.UsuarioSalida, b.UsuarioAnula, b.UsuarioAutoriza, b.MotivoAnulacion,
             b.FechaHoraAnulacion,
             b.UsuarioReemision, b.FechaHoraReemision,
-            b.BoletaReemplazoId, b.BoletaOrigenId, b.BasculaSalidaId, b.PreIngresoId,
+            b.BoletaReemplazoId, b.BoletaOrigenId, b.MarcaBoletaOrigen, b.BasculaSalidaId, b.PreIngresoId,
             preingreso != null ? preingreso.NumeroEnvio : null,
             preingreso != null ? (EstadoPreIngreso?)preingreso.Estado : null,
             b.RespuestaD365Id, b.CreadaOffline,
