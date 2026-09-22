@@ -8,6 +8,11 @@ import { FormArray, FormControl, FormGroup } from '@angular/forms';
 import { NzMessageService } from 'ng-zorro-antd/message';
 import { CampoAplicable, ErrorCampo } from '../../../api/configuracion.models';
 import { BoletaLocal, MaestroLocal } from '../../../api/local-server.service';
+import type {
+  DatosRecepcionQr,
+  ResultadoRecepcionQr,
+} from '../../boletas/qr-transferencia/procesar-recepcion-qr';
+import { RecepcionQrService } from '../../boletas/qr-transferencia/recepcion-qr.service';
 import { PesajePage } from './pesaje-page';
 import {
   CLAVE_SECCION,
@@ -194,10 +199,16 @@ describe('PesajePage (TestBed + HttpTestingController)', () => {
   let component: PesajePage;
   let httpMock: HttpTestingController;
   const message = { error: vi.fn(), success: vi.fn() };
+  // `procesarRecepcionQr` real (WebCrypto/streams) tiene su propia batería
+  // exhaustiva en procesar-recepcion-qr.spec.ts (D1); acá se reemplaza por DI
+  // (Angular's unit-test builder rechaza `vi.mock` sobre imports relativos)
+  // para testear SOLO la integración de PesajePage con cada fase posible.
+  const recepcionQr = { procesar: vi.fn() };
 
   beforeEach(async () => {
     message.error.mockReset();
     message.success.mockReset();
+    recepcionQr.procesar.mockReset();
     // El poll de peso usa setInterval — se neutraliza para tests deterministas.
     vi.spyOn(globalThis, 'setInterval').mockReturnValue(0 as unknown as ReturnType<typeof setInterval>);
     vi.spyOn(globalThis, 'clearInterval').mockImplementation(() => undefined);
@@ -208,6 +219,7 @@ describe('PesajePage (TestBed + HttpTestingController)', () => {
         provideHttpClient(),
         provideHttpClientTesting(),
         { provide: NzMessageService, useValue: message },
+        { provide: RecepcionQrService, useValue: recepcionQr },
       ],
     }).compileComponents();
 
@@ -1154,6 +1166,285 @@ describe('PesajePage (TestBed + HttpTestingController)', () => {
       expect(message.error).toHaveBeenCalledWith(
         'La boleta cerró, pero no se pudo preparar la impresión.',
       );
+    });
+  });
+
+  describe('recepción de transferencia NAT por QR', () => {
+    const TIPO_RECEPCION = {
+      id: 'tm-1',
+      codigo: 'REC',
+      nombre: 'Recepción Transferencia NAT',
+      prefijo: 'REC',
+      direccion: 'Entrada',
+      operacionD365: 'TransferenciaRecepcion',
+      generaQR: false,
+      formatoBoletaId: null,
+      activo: true,
+    };
+
+    function flushInitConRecepcion(): void {
+      flushInit({ tipos: [TIPO_RECEPCION] });
+    }
+
+    function resultadoLista(overrides: { datos?: Partial<DatosRecepcionQr> } = {}): ResultadoRecepcionQr {
+      return {
+        fase: 'lista',
+        datos: {
+          boletaOrigenId: 'origen-1',
+          referencia: {
+            numeroBoleta: 'GTM-N01-TRF-0000001',
+            centroCodigo: 'GTM',
+            fechaHoraSalida: '2026-09-10T15:00:00Z',
+            pesoNeto: 15000,
+          },
+          firma: 'valida',
+          parcial: false,
+          valores: [],
+          advertencias: [],
+          requeridosSinValor: [],
+          maestrosNoImportados: [],
+          ...overrides.datos,
+        },
+      };
+    }
+
+    it('esTipoRecepcion() solo es true para un tipo con operacionD365 TransferenciaRecepcion', () => {
+      flushInit();
+      seleccionarTipo([]);
+      expect(component.esTipoRecepcion()).toBe(false);
+    });
+
+    it('un tipo de recepción arranca en modo QR', () => {
+      flushInitConRecepcion();
+      seleccionarTipo([]);
+      expect(component.esTipoRecepcion()).toBe(true);
+      expect(component.modoRecepcion()).toBe('qr');
+    });
+
+    it('caso feliz: llama al pipeline con el texto/campos/clave correctos y vuelca el valor', async () => {
+      flushInitConRecepcion();
+      seleccionarTipo([
+        campo({ campoId: 'c-obs', campoClave: 'observacion', seccionClave: 'transporte' }),
+      ]);
+      recepcionQr.procesar.mockResolvedValueOnce(
+        resultadoLista({
+          datos: {
+            valores: [{ campoId: 'c-obs', ocurrencia: 0, valorTexto: 'llegó completo' }],
+          },
+        }),
+      );
+
+      component.escaneoQrCtrl.setValue('SMS1.texto-del-scanner');
+      await component.procesarEscaneoQr();
+
+      expect(recepcionQr.procesar).toHaveBeenCalledTimes(1);
+      const [texto, campos, efectos] = recepcionQr.procesar.mock.calls[0];
+      expect(texto).toBe('SMS1.texto-del-scanner');
+      expect(campos).toEqual(component.camposAplicables());
+      expect(efectos.clave).toBeNull(); // ningún QR_CLAVE_PROVIDER inyectado en el test
+
+      expect(component.resultadoQr()?.fase).toBe('lista');
+      expect(
+        (component.formSecciones().get('transporte') as FormGroup).get('c-obs')?.value,
+      ).toBe('llegó completo');
+      expect((component as unknown as { boletaOrigenId: string | null }).boletaOrigenId).toBe(
+        'origen-1',
+      );
+      // El escaneo se limpia para el próximo QR.
+      expect(component.escaneoQrCtrl.value).toBe('');
+    });
+
+    it('el efectos wiring llama a los endpoints correctos del servidor local', async () => {
+      flushInitConRecepcion();
+      seleccionarTipo([]);
+      recepcionQr.procesar.mockResolvedValueOnce(resultadoLista());
+
+      component.escaneoQrCtrl.setValue('texto');
+      await component.procesarEscaneoQr();
+
+      const efectos = recepcionQr.procesar.mock.calls[0][2];
+      efectos.boletaRecibidaDe('origen-x').subscribe();
+      httpMock.expectOne(`${LOCAL}/boletas/recibida-de/origen-x`).flush({ recibida: false });
+      efectos.maestros.maestroPorId('m-1').subscribe();
+      httpMock.expectOne(`${LOCAL}/maestros/m-1`).flush(null);
+      efectos.maestros.maestroPorCodigo('Piloto', 'P-001').subscribe();
+      httpMock.expectOne(`${LOCAL}/maestros/por-codigo?tipoCatalogo=Piloto&codigo=P-001`).flush(null);
+      efectos.importarMaestroProvisional({ id: 'm-1', tipoCatalogo: 'Piloto', nombre: 'Juan' }).subscribe();
+      httpMock.expectOne(`${LOCAL}/maestros/importar-provisional`).flush({});
+    });
+
+    it('recepción duplicada: no toca el formulario ni fija boletaOrigenId', async () => {
+      flushInitConRecepcion();
+      seleccionarTipo([]);
+      recepcionQr.procesar.mockResolvedValueOnce({
+        fase: 'duplicado',
+        boletaId: 'b-existente',
+        numeroBoleta: 'REC-N01-000009',
+      });
+
+      component.escaneoQrCtrl.setValue('texto');
+      await component.procesarEscaneoQr();
+
+      expect(component.resultadoQr()).toEqual({
+        fase: 'duplicado',
+        boletaId: 'b-existente',
+        numeroBoleta: 'REC-N01-000009',
+      });
+      expect((component as unknown as { boletaOrigenId: string | null }).boletaOrigenId).toBeNull();
+    });
+
+    it('firma inválida: se muestra pero no fija ningún vínculo', async () => {
+      flushInitConRecepcion();
+      seleccionarTipo([]);
+      recepcionQr.procesar.mockResolvedValueOnce({
+        fase: 'firma-invalida',
+        numeroBoleta: 'GTM-N01-TRF-0000001',
+      });
+
+      component.escaneoQrCtrl.setValue('texto');
+      await component.procesarEscaneoQr();
+
+      expect(component.resultadoQr()).toEqual({
+        fase: 'firma-invalida',
+        numeroBoleta: 'GTM-N01-TRF-0000001',
+      });
+      expect((component as unknown as { boletaOrigenId: string | null }).boletaOrigenId).toBeNull();
+    });
+
+    it('error del decoder: mensajeErrorQr traduce el motivo a texto', async () => {
+      flushInitConRecepcion();
+      seleccionarTipo([]);
+      recepcionQr.procesar.mockResolvedValueOnce({ fase: 'error', motivo: 'prefijo-invalido' });
+
+      component.escaneoQrCtrl.setValue('cualquier cosa');
+      await component.procesarEscaneoQr();
+
+      expect(component.resultadoQr()).toEqual({ fase: 'error', motivo: 'prefijo-invalido' });
+      expect(component.mensajeErrorQr('prefijo-invalido')).toContain('transferencia NAT');
+    });
+
+    it('un texto vacío no llama al pipeline', async () => {
+      flushInitConRecepcion();
+      seleccionarTipo([]);
+      component.escaneoQrCtrl.setValue('   ');
+
+      await component.procesarEscaneoQr();
+
+      expect(recepcionQr.procesar).not.toHaveBeenCalled();
+    });
+
+    it('maestrosNoImportados se listan junto con las advertencias de mapeo', async () => {
+      flushInitConRecepcion();
+      seleccionarTipo([]);
+      recepcionQr.procesar.mockResolvedValueOnce(
+        resultadoLista({
+          datos: {
+            advertencias: [
+              { motivo: 'campo-sin-destino', seccionClave: 'calidad', campoClave: 'acidez', ocurrencias: [0] },
+            ],
+            maestrosNoImportados: [{ id: 'piloto-9', nombre: 'Juan Pérez' }],
+          },
+        }),
+      );
+
+      component.escaneoQrCtrl.setValue('texto');
+      await component.procesarEscaneoQr();
+
+      const resultado = component.resultadoQr();
+      if (resultado?.fase !== 'lista') throw new Error('esperaba fase lista');
+      const detalle = component.detalleRecepcionQr(resultado.datos);
+      expect(detalle).toEqual([
+        expect.stringContaining('calidad.acidez'),
+        'No se pudo importar "Juan Pérez" — completalo a mano.',
+      ]);
+    });
+
+    it('una sección Repetible agrega ocurrencias para calzar las filas del QR', async () => {
+      flushInitConRecepcion();
+      seleccionarTipo([
+        campo({
+          campoId: 'c-marchamo',
+          campoClave: 'numero',
+          seccionClave: 'marchamos',
+          cardinalidad: 'Repetible',
+        }),
+      ]);
+      expect(component.ocurrenciasDe('marchamos').length).toBe(0);
+
+      recepcionQr.procesar.mockResolvedValueOnce(
+        resultadoLista({
+          datos: {
+            valores: [
+              { campoId: 'c-marchamo', ocurrencia: 0, valorTexto: 'M1' },
+              { campoId: 'c-marchamo', ocurrencia: 1, valorTexto: 'M2' },
+            ],
+          },
+        }),
+      );
+      component.escaneoQrCtrl.setValue('texto');
+      await component.procesarEscaneoQr();
+
+      expect(component.ocurrenciasDe('marchamos').length).toBe(2);
+      expect(component.ocurrenciasDe('marchamos')[0].get('c-marchamo')?.value).toBe('M1');
+      expect(component.ocurrenciasDe('marchamos')[1].get('c-marchamo')?.value).toBe('M2');
+    });
+
+    it('crearBoleta() manda boletaOrigenId cuando el pesaje viene de un QR ya resuelto', async () => {
+      flushInitConRecepcion();
+      seleccionarTipo([]);
+      recepcionQr.procesar.mockResolvedValueOnce(resultadoLista());
+      component.escaneoQrCtrl.setValue('texto');
+      await component.procesarEscaneoQr();
+
+      component.crearBoleta();
+      const req = httpMock.expectOne(`${LOCAL}/boletas`);
+      expect(req.request.body.boletaOrigenId).toBe('origen-1');
+      req.flush({ id: 'nueva', numeroBoleta: 'REC-N01-000001' });
+      httpMock.expectOne(`${LOCAL}/boletas?estado=EnTransito`).flush([]);
+
+      // resetearFormulario tras crear con éxito también limpia el estado QR.
+      expect(component.resultadoQr()).toBeNull();
+      expect((component as unknown as { boletaOrigenId: string | null }).boletaOrigenId).toBeNull();
+    });
+
+    it('crearBoleta() sin haber escaneado manda boletaOrigenId null (recepción manual)', () => {
+      flushInitConRecepcion();
+      seleccionarTipo([]);
+      component.cambiarModoRecepcion('manual');
+
+      component.crearBoleta();
+      const req = httpMock.expectOne(`${LOCAL}/boletas`);
+      expect(req.request.body.boletaOrigenId).toBeNull();
+      req.flush({ id: 'nueva', numeroBoleta: 'REC-N01-000002' });
+      httpMock.expectOne(`${LOCAL}/boletas?estado=EnTransito`).flush([]);
+    });
+
+    it('cambiar a manual descarta el resultado del QR y el vínculo al origen', async () => {
+      flushInitConRecepcion();
+      seleccionarTipo([]);
+      recepcionQr.procesar.mockResolvedValueOnce(resultadoLista());
+      component.escaneoQrCtrl.setValue('texto');
+      await component.procesarEscaneoQr();
+
+      component.cambiarModoRecepcion('manual');
+
+      expect(component.resultadoQr()).toBeNull();
+      expect((component as unknown as { boletaOrigenId: string | null }).boletaOrigenId).toBeNull();
+    });
+
+    it('cambiar de tipo de movimiento resetea el estado QR', async () => {
+      flushInitConRecepcion();
+      seleccionarTipo([]);
+      recepcionQr.procesar.mockResolvedValueOnce(resultadoLista());
+      component.escaneoQrCtrl.setValue('texto');
+      await component.procesarEscaneoQr();
+      expect(component.resultadoQr()?.fase).toBe('lista');
+
+      component.tipoMovimientoCtrl.setValue('');
+
+      expect(component.resultadoQr()).toBeNull();
+      expect(component.modoRecepcion()).toBe('qr');
+      expect((component as unknown as { boletaOrigenId: string | null }).boletaOrigenId).toBeNull();
     });
   });
 });
