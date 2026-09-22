@@ -32,6 +32,7 @@ import {
   LockOutline,
   MinusCircleFill,
   PlusOutline,
+  QrcodeOutline,
   StopOutline,
   SwapOutline,
 } from '@ant-design/icons-angular/icons';
@@ -81,6 +82,7 @@ export const appConfig: ApplicationConfig = {
       LockOutline,
       MinusCircleFill,
       PlusOutline,
+      QrcodeOutline,
       StopOutline,
       SwapOutline,
     ]),

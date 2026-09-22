@@ -25,7 +25,12 @@ import { NzSelectModule } from 'ng-zorro-antd/select';
 import { NzTableModule } from 'ng-zorro-antd/table';
 import { NzTagModule } from 'ng-zorro-antd/tag';
 import { Observable, Subscription, catchError, forkJoin, of } from 'rxjs';
-import { CampoAplicable, ErrorCampo, TipoMovimiento } from '../../../api/configuracion.models';
+import {
+  CampoAplicable,
+  ErrorCampo,
+  TipoMovimiento,
+  ValorCampoDto,
+} from '../../../api/configuracion.models';
 import {
   AlertasOutbox,
   BoletaLocal,
@@ -61,6 +66,15 @@ import {
   limitesNumericos,
   opcionesLista,
 } from './secciones';
+import { describirAdvertenciaQr, MENSAJE_ERROR_QR } from '../../boletas/qr-transferencia/mensajes-qr';
+import {
+  DatosRecepcionQr,
+  EfectosRecepcionQr,
+  ResultadoRecepcionQr,
+} from '../../boletas/qr-transferencia/procesar-recepcion-qr';
+import { MotivoErrorQr, QR_CLAVE_PROVIDER } from '../../boletas/qr-transferencia/qr-transferencia';
+import { RecepcionQrService } from '../../boletas/qr-transferencia/recepcion-qr.service';
+import { esRecepcionTransferencia } from '../../boletas/qr-transferencia/tipo-recepcion';
 
 // No hay auth real todavía (SSO/Entra ID no implementado) — mismo espíritu
 // que el resto de la app: un placeholder explícito en vez de una pantalla de
@@ -142,6 +156,11 @@ export class PesajePage implements OnInit, OnDestroy {
   private readonly localServer = inject(LocalServerService);
   private readonly message = inject(NzMessageService);
   private readonly fb = inject(FormBuilder);
+  // Clave HMAC del terminal para verificar/firmar el QR de transferencia
+  // (`QrClaveService`, cableado en app.config.ts). Sin aprovisionar todavía o
+  // web-only: null — misma política que boleta-print, el QR queda sin firma.
+  private readonly obtenerClaveQr = inject(QR_CLAVE_PROVIDER, { optional: true }) ?? ((): null => null);
+  private readonly recepcionQr = inject(RecepcionQrService);
 
   readonly tiposMovimiento = signal<TipoMovimiento[]>([]);
 
@@ -285,6 +304,23 @@ export class PesajePage implements OnInit, OnDestroy {
       !this.cargandoFormulario() &&
       this.camposAplicables().length === 0,
   );
+
+  // --- Recepción de transferencia NAT por QR (manual §"Ingreso por QR / Ingreso
+  // Manual") — el tipo elegido debe integrar como recepción de transferencia
+  // (`esRecepcionTransferencia`); el resto de los tipos no ofrece este modo.
+  readonly esTipoRecepcion = computed(() => {
+    const tipo = this.tiposMovimiento().find((t) => t.id === this.tipoMovimientoCtrl.value);
+    return tipo !== undefined && esRecepcionTransferencia(tipo);
+  });
+  readonly modoRecepcion = signal<'qr' | 'manual'>('qr');
+  readonly escaneoQrCtrl = new FormControl<string>('', { nonNullable: true });
+  readonly procesandoQr = signal(false);
+  // Último resultado del pipeline (`error` | `firma-invalida` | `duplicado` | `lista`).
+  // `lista` ya dejó sus `valores` volcados en `formSecciones` — quedan editables.
+  readonly resultadoQr = signal<ResultadoRecepcionQr | null>(null);
+  // Vínculo a la boleta de envío — viaja tal cual en `CrearBoletaInput.boletaOrigenId`.
+  // Null en modo manual: una recepción sin QR es una boleta suelta, como cualquier otra.
+  private boletaOrigenId: string | null = null;
 
   private intervalId: ReturnType<typeof setInterval> | null = null;
   private alertasIntervalId: ReturnType<typeof setInterval> | null = null;
@@ -430,6 +466,9 @@ export class PesajePage implements OnInit, OnDestroy {
     this.transportistaVinculoSub?.unsubscribe();
     this.transportistaVinculoSub = null;
     this.pilotosVinculados.set([]);
+    // Los campos del tipo anterior ya no existen — un resultado QR viejo
+    // quedaría apuntando a `campoId`s que no están en el formulario nuevo.
+    this.resetearEstadoQr();
 
     if (tipoMovimientoId === '') return;
 
@@ -915,6 +954,7 @@ export class PesajePage implements OnInit, OnDestroy {
       creadaOffline: true,
       valores: armarValores(this.capturarControles()),
       preIngresoId: this.preIngresoId(),
+      boletaOrigenId: this.boletaOrigenId,
       ...(manual ? this.motivoManualPayload() : {}),
     };
 
@@ -982,6 +1022,123 @@ export class PesajePage implements OnInit, OnDestroy {
     this.formSecciones.set(this.fb.group({}));
     this.salirModoIngresoManual();
     this.limpiarPreIngreso();
+    this.resetearEstadoQr();
+  }
+
+  // --- Recepción de transferencia NAT por QR ---------------------------------
+
+  private resetearEstadoQr(): void {
+    this.modoRecepcion.set('qr');
+    this.escaneoQrCtrl.reset('');
+    this.procesandoQr.set(false);
+    this.resultadoQr.set(null);
+    this.boletaOrigenId = null;
+  }
+
+  /** El operador cambia entre escanear y cargar a mano — cualquier resultado previo queda obsoleto. */
+  cambiarModoRecepcion(modo: 'qr' | 'manual'): void {
+    this.modoRecepcion.set(modo);
+    this.escaneoQrCtrl.reset('');
+    this.resultadoQr.set(null);
+    this.boletaOrigenId = null;
+  }
+
+  private efectosRecepcionQr(): EfectosRecepcionQr {
+    return {
+      clave: this.obtenerClaveQr(),
+      boletaRecibidaDe: (origenId) => this.localServer.boletaRecibidaDe(origenId),
+      maestros: {
+        maestroPorId: (id) => this.localServer.maestroPorId(id),
+        maestroPorCodigo: (tipoCatalogo, codigo) =>
+          this.localServer.maestroPorCodigo(tipoCatalogo, codigo),
+      },
+      importarMaestroProvisional: (input) => this.localServer.importarMaestroProvisional(input),
+    };
+  }
+
+  /** Enter en el campo de escaneo (el lector "teclado" termina con Enter). */
+  async procesarEscaneoQr(): Promise<void> {
+    const texto = this.escaneoQrCtrl.value.trim();
+    this.escaneoQrCtrl.reset('');
+    if (texto === '' || this.procesandoQr()) return;
+
+    this.procesandoQr.set(true);
+    this.resultadoQr.set(null);
+    this.boletaOrigenId = null;
+
+    try {
+      const resultado = await this.recepcionQr.procesar(
+        texto,
+        this.camposAplicables(),
+        this.efectosRecepcionQr(),
+      );
+      this.resultadoQr.set(resultado);
+      if (resultado.fase === 'lista') {
+        this.boletaOrigenId = resultado.datos.boletaOrigenId;
+        this.aplicarValoresQr(resultado.datos.valores);
+        // Un maestro recién importado (provisional del emisor) no está en el
+        // caché de combos todavía — sin esto el <nz-select> mostraría el id
+        // sin etiqueta aunque el valor ya quedó bien seteado en el control.
+        this.cargarMaestrosReferencia(this.camposAplicables());
+      }
+    } finally {
+      this.procesandoQr.set(false);
+    }
+  }
+
+  /**
+   * Vuelca `valores` (del QR, keyed por `campoId` + `ocurrencia`, mismo shape
+   * que arma `armarValores`) en el `FormGroup`/`FormArray` de cada sección,
+   * agregando ocurrencias con `agregarOcurrencia` si el QR trae más filas de
+   * las que el formulario tiene. Los controles quedan EDITABLES — mismo
+   * criterio que el prefill de pre-ingreso.
+   */
+  private aplicarValoresQr(valores: readonly ValorCampoDto[]): void {
+    const campoPorId = new Map(this.camposAplicables().map((c) => [c.campoId, c]));
+    const porSeccion = new Map<string, Map<number, ValorCampoDto[]>>();
+
+    for (const valor of valores) {
+      const campo = campoPorId.get(valor.campoId);
+      if (campo === undefined) continue;
+      let porOcurrencia = porSeccion.get(campo.seccionClave);
+      if (porOcurrencia === undefined) {
+        porOcurrencia = new Map();
+        porSeccion.set(campo.seccionClave, porOcurrencia);
+      }
+      const fila = porOcurrencia.get(valor.ocurrencia) ?? [];
+      fila.push(valor);
+      porOcurrencia.set(valor.ocurrencia, fila);
+    }
+
+    for (const [seccionClave, porOcurrencia] of porSeccion) {
+      const control = this.formSecciones().get(seccionClave);
+      if (control instanceof FormArray) {
+        const maxOcurrencia = Math.max(...porOcurrencia.keys());
+        while (control.length <= maxOcurrencia) this.agregarOcurrencia(seccionClave);
+      }
+      for (const [ocurrencia, fila] of porOcurrencia) {
+        const grupo =
+          control instanceof FormArray ? (control.at(ocurrencia) as FormGroup) : this.grupoDeSeccion(seccionClave);
+        for (const valor of fila) {
+          const crudo = valorCrudoDeDto(valor);
+          if (crudo !== undefined) grupo.get(valor.campoId)?.setValue(crudo);
+        }
+      }
+    }
+  }
+
+  /** Texto legible del `fase: 'error'` para mostrar en pantalla. */
+  mensajeErrorQr(motivo: MotivoErrorQr): string {
+    return MENSAJE_ERROR_QR[motivo];
+  }
+
+  /** Líneas legibles de advertencias + maestros no importados — una lista, un solo `nz-alert`. */
+  detalleRecepcionQr(datos: DatosRecepcionQr): string[] {
+    const lineas = datos.advertencias.map(describirAdvertenciaQr);
+    for (const maestro of datos.maestrosNoImportados) {
+      lineas.push(`No se pudo importar "${maestro.nombre}" — completalo a mano.`);
+    }
+    return lineas;
   }
 
   abrirCierre(boleta: BoletaLocal): void {
@@ -1081,4 +1238,22 @@ export class PesajePage implements OnInit, OnDestroy {
   descartarImpresion(): void {
     this.boletaParaImprimir.set(null);
   }
+}
+
+/**
+ * `ValorCampoDto` (del QR, exactamente un slot tipado poblado) -> el valor
+ * crudo que espera `FormControl.setValue`. Inversa de `slotTipado` de
+ * `armar-valores.ts`: `nz-date-picker` toma `Date`, no el ISO string que
+ * viaja en el DTO.
+ */
+function valorCrudoDeDto(valor: ValorCampoDto): unknown {
+  if (valor.valorTexto != null) return valor.valorTexto;
+  if (valor.valorNumero != null) return valor.valorNumero;
+  if (valor.valorFecha != null) {
+    const fecha = new Date(valor.valorFecha);
+    return Number.isNaN(fecha.getTime()) ? undefined : fecha;
+  }
+  if (valor.valorBooleano != null) return valor.valorBooleano;
+  if (valor.valorMaestroId != null) return valor.valorMaestroId;
+  return undefined;
 }

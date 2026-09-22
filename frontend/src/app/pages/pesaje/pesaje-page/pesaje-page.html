@@ -144,6 +144,128 @@
       </nz-form-control>
     </nz-form-item>
 
+    @if (esTipoRecepcion()) {
+      <div class="recepcion-qr">
+        <div class="recepcion-qr__modo">
+          <button
+            nz-button
+            [nzType]="modoRecepcion() === 'qr' ? 'primary' : 'default'"
+            (click)="cambiarModoRecepcion('qr')"
+          >
+            <span nz-icon nzType="qrcode"></span>
+            Escanear QR
+          </button>
+          <button
+            nz-button
+            [nzType]="modoRecepcion() === 'manual' ? 'primary' : 'default'"
+            (click)="cambiarModoRecepcion('manual')"
+          >
+            <span nz-icon nzType="form"></span>
+            Ingreso manual
+          </button>
+        </div>
+
+        @if (modoRecepcion() === 'qr') {
+          <nz-form-item>
+            <nz-form-label>Escanear código QR de la boleta de envío</nz-form-label>
+            <nz-form-control>
+              <input
+                nz-input
+                autofocus
+                [formControl]="escaneoQrCtrl"
+                [disabled]="procesandoQr()"
+                placeholder="Posicioná el cursor acá y escaneá"
+                (keyup.enter)="procesarEscaneoQr()"
+              />
+            </nz-form-control>
+          </nz-form-item>
+
+          @if (procesandoQr()) {
+            <nz-alert nzType="info" nzShowIcon nzMessage="Procesando QR…"></nz-alert>
+          }
+
+          @if (resultadoQr(); as r) {
+            @switch (r.fase) {
+              @case ('error') {
+                <nz-alert
+                  nzType="error"
+                  nzShowIcon
+                  class="alerta-qr"
+                  [nzMessage]="'No se pudo leer el QR: ' + mensajeErrorQr(r.motivo)"
+                ></nz-alert>
+              }
+              @case ('firma-invalida') {
+                <nz-alert
+                  nzType="error"
+                  nzShowIcon
+                  class="alerta-qr"
+                  [nzMessage]="
+                    'La firma del QR de la boleta ' + r.numeroBoleta + ' no es válida — no se puede recibir.'
+                  "
+                ></nz-alert>
+              }
+              @case ('duplicado') {
+                <nz-alert
+                  nzType="warning"
+                  nzShowIcon
+                  class="alerta-qr"
+                  [nzMessage]="'Esta transferencia ya fue recibida en la boleta ' + r.numeroBoleta + '.'"
+                ></nz-alert>
+              }
+              @case ('lista') {
+                <nz-alert
+                  [nzType]="r.datos.firma === 'ausente' ? 'warning' : 'success'"
+                  nzShowIcon
+                  class="alerta-qr"
+                  [nzMessage]="
+                    'Boleta de envío ' +
+                    r.datos.referencia.numeroBoleta +
+                    (r.datos.firma === 'ausente' ? ' — QR sin firmar, revisá los datos' : ' — datos cargados')
+                  "
+                  [nzDescription]="tplReferenciaQr"
+                ></nz-alert>
+                <ng-template #tplReferenciaQr>
+                  <div class="qr-referencia">
+                    <span>Centro origen: {{ r.datos.referencia.centroCodigo ?? '—' }}</span>
+                    <span>
+                      Peso neto enviado (referencia, no se copia):
+                      {{
+                        r.datos.referencia.pesoNeto !== null
+                          ? (r.datos.referencia.pesoNeto | number: '1.0-2') + ' kg'
+                          : '—'
+                      }}
+                    </span>
+                    @if (r.datos.parcial) {
+                      <span class="qr-referencia__aviso">
+                        El QR venía incompleto por tamaño — revisá los campos.
+                      </span>
+                    }
+                  </div>
+                </ng-template>
+
+                @if (detalleRecepcionQr(r.datos).length > 0) {
+                  <nz-alert
+                    nzType="warning"
+                    nzShowIcon
+                    class="alerta-qr"
+                    [nzMessage]="detalleRecepcionQr(r.datos).length + ' dato(s) del QR no se cargaron solos'"
+                    [nzDescription]="tplDetalleQr"
+                  ></nz-alert>
+                  <ng-template #tplDetalleQr>
+                    <ul class="qr-detalle">
+                      @for (linea of detalleRecepcionQr(r.datos); track $index) {
+                        <li>{{ linea }}</li>
+                      }
+                    </ul>
+                  </ng-template>
+                }
+              }
+            }
+          }
+        }
+      </div>
+    }
+
     @if (cargandoFormulario()) {
       <nz-alert nzType="info" nzMessage="Cargando campos del tipo de movimiento…"></nz-alert>
     }
