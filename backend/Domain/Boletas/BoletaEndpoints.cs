@@ -576,6 +576,25 @@ public static class BoletaEndpoints
                         marcaVinculo = MarcaVinculoTransporte.VinculoInvalido;
                     }
 
+                    var boletaOrigenId = LeerGuidNullable(request.Payload, "boletaOrigenId");
+                    MarcaBoletaOrigen? marcaBoletaOrigen = null;
+                    if (boletaOrigenId is Guid origenId)
+                    {
+                        var recepcionActivaExiste = await db.Boletas.IgnoreQueryFilters().AnyAsync(
+                            b => b.Id != id
+                                 && b.BoletaOrigenId == origenId
+                                 && b.Estado != EstadoBoleta.Anulada,
+                            ct);
+                        if (recepcionActivaExiste)
+                        {
+                            marcaBoletaOrigen = MarcaBoletaOrigen.RecepcionDuplicada;
+                        }
+                        else if (!await db.Boletas.IgnoreQueryFilters().AnyAsync(b => b.Id == origenId, ct))
+                        {
+                            marcaBoletaOrigen = MarcaBoletaOrigen.OrigenNoResuelto;
+                        }
+                    }
+
                     var boleta = new Boleta
                     {
                         // Preserva la identidad generada localmente — central
@@ -600,6 +619,8 @@ public static class BoletaEndpoints
                         MotivoPesoManual = motivoManual,
                         MotivoPesoManualDetalle = motivoManualDetalle,
                         MarcaVinculoTransporte = marcaVinculo,
+                        BoletaOrigenId = boletaOrigenId,
+                        MarcaBoletaOrigen = marcaBoletaOrigen,
                     };
 
                     db.Boletas.Add(boleta);

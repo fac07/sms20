@@ -170,7 +170,8 @@ public static class TestData
         decimal pesoIngreso = 1000m,
         string? motivoPesoManual = null,
         string? motivoPesoManualDetalle = null,
-        Guid? preIngresoId = null) =>
+        Guid? preIngresoId = null,
+        Guid? boletaOrigenId = null) =>
         new
         {
             basculaCodigo = escenario.BasculaCodigo,
@@ -187,6 +188,7 @@ public static class TestData
                 creadaOffline = true,
                 motivoPesoManual,
                 motivoPesoManualDetalle,
+                boletaOrigenId,
                 // Enlace opcional al pre-ingreso — el snapshot que arma
                 // crearBoletaLocal lo incluye cuando el operador seleccionó una
                 // unidad de la cola de transporte (slice 4 lo persiste local).
