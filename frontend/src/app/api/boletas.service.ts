@@ -53,6 +53,7 @@ export interface BoletaDto {
   fechaHoraAnulacion: string | null;
   boletaReemplazoId: string | null;
   boletaOrigenId: string | null;
+  marcaBoletaOrigen?: 'OrigenNoResuelto' | 'RecepcionDuplicada' | null;
   basculaSalidaId: string | null;
   preIngresoId: string | null;
   // Cola de transporte (cola-transporte, slice 6): número de envío y estado
