@@ -1078,7 +1078,7 @@ public static class BoletaEndpoints
             b.UsuarioIngreso, b.UsuarioSalida, b.UsuarioAnula, b.UsuarioAutoriza, b.MotivoAnulacion,
             b.FechaHoraAnulacion,
             b.UsuarioReemision, b.FechaHoraReemision,
-            b.BoletaReemplazoId, b.BoletaOrigenId, b.BasculaSalidaId, b.PreIngresoId,
+            b.BoletaReemplazoId, b.BoletaOrigenId, b.MarcaBoletaOrigen, b.BasculaSalidaId, b.PreIngresoId,
             preingreso != null ? preingreso.NumeroEnvio : null,
             preingreso != null ? (EstadoPreIngreso?)preingreso.Estado : null,
             b.RespuestaD365Id, b.CreadaOffline,

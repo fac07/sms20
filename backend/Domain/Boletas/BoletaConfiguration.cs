@@ -64,6 +64,10 @@ public class BoletaConfiguration : IEntityTypeConfiguration<Boleta>
             .HasConversion<string>()
             .HasMaxLength(30);
 
+        builder.Property(b => b.MarcaBoletaOrigen)
+            .HasConversion<string>()
+            .HasMaxLength(30);
+
         // Enum-as-string, mismo criterio que MarcaPreIngreso. Columna nvarchar(30).
         builder.Property(b => b.MarcaVinculoTransporte)
             .HasConversion<string>()

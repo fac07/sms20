@@ -113,6 +113,12 @@ public class Boleta
     /// <summary>Self-FK, sin navigation property. Solo se usa en recepción de transferencia.</summary>
     public Guid? BoletaOrigenId { get; set; }
 
+    /// <summary>
+    /// Marca no bloqueante cuando el vínculo lógico de origen necesita revisión.
+    /// Null cuando no hay origen o el vínculo se resolvió sin incidencias.
+    /// </summary>
+    public MarcaBoletaOrigen? MarcaBoletaOrigen { get; set; }
+
     /// <summary>FK -> Bascula, solo si el pesaje de salida se hizo en una báscula física distinta a la de ingreso.</summary>
     public Guid? BasculaSalidaId { get; set; }
 
