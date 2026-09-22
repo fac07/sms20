@@ -1,6 +1,6 @@
-import { HttpClient } from '@angular/common/http';
+import { HttpClient, HttpErrorResponse, HttpParams } from '@angular/common/http';
 import { Injectable, inject } from '@angular/core';
-import { Observable, map } from 'rxjs';
+import { Observable, catchError, map, of, throwError } from 'rxjs';
 import { environment } from '../../environments/environment';
 import { BoletaDto } from './boletas.service';
 import { CampoAplicable, TipoMovimiento, ValorCampoDto } from './configuracion.models';
@@ -128,6 +128,10 @@ export interface CrearBoletaInput {
   // (`crearBoletaLocal`, ya lo persiste desde slice 4) y de ahí al payload
   // 'Crear' del Outbox.
   preIngresoId?: string | null;
+  // Solo en la recepción de transferencias por QR: id de la boleta de ORIGEN
+  // (el `b` del payload). El servidor local la persiste como `BoletaOrigenId`
+  // y la usa para detectar recepciones duplicadas (409).
+  boletaOrigenId?: string | null;
 }
 
 /**
@@ -165,6 +169,13 @@ export interface CerrarBoletaInput {
   // Solo cuando `origenPesoSalida === 'Manual'` (mismo contrato que la creación).
   motivoPesoManual?: MotivoPesoManual;
   motivoPesoManualDetalle?: string | null;
+}
+
+/** Espejo de `GET /boletas/recibida-de/:origenId` en el servidor local. */
+export interface RecepcionQrEstado {
+  recibida: boolean;
+  boletaId?: string;
+  numeroBoleta?: string;
 }
 
 // Mismos campos que MaestroLocal en frontend/electron/db.ts — snapshot local
@@ -223,6 +234,11 @@ export interface OutboxLocalEvento {
   ultimoError: string | null;
   fechaCreacion: string;
   fechaEnviado: string | null;
+}
+
+/** 404 → "no existe" (valor null), no un error duro, para los buscadores de maestro. */
+function esNotFound(error: unknown): boolean {
+  return error instanceof HttpErrorResponse && error.status === 404;
 }
 
 /**
@@ -293,6 +309,17 @@ export class LocalServerService {
     return this.http.post<BoletaLocal>(`${LOCAL_SERVER_URL}/boletas`, input);
   }
 
+  /**
+   * GET /boletas/recibida-de/:origenId — ¿se recibió ya la transferencia cuyo
+   * QR trae este boleta-origen? Barato de responder (índice único sobre
+   * BoletaOrigenId); la pantalla lo consulta antes de abrir el formulario.
+   */
+  boletaRecibidaDe(origenId: string): Observable<RecepcionQrEstado> {
+    return this.http.get<RecepcionQrEstado>(
+      `${LOCAL_SERVER_URL}/boletas/recibida-de/${encodeURIComponent(origenId)}`,
+    );
+  }
+
   cerrarBoleta(id: string, input: CerrarBoletaInput): Observable<BoletaLocal> {
     return this.http.post<BoletaLocal>(`${LOCAL_SERVER_URL}/boletas/${id}/cerrar`, input);
   }
@@ -311,6 +338,40 @@ export class LocalServerService {
   listarMaestros(tipoCatalogo?: string): Observable<MaestroLocal[]> {
     const params = tipoCatalogo ? `?tipoCatalogo=${encodeURIComponent(tipoCatalogo)}` : '';
     return this.http.get<MaestroLocal[]>(`${LOCAL_SERVER_URL}/maestros${params}`);
+  }
+
+  /**
+   * GET /maestros/:id con "no existe" como valor (`null`) en vez de error 404:
+   * el precargador del QR espera `Observable<MaestroLocal | null>`. Cualquier
+   * otro error (red, 5xx) sí se propaga.
+   */
+  maestroPorId(id: string): Observable<MaestroLocal | null> {
+    return this.http
+      .get<MaestroLocal>(`${LOCAL_SERVER_URL}/maestros/${encodeURIComponent(id)}`)
+      .pipe(catchError((e) => (esNotFound(e) ? of(null) : throwError(() => e))));
+  }
+
+  /** GET /maestros/por-codigo — mismo trato 404→null que `maestroPorId`. */
+  maestroPorCodigo(tipoCatalogo: string, codigo: string): Observable<MaestroLocal | null> {
+    const params = new HttpParams().set('tipoCatalogo', tipoCatalogo).set('codigo', codigo);
+    return this.http
+      .get<MaestroLocal>(`${LOCAL_SERVER_URL}/maestros/por-codigo`, { params })
+      .pipe(catchError((e) => (esNotFound(e) ? of(null) : throwError(() => e))));
+  }
+
+  /**
+   * POST /maestros/importar-provisional: inserta (o reusa si ya existe) un
+   * maestro provisional TRAÍDO DEL QR de transferencia, respetando el id del
+   * emisor. 201 (creado) y 200 (ya existía) son ambos éxito — HttpClient solo
+   * entrega el cuerpo.
+   */
+  importarMaestroProvisional(input: {
+    id: string;
+    tipoCatalogo: string;
+    nombre: string;
+    datosAdicionales?: unknown;
+  }): Observable<MaestroLocal> {
+    return this.http.post<MaestroLocal>(`${LOCAL_SERVER_URL}/maestros/importar-provisional`, input);
   }
 
   // Tipos de catálogo que se pueden coinar como provisional offline (M1). El
