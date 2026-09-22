@@ -776,13 +776,18 @@ public static class BoletaEndpoints
         // que el bypass es opt-in — solo la vía /sync (identidad de terminal,
         // sin ClaimsPrincipal humano) lo pide explícito.
         var preIngresosQuery = ignorarFiltrosCentro ? db.PreIngresos.IgnoreQueryFilters() : db.PreIngresos;
+        var ahora = DateTime.UtcNow;
 
         var ganado = await preIngresosQuery
             .Where(p => p.Id == preIngresoId && p.Estado == EstadoPreIngreso.Pendiente)
             .ExecuteUpdateAsync(s => s
                 .SetProperty(p => p.Estado, EstadoPreIngreso.Vinculado)
                 .SetProperty(p => p.BoletaId, boleta.Id)
-                .SetProperty(p => p.FechaModificacion, DateTime.UtcNow), ct);
+                .SetProperty(
+                    p => p.FechaModificacion,
+                    p => p.FechaModificacion >= ahora
+                        ? p.FechaModificacion.AddMilliseconds(1)
+                        : ahora), ct);
 
         if (ganado > 0)
         {
