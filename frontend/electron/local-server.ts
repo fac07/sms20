@@ -2,7 +2,10 @@ import cors from 'cors'
 import express from 'express'
 import type { Server } from 'node:http'
 import {
+  RecepcionDuplicadaError,
+  TIPOS_CATALOGO_CONOCIDOS,
   anularBoletaLocal,
+  buscarBoletaRecibidaDeOrigen,
   cerrarBoletaLocal,
   crearBoletaLocal,
   crearMaestroProvisionalLocal,
@@ -21,6 +24,8 @@ import {
   obtenerBoletaDtoLocal,
   obtenerBoletaLocal,
   obtenerConfigIngresoManual,
+  obtenerMaestroLocal,
+  obtenerMaestroLocalPorCodigo,
   obtenerPreIngresoLocal,
   resolverCamposLocal,
   setConfig,
@@ -44,6 +49,9 @@ import { sincronizarPreIngresosLocal } from './preingreso-sync'
 const CENTRAL_API_URL = 'http://localhost:5094'
 
 let server: Server | null = null
+
+const GUID_REGEX = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
+const esGuid = (v: unknown): v is string => typeof v === 'string' && GUID_REGEX.test(v)
 
 /**
  * Normaliza el arreglo `valores` crudo del body a `ValorCampo[]` — keyed por
@@ -367,6 +375,23 @@ export function startLocalServer(port: number, esDev: boolean): Server {
     res.json(boleta)
   })
 
+  // Recepción de transferencia NAT: ¿este terminal ya tiene una recepción
+  // vigente (Estado <> 'Anulada') de la boleta origen? El Angular lo consulta
+  // antes de armar la boleta para avisar temprano; el POST /boletas igual lo
+  // vuelve a garantizar dentro de la transacción.
+  app.get('/boletas/recibida-de/:origenId', (req, res) => {
+    if (!esGuid(req.params.origenId)) {
+      res.status(400).json({ error: 'origenId debe ser un GUID.' })
+      return
+    }
+    const previa = buscarBoletaRecibidaDeOrigen(req.params.origenId)
+    res.json(
+      previa
+        ? { recibida: true, boletaId: previa.id, numeroBoleta: previa.numeroBoleta }
+        : { recibida: false },
+    )
+  })
+
   app.post('/boletas', (req, res) => {
     const body = req.body as {
       numeroBoletaPrefijo?: string
@@ -379,6 +404,7 @@ export function startLocalServer(port: number, esDev: boolean): Server {
       motivoPesoManual?: string
       motivoPesoManualDetalle?: string
       preIngresoId?: string | null
+      boletaOrigenId?: unknown
       valores?: unknown
     }
 
@@ -386,6 +412,14 @@ export function startLocalServer(port: number, esDev: boolean): Server {
       res.status(400).json({ error: 'El peso debe ser un número finito.' })
       return
     }
+
+    // Recepción de transferencia NAT: `boletaOrigenId` opcional, pero si viene
+    // debe ser un GUID (ausente/null = boleta normal).
+    if (body.boletaOrigenId !== undefined && body.boletaOrigenId !== null && !esGuid(body.boletaOrigenId)) {
+      res.status(400).json({ error: 'boletaOrigenId debe ser un GUID.' })
+      return
+    }
+    const boletaOrigenId = (body.boletaOrigenId as string | null | undefined) ?? null
 
     const origenPesoIngreso = body.origenPesoIngreso ?? 'Bascula'
 
@@ -420,28 +454,44 @@ export function startLocalServer(port: number, esDev: boolean): Server {
       return
     }
 
-    const boleta = crearBoletaLocal({
-      prefijo: body.numeroBoletaPrefijo ?? '',
-      codigoBascula: body.codigoBascula ?? '',
-      tipoMovimientoId,
-      pesoIngreso: body.pesoIngreso,
-      origenPesoIngreso,
-      fechaHoraIngreso,
-      usuarioIngreso: body.usuarioIngreso ?? '',
-      creadaOffline: body.creadaOffline ?? false,
-      motivoPesoManual:
-        origenPesoIngreso === 'Manual'
-          ? (body.motivoPesoManual as MotivoPesoManual)
-          : null,
-      motivoPesoManualDetalle:
-        origenPesoIngreso === 'Manual' ? (body.motivoPesoManualDetalle ?? null) : null,
-      // Enlace a la cola de transporte (cola-transporte): lo manda el selector de
-      // pesaje al elegir un pre-ingreso; ausente cuando se pesa sin cola. Se
-      // reenvía tal cual — `crearBoletaLocal` lo persiste y el payload del Outbox
-      // lo lleva a central para la resolución de carrera.
-      preIngresoId: body.preIngresoId ?? null,
-      valores,
-    })
+    let boleta
+    try {
+      boleta = crearBoletaLocal({
+        prefijo: body.numeroBoletaPrefijo ?? '',
+        codigoBascula: body.codigoBascula ?? '',
+        tipoMovimientoId,
+        pesoIngreso: body.pesoIngreso,
+        origenPesoIngreso,
+        fechaHoraIngreso,
+        usuarioIngreso: body.usuarioIngreso ?? '',
+        creadaOffline: body.creadaOffline ?? false,
+        motivoPesoManual:
+          origenPesoIngreso === 'Manual'
+            ? (body.motivoPesoManual as MotivoPesoManual)
+            : null,
+        motivoPesoManualDetalle:
+          origenPesoIngreso === 'Manual' ? (body.motivoPesoManualDetalle ?? null) : null,
+        // Enlace a la cola de transporte (cola-transporte): lo manda el selector de
+        // pesaje al elegir un pre-ingreso; ausente cuando se pesa sin cola. Se
+        // reenvía tal cual — `crearBoletaLocal` lo persiste y el payload del Outbox
+        // lo lleva a central para la resolución de carrera.
+        preIngresoId: body.preIngresoId ?? null,
+        boletaOrigenId,
+        valores,
+      })
+    } catch (err) {
+      // Duplicado detectado dentro de la transacción de crearBoletaLocal: nada
+      // se persistió (ni correlativo ni evento de Outbox).
+      if (err instanceof RecepcionDuplicadaError) {
+        res.status(409).json({
+          error: err.message,
+          boletaId: err.boletaId,
+          numeroBoleta: err.numeroBoleta,
+        })
+        return
+      }
+      throw err
+    }
 
     res.status(201).json(boleta)
   })
@@ -652,6 +702,84 @@ export function startLocalServer(port: number, esDev: boolean): Server {
     const maestro = crearMaestroProvisionalLocal({
       id: typeof body.id === 'string' && body.id.length > 0 ? body.id : undefined,
       tipoCatalogo,
+      nombre,
+      datosAdicionales: typeof body.datosAdicionales === 'string' ? body.datosAdicionales : null,
+    })
+    res.status(201).json(maestro)
+  })
+
+  // Lookups para la recepción de transferencia NAT. Las rutas fijas
+  // (`tipos-provisionables`, `por-codigo`) se declaran ANTES de `/maestros/:id`
+  // para que el parámetro no las tape.
+  //
+  // Por (tipoCatalogo, codigo) solo devuelve el maestro OFICIAL (activo o no):
+  // los códigos provisionales son por terminal y pueden colisionar.
+  app.get('/maestros/por-codigo', (req, res) => {
+    const { tipoCatalogo, codigo } = req.query
+    if (
+      typeof tipoCatalogo !== 'string' || tipoCatalogo.length === 0 ||
+      typeof codigo !== 'string' || codigo.length === 0
+    ) {
+      res.status(400).json({ error: 'tipoCatalogo y codigo son requeridos.' })
+      return
+    }
+    const maestro = obtenerMaestroLocalPorCodigo(tipoCatalogo, codigo)
+    if (!maestro) {
+      res.status(404).json({ error: 'No existe ese maestro.' })
+      return
+    }
+    res.json(maestro)
+  })
+
+  // Por Id, incluyendo inactivos, provisionales y fusionados.
+  app.get('/maestros/:id', (req, res) => {
+    const maestro = obtenerMaestroLocal(req.params.id)
+    if (!maestro) {
+      res.status(404).json({ error: 'No existe ese maestro.' })
+      return
+    }
+    res.json(maestro)
+  })
+
+  // Importa un maestro provisional coinado en OTRA planta conservando su Id.
+  // Decisión documentada: NO pasa por la allow-list de `POST /maestros` — esa
+  // lista solo gobierna la creación al vuelo por los operadores de este
+  // terminal; acá el maestro ya existe en la planta origen. Idempotente: si el
+  // Id ya existe devuelve la fila existente (200) sin tocarla ni encolar evento.
+  app.post('/maestros/importar-provisional', (req, res) => {
+    const body = (req.body ?? {}) as {
+      id?: unknown
+      tipoCatalogo?: unknown
+      nombre?: unknown
+      datosAdicionales?: unknown
+    }
+    const nombre = typeof body.nombre === 'string' ? body.nombre.trim() : ''
+
+    if (!esGuid(body.id)) {
+      res.status(400).json({ mensaje: 'id debe ser un GUID.' })
+      return
+    }
+    if (typeof body.tipoCatalogo !== 'string' || !TIPOS_CATALOGO_CONOCIDOS.includes(body.tipoCatalogo)) {
+      res.status(400).json({ mensaje: 'tipoCatalogo no es un tipo de catálogo válido.' })
+      return
+    }
+    if (nombre.length === 0) {
+      res.status(400).json({ mensaje: 'El nombre es requerido.' })
+      return
+    }
+    if (!getConfig('BasculaCodigo')) {
+      res.status(409).json({ mensaje: 'Esta báscula no tiene código configurado.' })
+      return
+    }
+
+    const existente = obtenerMaestroLocal(body.id)
+    if (existente) {
+      res.status(200).json(existente)
+      return
+    }
+    const maestro = crearMaestroProvisionalLocal({
+      id: body.id,
+      tipoCatalogo: body.tipoCatalogo,
       nombre,
       datosAdicionales: typeof body.datosAdicionales === 'string' ? body.datosAdicionales : null,
     })
