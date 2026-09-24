@@ -111,6 +111,30 @@ describe('BoletasService', () => {
     expect(recibida?.valores[0].valorMaestroProvisional).toBe(true);
   });
 
+  it('trasegar() issues POST /api/boletas/{id}/trasegar with the input as-is', () => {
+    let recibida: BoletaDto | undefined;
+    service
+      .trasegar('b-1', {
+        tipoMovimientoDestinoId: 'tm-destino',
+        numeroBoleta: 'TRS-000001',
+        usuarioAutoriza: 'supervisor@naturaceites.com',
+        motivoTrasiego: 'Se convierte a salida de MP y graneles',
+      })
+      .subscribe((b) => (recibida = b));
+
+    const req = httpMock.expectOne(`${BASE}/b-1/trasegar`);
+    expect(req.request.method).toBe('POST');
+    expect(req.request.body).toEqual({
+      tipoMovimientoDestinoId: 'tm-destino',
+      numeroBoleta: 'TRS-000001',
+      usuarioAutoriza: 'supervisor@naturaceites.com',
+      motivoTrasiego: 'Se convierte a salida de MP y graneles',
+    });
+    req.flush({ id: 'nueva', valores: [] } as unknown as BoletaDto);
+
+    expect(recibida?.id).toBe('nueva');
+  });
+
   it('modo báscula consulta lista y detalle sólo en el servidor local', () => {
     setModo('bascula');
 
