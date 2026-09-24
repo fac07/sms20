@@ -23,6 +23,7 @@ import {
 import { ValorCampoLeidoDto } from '../../../api/configuracion.models';
 import { etiquetaMotivoPesoManual } from '../../../api/motivo-peso-manual';
 import {
+  TipoMovimiento,
   TipoMovimientoSeccionDto,
   TiposMovimientoService,
 } from '../../../api/tipos-movimiento.service';
@@ -32,6 +33,7 @@ import { DescargaService } from '../../../core/descarga.service';
 import { EditarMarchamosDialog } from '../editar-marchamos-dialog/editar-marchamos-dialog';
 import { SemaforoTiempo } from '../semaforo/semaforo-tiempo';
 import { calcularTiempoTranscurridoMs, parsearFechaBoleta } from '../semaforo/tiempo-transcurrido';
+import { TrasegarBoletaDialog } from '../trasiego/trasegar-boleta-dialog';
 import { agruparValores, valorLegible } from './valores-agrupados';
 import { construirNombreArchivoBoletas, generarCsvBoletas } from './exportar-csv';
 
@@ -81,6 +83,7 @@ export function tieneMarchamosVigente(
     CommonModule,
     BoletaPrint,
     EditarMarchamosDialog,
+    TrasegarBoletaDialog,
     FormsModule,
     SemaforoTiempo,
     NzButtonModule,
@@ -106,6 +109,7 @@ export class BoletasPage {
   private readonly sesion = inject(SesionService);
   private readonly tipos = inject(TiposMovimientoService);
   private readonly dialogoMarchamos = viewChild(EditarMarchamosDialog);
+  private readonly dialogoTrasiego = viewChild(TrasegarBoletaDialog);
 
   // Cache por tipo de movimiento de sus secciones asignadas (con históricas),
   // consultada al abrir el detalle de una Cerrada: un tipo se pide UNA vez.
@@ -114,6 +118,13 @@ export class BoletasPage {
     Readonly<Record<string, readonly TipoMovimientoSeccionDto[]>>
   >({});
   private readonly consultaEnCurso = new Set<string>();
+
+  // Lista completa de tipos de movimiento, consultada UNA vez ante el primer
+  // detalle de una boleta Anulada — solo hace falta `direccion` (estático, sin
+  // versionado temporal) para el gate de Trasegar. `null` = no pedida todavía
+  // o en curso/fallida; el gate queda oculto hasta tenerla.
+  private readonly tiposMovimiento = signal<readonly TipoMovimiento[] | null>(null);
+  private cargandoTiposMovimiento = false;
 
   // Cadencia del reloj que avanza los semáforos de EnTransito: mismo tick de
   // 60 s que "Unidades en Tránsito" (manual: tiempos en vivo, nunca por segundo).
@@ -192,6 +203,28 @@ export class BoletasPage {
     if (boleta.estado === 'Cerrada') {
       this.cargarSeccionesTipo(boleta.tipoMovimientoId);
     }
+    // Solo las Anuladas pueden mostrar "Trasegar" — se asegura (una sola vez)
+    // tener la lista de tipos para resolver la Direccion del gate.
+    if (boleta.estado === 'Anulada') {
+      this.cargarTiposMovimiento();
+    }
+  }
+
+  /** Trae la lista de tipos de movimiento UNA sola vez (caché en memoria del componente). */
+  private cargarTiposMovimiento(): void {
+    if (this.tiposMovimiento() !== null || this.cargandoTiposMovimiento) return;
+    this.cargandoTiposMovimiento = true;
+    this.tipos.listar(false).subscribe({
+      next: (tipos) => {
+        this.cargandoTiposMovimiento = false;
+        this.tiposMovimiento.set(tipos);
+      },
+      // Error de red: el gate queda oculto y NO rompemos ni toast al usuario
+      // (mismo criterio que cargarSeccionesTipo).
+      error: () => {
+        this.cargandoTiposMovimiento = false;
+      },
+    });
   }
 
   /** Trae las secciones del tipo — con históricas — cacheando por `tipoMovimientoId`. */
@@ -254,6 +287,29 @@ export class BoletasPage {
 
   editarMarchamos(boleta: BoletaDto): void {
     this.dialogoMarchamos()?.abrir({ id: boleta.id, numeroBoleta: boleta.numeroBoleta });
+  }
+
+  /**
+   * "Trasegar" = boleta Anulada + rol Administrador (mismo gate que exige el
+   * backend, POST /{id}/trasegar) + tipo de movimiento cuya Direccion es
+   * Transferencia (las demás usan re-emisión). Con la consulta en curso o
+   * fallida el tipo no está en la cache → oculto.
+   */
+  canTrasegar(boleta: BoletaDto): boolean {
+    if (boleta.estado !== 'Anulada') return false;
+    if (this.sesion.rol() !== 'Administrador') return false;
+    const tipo = this.tiposMovimiento()?.find((t) => t.id === boleta.tipoMovimientoId);
+    return tipo?.direccion === 'Transferencia';
+  }
+
+  trasegarBoleta(boleta: BoletaDto): void {
+    this.dialogoTrasiego()?.abrir({ id: boleta.id, numeroBoleta: boleta.numeroBoleta, valores: boleta.valores });
+  }
+
+  /** El trasiego creó una boleta nueva bajo otro tipo — refresca el listado y cierra el detalle de la original. */
+  onTrasegado(): void {
+    this.cerrarDetalle();
+    this.cargar();
   }
 
   // Registra la reimpresión en central (contador + auditoría) y usa el MISMO

@@ -62,6 +62,7 @@
       <nz-option nzValue="Cerrada" nzLabel="Cerradas"></nz-option>
       <nz-option nzValue="Anulada" nzLabel="Anuladas"></nz-option>
       <nz-option nzValue="Reemitida" nzLabel="Reemitidas"></nz-option>
+      <nz-option nzValue="Trasegada" nzLabel="Trasegadas"></nz-option>
     </nz-select>
     <button nz-button style="margin-left: 8px" (click)="exportar()">Exportar</button>
   </ng-template>
@@ -108,6 +109,9 @@
               }
               @case ('Anulada') {
                 <nz-tag nzColor="error">Anulada</nz-tag>
+              }
+              @case ('Trasegada') {
+                <nz-tag>Trasegada</nz-tag>
               }
               @default {
                 <nz-tag>Reemitida</nz-tag>
@@ -164,6 +168,9 @@
         <!-- Central-only operation, like reprinting; Electron Outbox support is intentionally deferred. -->
         <button nz-button nzType="primary" (click)="editarMarchamos(d)">Editar marchamos</button>
       }
+      @if (canTrasegar(d)) {
+        <button nz-button nzType="primary" (click)="trasegarBoleta(d)">Trasegar</button>
+      }
 
       <nz-descriptions nzTitle="Movimiento" [nzColumn]="2" nzBordered [nzSize]="'small'">
         <nz-descriptions-item nzTitle="Báscula">{{ d.basculaCodigo }}</nz-descriptions-item>
@@ -218,11 +225,19 @@
         <nz-descriptions-item nzTitle="Fecha salida">{{ d.fechaHoraSalida ? (d.fechaHoraSalida | date: 'medium') : '—' }}</nz-descriptions-item>
       </nz-descriptions>
 
-      @if (d.estado === 'Anulada') {
+      @if (d.estado === 'Anulada' || d.estado === 'Trasegada') {
         <nz-descriptions nzTitle="Anulación" [nzColumn]="2" nzBordered [nzSize]="'small'" class="seccion">
           <nz-descriptions-item nzTitle="Usuario anula">{{ d.usuarioAnula ?? '—' }}</nz-descriptions-item>
           <nz-descriptions-item nzTitle="Usuario autoriza">{{ d.usuarioAutoriza ?? '—' }}</nz-descriptions-item>
           <nz-descriptions-item nzTitle="Motivo" [nzSpan]="2">{{ d.motivoAnulacion ?? '—' }}</nz-descriptions-item>
+        </nz-descriptions>
+      }
+
+      @if (d.estado === 'Trasegada') {
+        <nz-descriptions nzTitle="Trasiego" [nzColumn]="2" nzBordered [nzSize]="'small'" class="seccion">
+          <nz-descriptions-item nzTitle="Usuario autoriza">{{ d.usuarioTrasiego ?? '—' }}</nz-descriptions-item>
+          <nz-descriptions-item nzTitle="Fecha">{{ d.fechaHoraTrasiego ? (d.fechaHoraTrasiego | date: 'medium') : '—' }}</nz-descriptions-item>
+          <nz-descriptions-item nzTitle="Motivo" [nzSpan]="2">{{ d.motivoTrasiego ?? '—' }}</nz-descriptions-item>
         </nz-descriptions>
       }
 
@@ -263,6 +278,7 @@
 </nz-modal>
 
 <app-editar-marchamos-dialog />
+<app-trasegar-boleta-dialog (trasegado)="onTrasegado()" />
 
 @if (boletaParaImprimir(); as boleta) {
   <app-boleta-print [boleta]="boleta" (cerrar)="descartarImpresion()" />

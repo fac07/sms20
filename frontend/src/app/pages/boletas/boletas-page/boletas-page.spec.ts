@@ -68,6 +68,9 @@ function boletaFixture(parcial: Partial<BoletaDto> = {}): BoletaDto {
     usuarioAutoriza: null,
     motivoAnulacion: null,
     fechaHoraAnulacion: null,
+    usuarioTrasiego: null,
+    fechaHoraTrasiego: null,
+    motivoTrasiego: null,
     boletaReemplazoId: null,
     boletaOrigenId: null,
     basculaSalidaId: null,
@@ -289,6 +292,97 @@ describe('BoletasPage — gate del tipo con sección "marchamos" al abrir el det
 
     httpMock.expectNone(SECCIONES_TM1);
     expect(component.canEditarMarchamos(component.detalle()!)).toBe(true);
+  });
+});
+
+describe('BoletasPage — Trasegar (boleta Anulada de tipo Transferencia hacia otro tipo)', () => {
+  let component: BoletasPage;
+  let httpMock: HttpTestingController;
+  const rol = signal<'Operador' | 'Supervisor' | 'Administrador' | null>('Administrador');
+  const modoOriginal = environment.modo;
+  const TIPOS = `${environment.apiUrl}/api/tipos-movimiento?incluirInactivos=false`;
+
+  beforeEach(async () => {
+    (environment as { modo: typeof environment.modo }).modo = 'admin';
+    rol.set('Administrador');
+
+    await TestBed.configureTestingModule({
+      imports: [BoletasPage],
+      providers: [
+        provideHttpClient(),
+        provideHttpClientTesting(),
+        { provide: NzMessageService, useValue: { error: vi.fn(), success: vi.fn() } },
+        { provide: SesionService, useValue: { rol } },
+      ],
+    }).compileComponents();
+
+    component = TestBed.createComponent(BoletasPage).componentInstance;
+    httpMock = TestBed.inject(HttpTestingController);
+    httpMock.expectOne(BASE).flush([]);
+  });
+
+  afterEach(() => {
+    httpMock.verify();
+    (environment as { modo: typeof environment.modo }).modo = modoOriginal;
+  });
+
+  function abrirAnulada(tipoMovimientoId = 'tm-1'): void {
+    component.verDetalle(boletaFixture({ estado: 'Anulada', tipoMovimientoId }));
+    httpMock.expectOne(TIPOS).flush([
+      { id: 'tm-1', codigo: 'TRF', nombre: 'Envío Transferencia NAT', direccion: 'Transferencia', activo: true },
+      { id: 'tm-2', codigo: 'ING', nombre: 'Ingreso de fruta', direccion: 'Entrada', activo: true },
+    ]);
+  }
+
+  it('boleta Anulada de tipo Transferencia + rol Administrador → true', () => {
+    abrirAnulada();
+    expect(component.canTrasegar(component.detalle()!)).toBe(true);
+  });
+
+  it('boleta Anulada de un tipo que NO es Transferencia → false', () => {
+    abrirAnulada('tm-2');
+    expect(component.canTrasegar(component.detalle()!)).toBe(false);
+  });
+
+  it('rol Supervisor (no Administrador) → false aunque el tipo sea Transferencia', () => {
+    rol.set('Supervisor');
+    abrirAnulada();
+    expect(component.canTrasegar(component.detalle()!)).toBe(false);
+  });
+
+  it('boleta Cerrada (no Anulada) → false, y no dispara la consulta de tipos', () => {
+    component.verDetalle(boletaFixture({ estado: 'Cerrada' }));
+    httpMock.expectOne(SECCIONES_TM1).flush([]);
+    httpMock.expectNone(TIPOS);
+
+    expect(component.canTrasegar(component.detalle()!)).toBe(false);
+  });
+
+  it('consulta en curso o fallida → oculto, sin lanzar', () => {
+    component.verDetalle(boletaFixture({ estado: 'Anulada' }));
+    const req = httpMock.expectOne(TIPOS);
+
+    expect(component.canTrasegar(component.detalle()!)).toBe(false);
+
+    req.error(new ErrorEvent('network'));
+    expect(() => component.canTrasegar(component.detalle()!)).not.toThrow();
+    expect(component.canTrasegar(component.detalle()!)).toBe(false);
+  });
+
+  it('dos boletas Anuladas: UNA sola consulta de tipos (caché)', () => {
+    abrirAnulada();
+    component.verDetalle(boletaFixture({ estado: 'Anulada', id: 'b-2' }));
+    httpMock.expectNone(TIPOS);
+    expect(component.canTrasegar(component.detalle()!)).toBe(true);
+  });
+
+  it('al confirmar un trasiego exitoso, refresca el listado y cierra el detalle', () => {
+    abrirAnulada();
+    component.onTrasegado();
+
+    httpMock.expectOne(BASE).flush([boletaFixture({ id: 'nueva' })]);
+    expect(component.detalle()).toBeNull();
+    expect(component.boletas()).toHaveLength(1);
   });
 });
 

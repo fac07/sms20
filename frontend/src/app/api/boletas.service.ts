@@ -5,7 +5,7 @@ import { ValorCampoDto, ValorCampoLeidoDto } from './configuracion.models';
 import { environment } from '../../environments/environment';
 import { MotivoPesoManual } from './motivo-peso-manual';
 
-export type EstadoBoleta = 'EnTransito' | 'Cerrada' | 'Anulada' | 'Reemitida';
+export type EstadoBoleta = 'EnTransito' | 'Cerrada' | 'Anulada' | 'Reemitida' | 'Trasegada';
 
 export type EstadoSyncBoleta =
   | 'Local'
@@ -51,6 +51,13 @@ export interface BoletaDto {
   usuarioAutoriza: string | null;
   motivoAnulacion: string | null;
   fechaHoraAnulacion: string | null;
+  // Auditoría de trasiego (POST /{id}/trasegar): boleta Anulada de tipo
+  // Transferencia convertida a un tipo distinto. Comparte `boletaReemplazoId`
+  // con re-emisión — el `estado` ('Trasegada' vs 'Reemitida') desambigua el
+  // mecanismo.
+  usuarioTrasiego: string | null;
+  fechaHoraTrasiego: string | null;
+  motivoTrasiego: string | null;
   boletaReemplazoId: string | null;
   boletaOrigenId: string | null;
   marcaBoletaOrigen?: 'OrigenNoResuelto' | 'RecepcionDuplicada' | null;
@@ -92,6 +99,21 @@ export interface CrearBoletaInput {
   valores: ValorCampoDto[];
 }
 
+/**
+ * Espejo de backend `TrasegarBoletaRequest`: convierte una boleta Anulada de
+ * tipo Transferencia en una copia congelada bajo un tipo DISTINTO. Sin
+ * `valores`, el backend auto-mapea por (SeccionClave, CampoClave, TipoCampo)
+ * desde la original — ver `mapearValoresTrasiego` (pages/boletas/trasiego)
+ * para la vista previa que arma ese mismo mapeo del lado del cliente.
+ */
+export interface TrasegarBoletaInput {
+  tipoMovimientoDestinoId: string;
+  numeroBoleta: string;
+  usuarioAutoriza: string;
+  motivoTrasiego: string;
+  valores?: ValorCampoDto[];
+}
+
 @Injectable({ providedIn: 'root' })
 export class BoletasService {
   private readonly http = inject(HttpClient);
@@ -121,6 +143,12 @@ export class BoletasService {
   // devuelve el dto actualizado. Gate Operador: acción de mostrador.
   reimprimir(id: string, usuario: string): Observable<BoletaDto> {
     return this.http.post<BoletaDto>(`${this.baseUrl}/${id}/reimprimir`, { usuario });
+  }
+
+  // Gate Administrador (backend): solo una boleta Anulada de tipo
+  // Transferencia puede trasegarse. Acción admin-only, siempre central.
+  trasegar(id: string, input: TrasegarBoletaInput): Observable<BoletaDto> {
+    return this.http.post<BoletaDto>(`${this.baseUrl}/${id}/trasegar`, input);
   }
 }
 
