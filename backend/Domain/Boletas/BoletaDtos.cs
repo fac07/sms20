@@ -30,6 +30,12 @@ public record BoletaDto(
     // Huella de la re-emisión — solo la ORIGINAL (Reemitida) la trae.
     string? UsuarioReemision,
     DateTime? FechaHoraReemision,
+    // Huella del trasiego — solo la ORIGINAL (Trasegada) la trae. Comparte
+    // BoletaReemplazoId con la re-emisión; Estado desambigua cuál mecanismo
+    // produjo el reemplazo.
+    string? UsuarioTrasiego,
+    DateTime? FechaHoraTrasiego,
+    string? MotivoTrasiego,
     Guid? BoletaReemplazoId,
     Guid? BoletaOrigenId,
     MarcaBoletaOrigen? MarcaBoletaOrigen,
@@ -115,6 +121,44 @@ public record ReimprimirBoletaRequest(string Usuario);
 public record ReemitirBoletaRequest(
     string NumeroBoleta,
     string UsuarioReemision,
+    IReadOnlyList<ValorCampoDto>? Valores = null);
+
+/// <summary>
+/// Trasiego de una boleta anulada — convierte sus datos a un tipo de
+/// movimiento DISTINTO (p.ej. de Transferencia a Salida de Materia Prima y
+/// Graneles). Evidencia:
+///  - Manual: "Trasiego: Convertir los datos de una transacción o boleta a
+///    una nueva ... también acá los pesos no son modificables, solo los
+///    datos permitidos por Auditoría." Solo activa sobre una boleta ANULADA,
+///    igual que RE-Emisión.
+///  - Legacy NAT_Basculas: el método "real" <c>clsBoletaTrasiego.Boleta_Trasiego()</c>
+///    es código muerto (comentado en el único call site,
+///    <c>frmTrasiego.btnTrasegar_Click</c>). Lo que sí corre: el operador
+///    elige usuario-autoriza + motivo + tipo destino (2 opciones fijas en el
+///    diálogo legacy) y eso abre el formulario de alta del destino
+///    PRE-LLENADO desde la boleta original — el mismo mecanismo
+///    "BoletaEmision" que usa re-emisión. Trasiego es, en la práctica,
+///    "re-emisión hacia un tipo distinto".
+/// Acá: la nueva nace Cerrada con pesos/fechas/usuarios copiados de la
+/// original (igual que <see cref="ReemitirBoletaRequest"/>); el correlativo,
+/// el tipo de movimiento destino y los valores son lo editable. Sin
+/// <see cref="Valores"/> explícitos, se auto-mapean por (SeccionClave,
+/// CampoClave, TipoCampo) desde el conjunto de la original al del destino —
+/// ver <c>MapearValoresPorClave</c>. A diferencia de re-emisión, el destino
+/// NO hereda el TipoMovimiento de la original: <see cref="TipoMovimientoDestinoId"/>
+/// es obligatorio y debe ser una dirección distinta de Transferencia (el
+/// espejo exacto de la regla que /reemitir aplica sobre el ORIGEN). El
+/// destino puede requerir MÁS campos de los que trajo la original — esos
+/// quedan sin llenar hasta que <see cref="Valores"/> los provea (el
+/// "algunos puntos por llenar" del manual). <see cref="UsuarioAutoriza"/> y
+/// <see cref="MotivoTrasiego"/> quedan como huella en la original
+/// (<c>BoletaReemplazoId</c> — mismo campo unidireccional que re-emisión).
+/// </summary>
+public record TrasegarBoletaRequest(
+    Guid TipoMovimientoDestinoId,
+    string NumeroBoleta,
+    string UsuarioAutoriza,
+    string MotivoTrasiego,
     IReadOnlyList<ValorCampoDto>? Valores = null);
 
 /// <summary>

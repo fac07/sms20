@@ -49,8 +49,10 @@ public class BoletaConfiguration : IEntityTypeConfiguration<Boleta>
         builder.Property(b => b.UsuarioAnula).HasMaxLength(150);
         builder.Property(b => b.UsuarioAutoriza).HasMaxLength(150);
         builder.Property(b => b.UsuarioReemision).HasMaxLength(150);
+        builder.Property(b => b.UsuarioTrasiego).HasMaxLength(150);
 
         builder.Property(b => b.MotivoAnulacion).HasMaxLength(500);
+        builder.Property(b => b.MotivoTrasiego).HasMaxLength(500);
 
         // Enum-as-string, igual que Estado / OrigenPeso*. La columna sigue
         // siendo nvarchar(40) — el HasConversion no altera el esquema.

@@ -79,6 +79,19 @@ public class Boleta
     /// <summary>Instante UTC de la re-emisión — se fija en la original junto con <see cref="UsuarioReemision"/>.</summary>
     public DateTime? FechaHoraReemision { get; set; }
 
+    /// <summary>
+    /// UPN plano de quien autorizó el trasiego — se fija sobre la ORIGINAL
+    /// (mismo patrón que <see cref="UsuarioReemision"/>), no sobre la copia
+    /// nueva. Null mientras la boleta no fue trasegada.
+    /// </summary>
+    public string? UsuarioTrasiego { get; set; }
+
+    /// <summary>Instante UTC del trasiego — se fija en la original junto con <see cref="UsuarioTrasiego"/>.</summary>
+    public DateTime? FechaHoraTrasiego { get; set; }
+
+    /// <summary>Motivo del trasiego — doble control junto con <see cref="UsuarioTrasiego"/>, mismo patrón que <see cref="MotivoAnulacion"/>.</summary>
+    public string? MotivoTrasiego { get; set; }
+
     // --- Reimpresión (mejora sobre el legacy: reimprimir era libre y sin huella) ---
 
     /// <summary>

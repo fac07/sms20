@@ -426,6 +426,168 @@ public static class BoletaEndpoints
             return Results.Created($"/api/boletas/{nueva.Id}", dto);
         }).RequireAuthorization(Politicas.Administrador);
 
+        // Trasiego — convierte los datos de una boleta anulada a un TIPO DE
+        // MOVIMIENTO DISTINTO (espejo de /reemitir, que conserva el mismo
+        // tipo). Evidencia:
+        //  - Manual: "Trasiego: Convertir los datos de una transacción o
+        //    boleta a una nueva, por ejemplo, de Transferencia a Salida de
+        //    Materia Prima y Graneles... también acá los pesos no son
+        //    modificables, solo los datos permitidos por Auditoría."
+        //  - Legacy NAT_Basculas: clsBoletaTrasiego.Boleta_Trasiego() (con su
+        //    propio llamado a web-service y tipo de reversa de inventario) es
+        //    código MUERTO — comentado en el único call site
+        //    (frmTrasiego.btnTrasegar_Click). Lo que sí corre: el operador
+        //    elige usuario-autoriza + motivo + tipo destino, y eso abre el
+        //    formulario de alta del destino PRE-LLENADO desde la original
+        //    (mismo mecanismo "BoletaEmision" de re-emisión). Trasiego es, en
+        //    la práctica, "re-emisión hacia un tipo distinto"; las
+        //    transferencias son las únicas que lo usan (/reemitir las
+        //    rechaza con "use trasiego").
+        // Acá: la nueva nace Cerrada con pesos/fechas/usuarios copiados; el
+        // tipo destino, el correlativo y los valores son lo editable. Sin
+        // Valores explícitos, se auto-mapean por (SeccionClave, CampoClave,
+        // TipoCampo) — ver MapearValoresPorClaveAsync. La original pasa a
+        // Trasegada y comparte BoletaReemplazoId con re-emisión (Estado
+        // desambigua el mecanismo).
+        group.MapPost("/{id:guid}/trasegar", async (
+            Guid id, TrasegarBoletaRequest request, MotorCampos motor, SmsDbContext db, CancellationToken ct) =>
+        {
+            var original = await db.Boletas.FirstOrDefaultAsync(b => b.Id == id, ct);
+            if (original is null) return Results.NotFound();
+            if (string.IsNullOrWhiteSpace(request.UsuarioAutoriza))
+            {
+                return Results.BadRequest("UsuarioAutoriza es obligatorio para registrar el trasiego.");
+            }
+            if (string.IsNullOrWhiteSpace(request.MotivoTrasiego))
+            {
+                return Results.BadRequest("MotivoTrasiego es obligatorio para registrar el trasiego.");
+            }
+            if (original.Estado != EstadoBoleta.Anulada)
+            {
+                return Results.Conflict(
+                    $"Solo se puede trasegar una boleta anulada — estado actual: {original.Estado}.");
+            }
+
+            var tipoOriginal = await db.TiposMovimiento.AsNoTracking()
+                .FirstOrDefaultAsync(t => t.Id == original.TipoMovimientoId, ct);
+            if (tipoOriginal?.Direccion != DireccionMovimiento.Transferencia)
+            {
+                return Results.Conflict("Solo las transferencias se trasiegan — las demás usan reemisión.");
+            }
+
+            if (original.BoletaReemplazoId is not null)
+            {
+                return Results.Conflict("La boleta ya fue reemplazada.");
+            }
+
+            var destino = await db.TiposMovimiento.AsNoTracking()
+                .FirstOrDefaultAsync(t => t.Id == request.TipoMovimientoDestinoId, ct);
+            if (destino is null) return Results.NotFound($"No existe el tipo de movimiento {request.TipoMovimientoDestinoId}.");
+            if (!destino.Activo)
+            {
+                return Results.Conflict($"El tipo de movimiento destino '{destino.Nombre}' está inactivo.");
+            }
+            if (destino.Direccion == DireccionMovimiento.Transferencia)
+            {
+                return Results.Conflict("El destino del trasiego no puede ser otra transferencia.");
+            }
+
+            // Mismo request sintético que /reemitir: reusa ValidarCreacion
+            // para el correlativo único y la báscula activa (el tipo destino
+            // ya se validó activo arriba).
+            var creacion = new CrearBoletaRequest(
+                request.NumeroBoleta, original.BasculaId, destino.Id,
+                original.PesoIngreso, original.OrigenPesoIngreso, original.UsuarioIngreso, false);
+            var errorCreacion = await ValidarCreacion(creacion, db);
+            if (errorCreacion is not null) return errorCreacion;
+
+            // Valores explícitos reemplazan el conjunto; sin ellos se
+            // auto-mapean por clave desde el conjunto de la original hacia el
+            // del destino — los campos del destino sin equivalente en la
+            // original quedan sin llenar (el "algunos puntos por llenar" del
+            // manual) hasta que Valores los provea.
+            var valores = request.Valores
+                ?? await MapearValoresPorClaveAsync(db, motor, original, destino, ct);
+
+            var (pilotoIdTipado, transportistaIdTipado) = await LeerParTransporteAsync(db, valores, ct);
+            if (pilotoIdTipado is Guid pilotoTipado && transportistaIdTipado is Guid transportistaTipado)
+            {
+                var errorVinculo = await GuardiaVinculoTransporte.ValidarAsync(
+                    db, pilotoTipado, transportistaTipado, ct);
+                if (errorVinculo is not null) return errorVinculo;
+            }
+
+            var errores = await motor.ValidarValoresAsync(destino.Id, original.FechaHoraIngreso, valores, ct);
+            if (errores.Count > 0)
+            {
+                return Results.BadRequest(errores);
+            }
+
+            // Copia congelada hacia el tipo destino. PreIngresoId NO se
+            // copia — mismo criterio que /reemitir.
+            var nueva = new Boleta
+            {
+                Id = Guid.NewGuid(),
+                NumeroBoleta = request.NumeroBoleta,
+                BasculaId = original.BasculaId,
+                BasculaSalidaId = original.BasculaSalidaId,
+                TipoMovimientoId = destino.Id,
+                Estado = EstadoBoleta.Cerrada,
+                EstadoSync = EstadoSyncBoleta.SincronizadoCentral,
+                PesoIngreso = original.PesoIngreso,
+                PesoSalida = original.PesoSalida,
+                PesoNeto = original.PesoNeto,
+                OrigenPesoIngreso = original.OrigenPesoIngreso,
+                OrigenPesoSalida = original.OrigenPesoSalida,
+                FechaHoraIngreso = original.FechaHoraIngreso,
+                FechaHoraSalida = original.FechaHoraSalida,
+                UsuarioIngreso = original.UsuarioIngreso,
+                UsuarioSalida = original.UsuarioSalida,
+                CreadaOffline = false,
+                MotivoPesoManual = original.MotivoPesoManual,
+                MotivoPesoManualDetalle = original.MotivoPesoManualDetalle,
+            };
+
+            // Una transacción: o se crea la nueva (ya cerrada y válida) con su
+            // vínculo y la original pasa a Trasegada, o nada — nunca una
+            // Trasegada sin reemplazo ni un reemplazo huérfano/inválido.
+            await using var tx = await db.Database.BeginTransactionAsync(ct);
+
+            db.Boletas.Add(nueva);
+            await AgregarValoresAsync(db, nueva.Id, valores, ct);
+
+            original.Estado = EstadoBoleta.Trasegada;
+            original.BoletaReemplazoId = nueva.Id;
+            original.UsuarioTrasiego = request.UsuarioAutoriza;
+            original.FechaHoraTrasiego = DateTime.UtcNow;
+            original.MotivoTrasiego = request.MotivoTrasiego;
+
+            await db.SaveChangesAsync(ct);
+
+            // Misma barrera que /cerrar y /reemitir: la Cerrada resultante
+            // debe cumplir los campos requeridos del conjunto DESTINO as-of
+            // su fecha (congelada).
+            var erroresCierre = await motor.ValidarCierreAsync(nueva, ct);
+            if (erroresCierre.Count > 0)
+            {
+                await tx.RollbackAsync(ct);
+                return Results.UnprocessableEntity(erroresCierre);
+            }
+
+            var errorMuestra = await GuardiaMuestraFruta.ValidarCierreAsync(db, nueva.Id, ct);
+            if (errorMuestra is not null)
+            {
+                await tx.RollbackAsync(ct);
+                return errorMuestra;
+            }
+
+            await tx.CommitAsync(ct);
+
+            var dto = await Proyectar(db.Boletas.AsNoTracking().Where(b => b.Id == nueva.Id), db)
+                .FirstAsync(ct);
+            return Results.Created($"/api/boletas/{nueva.Id}", dto);
+        }).RequireAuthorization(Politicas.Administrador);
+
         // Recepción del Outbox local (Electron/SQLite, ver diseño
         // #sincronizacion) — el dispatcher reenvía acá cada evento
         // Crear/Cerrar/Anular ya decidido offline. A diferencia de los
@@ -980,6 +1142,56 @@ public static class BoletaEndpoints
         return (IdDeValor("piloto"), IdDeValor("transportista"));
     }
 
+    /// <summary>
+    /// Auto-mapeo de valores para /trasegar cuando el request no trae
+    /// <c>Valores</c> explícitos: para cada valor almacenado en la original se
+    /// busca su campo ORIGEN (por CampoId) y se busca un campo DESTINO con la
+    /// MISMA terna (<c>SeccionClave</c>, <c>CampoClave</c>, <c>TipoCampo</c>)
+    /// dentro del conjunto vigente del tipo destino — ambos conjuntos
+    /// resueltos as-of <c>original.FechaHoraIngreso</c> (fecha congelada,
+    /// mismo criterio que /reemitir). Un valor sin match en el destino se
+    /// descarta (el destino puede pedir MENOS campos que el origen); un campo
+    /// requerido del destino sin equivalente en el origen queda sin llenar —
+    /// lo detecta <c>MotorCampos.ValidarCierreAsync</c> más adelante, no este
+    /// helper. <c>ValorMaestroId</c> se copia TAL CUAL: origen y destino
+    /// viven en la misma base central, no hay resolución cross-terminal como
+    /// en el QR.
+    /// </summary>
+    private static async Task<IReadOnlyList<ValorCampoDto>> MapearValoresPorClaveAsync(
+        SmsDbContext db, MotorCampos motor, Boleta original, TipoMovimiento destino, CancellationToken ct)
+    {
+        var origenCampos = await motor.ResolverCamposAsync(original.TipoMovimientoId, original.FechaHoraIngreso, ct);
+        var destinoCampos = await motor.ResolverCamposAsync(destino.Id, original.FechaHoraIngreso, ct);
+
+        var origenPorId = origenCampos.ToDictionary(c => c.CampoId);
+        // Ante una colisión de terna en el destino (dos campos con la misma
+        // (sección, clave, tipo) — no debería pasar, pero es config de
+        // usuario) se toma el primero: no hay forma de desambiguar solo con
+        // la terna.
+        var destinoPorClave = destinoCampos
+            .GroupBy(c => (c.SeccionClave, c.CampoClave, c.TipoCampo))
+            .ToDictionary(g => g.Key, g => g.First().CampoId);
+
+        var almacenados = await db.BoletaValores.AsNoTracking()
+            .Where(v => v.BoletaId == original.Id)
+            .ToListAsync(ct);
+
+        var mapeados = new List<ValorCampoDto>();
+        foreach (var valor in almacenados)
+        {
+            if (!origenPorId.TryGetValue(valor.CampoId, out var campoOrigen)) continue;
+
+            var clave = (campoOrigen.SeccionClave, campoOrigen.CampoClave, campoOrigen.TipoCampo);
+            if (!destinoPorClave.TryGetValue(clave, out var campoDestinoId)) continue;
+
+            mapeados.Add(new ValorCampoDto(
+                campoDestinoId, valor.Ocurrencia, valor.ValorTexto, valor.ValorNumero,
+                valor.ValorFecha, valor.ValorBooleano, valor.ValorMaestroId));
+        }
+
+        return mapeados;
+    }
+
     private static async Task<IResult?> ValidarCreacion(CrearBoletaRequest request, SmsDbContext db)
     {
         var numeroEnUso = await db.Boletas.AnyAsync(b => b.NumeroBoleta == request.NumeroBoleta);
@@ -1104,6 +1316,7 @@ public static class BoletaEndpoints
             b.UsuarioIngreso, b.UsuarioSalida, b.UsuarioAnula, b.UsuarioAutoriza, b.MotivoAnulacion,
             b.FechaHoraAnulacion,
             b.UsuarioReemision, b.FechaHoraReemision,
+            b.UsuarioTrasiego, b.FechaHoraTrasiego, b.MotivoTrasiego,
             b.BoletaReemplazoId, b.BoletaOrigenId, b.MarcaBoletaOrigen, b.BasculaSalidaId, b.PreIngresoId,
             preingreso != null ? preingreso.NumeroEnvio : null,
             preingreso != null ? (EstadoPreIngreso?)preingreso.Estado : null,
