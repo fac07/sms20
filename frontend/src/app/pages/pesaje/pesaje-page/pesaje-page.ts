@@ -679,6 +679,23 @@ export class PesajePage implements OnInit, OnDestroy {
     return grupo instanceof FormGroup ? grupo : this.fb.group({});
   }
 
+  /**
+   * Control real de un campo dentro de `grupo` — usado por el template en vez
+   * de `[formControlName]`. `<ng-template #campoField>` (pesaje-page.html) se
+   * proyecta con `*ngTemplateOutlet` dentro del `[formGroupName]`/
+   * `[formArrayName]` de cada sección, pero está DECLARADO fuera de
+   * `[formGroup]` (para compartir el switch de `tipoCampo` entre la rama
+   * Repetible y la Unica sin duplicarlo). La resolución de `ControlContainer`
+   * que necesita `formControlName` viaja por la vista de declaración del
+   * `TemplateRef`, no por la vista de inserción del outlet, así que nunca
+   * encuentra el `FormGroupName` de la sección (NG01050, reproducible con un
+   * `detectChanges()` real, no un artefacto de test). Pasar la instancia real
+   * del control vía `[formControl]` evita esa resolución por nombre.
+   */
+  controlDe(grupo: FormGroup, campoId: string): FormControl {
+    return grupo.get(campoId) as FormControl;
+  }
+
   /** ¿El combo de este campo permite coinar un provisional inline (M1)? */
   puedeCrearProvisional(campo: CampoAplicable): boolean {
     return (

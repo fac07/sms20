@@ -6,6 +6,15 @@ import {
 import { ComponentFixture, TestBed } from '@angular/core/testing';
 import { FormArray, FormControl, FormGroup } from '@angular/forms';
 import { NzMessageService } from 'ng-zorro-antd/message';
+import { provideNzIcons } from 'ng-zorro-antd/icon';
+import {
+  DeleteOutline,
+  EditOutline,
+  FormOutline,
+  PlusOutline,
+  QrcodeOutline,
+  StopOutline,
+} from '@ant-design/icons-angular/icons';
 import { CampoAplicable, ErrorCampo } from '../../../api/configuracion.models';
 import { BoletaLocal, MaestroLocal } from '../../../api/local-server.service';
 import type {
@@ -220,6 +229,15 @@ describe('PesajePage (TestBed + HttpTestingController)', () => {
         provideHttpClientTesting(),
         { provide: NzMessageService, useValue: message },
         { provide: RecepcionQrService, useValue: recepcionQr },
+        // Sin esto, un `nz-icon` sin definición estática dispara un GET a
+        // `assets/outline/*.svg` (`NzIconService`) — invisible mientras nadie
+        // llamaba a `detectChanges()`, pero un `httpMock.verify()` sin
+        // flushear ese GET revienta el PRÓXIMO test de la suite. En la app
+        // real estos iconos están registrados en `app.config.ts`
+        // (`provideNzIcons([...])`) y nunca pegan red; acá se registra el
+        // mismo subconjunto que usa esta página para tener paridad real,
+        // no para taparle la boca a un GET.
+        provideNzIcons([DeleteOutline, EditOutline, FormOutline, PlusOutline, QrcodeOutline, StopOutline]),
       ],
     }).compileComponents();
 
@@ -257,8 +275,26 @@ describe('PesajePage (TestBed + HttpTestingController)', () => {
     preIngresos?: unknown[];
     preIngresosSync?: { descargados: number };
     preIngresosRefresh?: unknown[];
+    // Los ~57 tests de este describe nunca renderizan: llaman a
+    // `component.ngOnInit()` como método plano y jamás a
+    // `fixture.detectChanges()`. Eso es justo lo que rompe cuando un test SÍ
+    // necesita render real (NG-repro): el primer `detectChanges()` de un
+    // fixture es, para Angular, la primera pasada de creación — así que
+    // vuelve a invocar `ngOnInit()` él solo, DUPLICANDO cada GET/POST de
+    // arranque si `ngOnInit()` ya se había llamado a mano antes. Esto es un
+    // artefacto puro del harness (nunca pasa en la app real: Angular llama
+    // `ngOnInit()` una única vez, siempre a través de su propio ciclo de
+    // vida) — no significa que `cargarFormulario` se dispare dos veces en
+    // producción. Los tests que SÍ necesitan `detectChanges()` real pasan
+    // `viaDetectChanges: true` para dejar que Angular dispare `ngOnInit()` él
+    // mismo, en vez de llamarlo dos veces.
+    viaDetectChanges?: boolean;
   }): void {
-    component.ngOnInit();
+    if (opciones?.viaDetectChanges) {
+      fixture.detectChanges();
+    } else {
+      component.ngOnInit();
+    }
     const tipos = opciones?.tipos ?? [
       {
         id: 'tm-1',
@@ -329,6 +365,126 @@ describe('PesajePage (TestBed + HttpTestingController)', () => {
     // viajan en paralelo y se flushean sin precarga salvo test explícito.
     httpMock.expectOne(`${LOCAL}/configuracion-centro`).flush({});
   }
+
+  // --- Render real (NG01050 regression) ---------------------------------
+  // `<ng-template #campoField>` (pesaje-page.html) se proyecta con
+  // `*ngTemplateOutlet` DENTRO de cada `[formGroupName]`/`[formArrayName]` de
+  // sección, pero está DECLARADO fuera de `[formGroup]` — es un template
+  // compartido a nivel de `nz-card` para no duplicar el switch de
+  // `tipoCampo` entre la rama Repetible y la Unica. La resolución de
+  // `ControlContainer` que pedía `[formControlName]` viaja por la vista de
+  // DECLARACIÓN del `TemplateRef`, no por la vista de INSERCIÓN del outlet,
+  // así que nunca encontraba el `FormGroupName`/`FormArrayName` de la
+  // sección y Angular tiraba NG01050 en el primer `detectChanges()` real —
+  // bug real de runtime (revienta igual en un navegador), no un artefacto de
+  // test: el resto de esta suite nunca lo vio porque nunca llama a
+  // `detectChanges()`. El fix (`[formControl]="controlDe(grupo, campoId)"`)
+  // evita esa resolución por nombre. Estos tests SÍ renderizan de verdad —
+  // usan `viaDetectChanges: true` para que Angular dispare `ngOnInit()` una
+  // sola vez (ver nota en `flushInit`).
+  describe('render real de campos (regresión NG01050 — ControlContainer vía ngTemplateOutlet)', () => {
+    function renderConCampos(campos: CampoAplicable[]): void {
+      flushInit({ viaDetectChanges: true });
+      seleccionarTipo(campos);
+      fixture.detectChanges();
+    }
+
+    it('sección Unica (seccionClave "transporte") renderiza sin NG01050 y el input está atado al control real', () => {
+      expect(() =>
+        renderConCampos([
+          campo({ campoId: 'c-obs', campoClave: 'observacion', seccionClave: 'transporte' }),
+        ]),
+      ).not.toThrow();
+
+      const input: HTMLInputElement = fixture.nativeElement.querySelector('.secciones input[nz-input]');
+      expect(input).toBeTruthy();
+
+      const ctrl = component.grupoDeSeccion('transporte').get('c-obs')!;
+      ctrl.setValue('hola');
+      fixture.detectChanges();
+      expect(input.value).toBe('hola');
+
+      input.value = 'chau';
+      input.dispatchEvent(new Event('input'));
+      expect(ctrl.value).toBe('chau');
+    });
+
+    it('sección Unica (seccionClave "calidad") renderiza sin NG01050 y el input está atado al control real', () => {
+      expect(() =>
+        renderConCampos([campo({ campoId: 'c-acidez', campoClave: 'acidez', seccionClave: 'calidad' })]),
+      ).not.toThrow();
+
+      const input: HTMLInputElement = fixture.nativeElement.querySelector('.secciones input[nz-input]');
+      expect(input).toBeTruthy();
+
+      const ctrl = component.grupoDeSeccion('calidad').get('c-acidez')!;
+      ctrl.setValue('42');
+      fixture.detectChanges();
+      expect(input.value).toBe('42');
+    });
+
+    it('sección Repetible (seccionClave "producto") renderiza sin NG01050 y el input está atado al control de la ocurrencia', async () => {
+      expect(() =>
+        renderConCampos([
+          campo({
+            campoId: 'c-articulo',
+            campoClave: 'articulo',
+            seccionClave: 'producto',
+            cardinalidad: 'Repetible',
+            seccionRequerida: true,
+          }),
+        ]),
+      ).not.toThrow();
+
+      // `agregarOcurrencia` empuja al FormArray con un `.push()` plano — no es
+      // una señal ni pasa por un listener de evento real (a diferencia de un
+      // click real en "Agregar" en la app real), así que el scheduler
+      // zoneless no queda marcado para repasar el `@for` de ocurrencias. Un
+      // `detectChanges()` inmediatamente después NO alcanza a reflejar la
+      // fila nueva (esto es un artefacto de invocar el método a mano en el
+      // test, no del bug NG01050 ni de la app real: un click real sí
+      // dispara el ciclo de detección vía el propio listener de Angular).
+      // `whenStable()` deja correr esa vuelta pendiente antes del siguiente
+      // `detectChanges()`.
+      component.agregarOcurrencia('producto');
+      fixture.detectChanges();
+      await fixture.whenStable();
+      fixture.detectChanges();
+
+      const inputs: NodeListOf<HTMLInputElement> =
+        fixture.nativeElement.querySelectorAll('.secciones input[nz-input]');
+      expect(inputs.length).toBe(2);
+
+      const ocurrencias = component.ocurrenciasDe('producto');
+      ocurrencias[0].get('c-articulo')!.setValue('fila-0');
+      ocurrencias[1].get('c-articulo')!.setValue('fila-1');
+      fixture.detectChanges();
+      expect(inputs[0].value).toBe('fila-0');
+      expect(inputs[1].value).toBe('fila-1');
+    });
+
+    it('sección Repetible (seccionClave "detalle_fruta") renderiza sin NG01050, generalizando a otra sección/clave', () => {
+      expect(() =>
+        renderConCampos([
+          campo({
+            campoId: 'c-finca',
+            campoClave: 'finca',
+            seccionClave: 'detalle_fruta',
+            cardinalidad: 'Repetible',
+            seccionRequerida: true,
+          }),
+        ]),
+      ).not.toThrow();
+
+      const input: HTMLInputElement = fixture.nativeElement.querySelector('.secciones input[nz-input]');
+      expect(input).toBeTruthy();
+
+      const ctrl = component.ocurrenciasDe('detalle_fruta')[0].get('c-finca')!;
+      ctrl.setValue('finca-x');
+      fixture.detectChanges();
+      expect(input.value).toBe('finca-x');
+    });
+  });
 
   it('construye el formulario a partir de /formulario, con validators required', () => {
     flushInit();

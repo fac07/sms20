@@ -360,6 +360,20 @@
     }
   </form>
 
+  <!-- `campoField` se proyecta con `*ngTemplateOutlet` dentro de cada
+       `[formGroupName]`/`[formArrayName]` de arriba, pero está declarado FUERA
+       de `[formGroup]` (es un `ng-template` compartido a nivel de `nz-card`
+       para no duplicar el switch de `tipoCampo` en la rama Repetible y en la
+       Unica). La resolución de `ControlContainer` que necesita
+       `[formControlName]` viaja por la vista de DECLARACIÓN del `TemplateRef`
+       (dónde está escrito este `ng-template`), no por la vista de INSERCIÓN
+       donde `ngTemplateOutlet` lo estampa — así que nunca encuentra el
+       `FormGroupName`/`FormArrayName` de la sección y tira NG01050 apenas se
+       hace `detectChanges()` (bug real, no solo de test: revienta igual en un
+       navegador real). `controlDe(grupo, campo.campoId)` + `[formControl]`
+       evita esa resolución por nombre: usa la instancia real del control que
+       ya viaja en el contexto del outlet (`grupo`), sin depender de dónde
+       esté declarado este template. -->
   <ng-template #campoField let-campo let-grupo="grupo">
     <nz-form-item>
       <nz-form-label [nzRequired]="campo.requerido">{{ campo.etiqueta }}</nz-form-label>
@@ -377,33 +391,33 @@
         </ng-template>
         @switch (campo.tipoCampo) {
           @case ('Texto') {
-            <input nz-input [formControlName]="campo.campoId" [placeholder]="campo.etiqueta" />
+            <input nz-input [formControl]="controlDe(grupo, campo.campoId)" [placeholder]="campo.etiqueta" />
           }
           @case ('Entero') {
             <nz-input-number
-              [formControlName]="campo.campoId"
+              [formControl]="controlDe(grupo, campo.campoId)"
               [nzPrecision]="0"
               class="control-full"
             ></nz-input-number>
           }
           @case ('Decimal') {
-            <nz-input-number [formControlName]="campo.campoId" class="control-full"></nz-input-number>
+            <nz-input-number [formControl]="controlDe(grupo, campo.campoId)" class="control-full"></nz-input-number>
           }
           @case ('Fecha') {
-            <nz-date-picker [formControlName]="campo.campoId" class="control-full"></nz-date-picker>
+            <nz-date-picker [formControl]="controlDe(grupo, campo.campoId)" class="control-full"></nz-date-picker>
           }
           @case ('FechaHora') {
             <nz-date-picker
-              [formControlName]="campo.campoId"
+              [formControl]="controlDe(grupo, campo.campoId)"
               [nzShowTime]="true"
               class="control-full"
             ></nz-date-picker>
           }
           @case ('Booleano') {
-            <label nz-checkbox [formControlName]="campo.campoId">{{ campo.etiqueta }}</label>
+            <label nz-checkbox [formControl]="controlDe(grupo, campo.campoId)">{{ campo.etiqueta }}</label>
           }
           @case ('Lista') {
-            <nz-select [formControlName]="campo.campoId" nzPlaceHolder="Elegí una opción" nzAllowClear>
+            <nz-select [formControl]="controlDe(grupo, campo.campoId)" nzPlaceHolder="Elegí una opción" nzAllowClear>
               @for (opcion of opciones(campo); track opcion) {
                 <nz-option [nzValue]="opcion" [nzLabel]="opcion"></nz-option>
               }
@@ -411,7 +425,7 @@
           }
           @case ('ReferenciaMaestro') {
             <nz-select
-              [formControlName]="campo.campoId"
+              [formControl]="controlDe(grupo, campo.campoId)"
               nzPlaceHolder="Elegí una opción"
               nzAllowClear
               nzShowSearch
