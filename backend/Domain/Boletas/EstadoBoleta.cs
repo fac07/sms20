@@ -6,4 +6,5 @@ public enum EstadoBoleta
     Cerrada,
     Anulada,
     Reemitida,
+    Trasegada,
 }

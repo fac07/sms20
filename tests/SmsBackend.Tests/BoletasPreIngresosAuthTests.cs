@@ -51,6 +51,7 @@ public sealed class BoletasPreIngresosAuthTests : IAsyncLifetime
         { HttpMethod.Post, $"/api/boletas/{Guid.NewGuid()}/cerrar" },
         { HttpMethod.Post, $"/api/boletas/{Guid.NewGuid()}/anular" },
         { HttpMethod.Post, $"/api/boletas/{Guid.NewGuid()}/reemitir" },
+        { HttpMethod.Post, $"/api/boletas/{Guid.NewGuid()}/trasegar" },
         { HttpMethod.Get, $"/api/preingresos/{Guid.NewGuid()}" },
         { HttpMethod.Post, "/api/preingresos/" },
         { HttpMethod.Put, $"/api/preingresos/{Guid.NewGuid()}" },
